@@ -37,7 +37,7 @@ Cost math lives in `mallet_estimator/estimator.py` and mirrors the React prototy
 ## Install on a bench (local or staging)
 
 ```bash
-# from your bench directory, with an ERPNext v14/v15 site
+# from your bench directory, with an ERPNext v14/v15/v16 site
 bench get-app mallet_estimator /path/to/mallet_estimator      # or a git URL
 bench --site <your-site> install-app mallet_estimator
 bench --site <your-site> migrate
