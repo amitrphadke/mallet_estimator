@@ -1,0 +1,161 @@
+{
+ "actions": [],
+ "creation": "2026-07-24 00:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "issingle": 1,
+ "field_order": [
+  "rates_section",
+  "carpenter_rate",
+  "helper_rate",
+  "design_rate",
+  "column_break_rates",
+  "monthly_rent",
+  "working_days_per_month",
+  "working_hours_per_day",
+  "factory_section",
+  "factory_length_ft",
+  "factory_width_ft",
+  "machines_section",
+  "machines",
+  "markup_section",
+  "markup_material",
+  "markup_labor",
+  "column_break_markup",
+  "markup_overhead",
+  "markup_design"
+ ],
+ "fields": [
+  {
+   "fieldname": "rates_section",
+   "fieldtype": "Section Break",
+   "label": "Rates & Working Time"
+  },
+  {
+   "fieldname": "carpenter_rate",
+   "fieldtype": "Currency",
+   "label": "Carpenter Rate (per hour)",
+   "default": "150"
+  },
+  {
+   "fieldname": "helper_rate",
+   "fieldtype": "Currency",
+   "label": "Helper Rate (per hour)",
+   "default": "100"
+  },
+  {
+   "fieldname": "design_rate",
+   "fieldtype": "Currency",
+   "label": "Design Rate (per hour)",
+   "default": "300"
+  },
+  {
+   "fieldname": "column_break_rates",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "monthly_rent",
+   "fieldtype": "Currency",
+   "label": "Monthly Rent",
+   "default": "###"
+  },
+  {
+   "fieldname": "working_days_per_month",
+   "fieldtype": "Int",
+   "label": "Working Days / Month",
+   "default": "26"
+  },
+  {
+   "fieldname": "working_hours_per_day",
+   "fieldtype": "Float",
+   "label": "Working Hours / Day",
+   "default": "8"
+  },
+  {
+   "fieldname": "factory_section",
+   "fieldtype": "Section Break",
+   "label": "Factory"
+  },
+  {
+   "fieldname": "factory_length_ft",
+   "fieldtype": "Float",
+   "label": "Length (ft)",
+   "default": "57"
+  },
+  {
+   "fieldname": "factory_width_ft",
+   "fieldtype": "Float",
+   "label": "Width (ft)",
+   "default": "23"
+  },
+  {
+   "fieldname": "machines_section",
+   "fieldtype": "Section Break",
+   "label": "Machines (depreciation basis)"
+  },
+  {
+   "fieldname": "machines",
+   "fieldtype": "Table",
+   "label": "Machines",
+   "options": "Estimate Machine"
+  },
+  {
+   "fieldname": "markup_section",
+   "fieldtype": "Section Break",
+   "label": "Client Markups (%)"
+  },
+  {
+   "fieldname": "markup_material",
+   "fieldtype": "Percent",
+   "label": "Material %",
+   "default": "0",
+   "description": "Material shows at the unit rates you enter; keep 0 unless you add a % on top."
+  },
+  {
+   "fieldname": "markup_labor",
+   "fieldtype": "Percent",
+   "label": "Labor %",
+   "default": "40"
+  },
+  {
+   "fieldname": "column_break_markup",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "markup_overhead",
+   "fieldtype": "Percent",
+   "label": "Overhead %",
+   "default": "40"
+  },
+  {
+   "fieldname": "markup_design",
+   "fieldtype": "Percent",
+   "label": "Design %",
+   "default": "30"
+  }
+ ],
+ "links": [],
+ "modified": "2026-07-24 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Mallet Estimator",
+ "name": "Estimate Settings",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "email": 1,
+   "print": 1,
+   "read": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "read": 1,
+   "write": 1,
+   "role": "Manufacturing Manager"
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC"
+}

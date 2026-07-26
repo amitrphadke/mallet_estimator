@@ -1,0 +1,121 @@
+{
+ "actions": [],
+ "creation": "2026-07-24 00:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "phase",
+  "qty",
+  "carp_no",
+  "carp_min",
+  "helper_no",
+  "helper_min",
+  "carp_total",
+  "helper_total",
+  "remark",
+  "config_section",
+  "machine_key",
+  "in_factory",
+  "is_misc",
+  "is_custom"
+ ],
+ "fields": [
+  {
+   "fieldname": "phase",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Phase of Execution",
+   "reqd": 1
+  },
+  {
+   "fieldname": "qty",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Qty",
+   "default": "1"
+  },
+  {
+   "fieldname": "carp_no",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Carp No.",
+   "default": "1"
+  },
+  {
+   "fieldname": "carp_min",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Carp Min"
+  },
+  {
+   "fieldname": "helper_no",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Help No.",
+   "default": "1"
+  },
+  {
+   "fieldname": "helper_min",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Help Min"
+  },
+  {
+   "fieldname": "carp_total",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Carp Total",
+   "read_only": 1
+  },
+  {
+   "fieldname": "helper_total",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Help Total",
+   "read_only": 1
+  },
+  {
+   "fieldname": "remark",
+   "fieldtype": "Data",
+   "label": "Remark"
+  },
+  {
+   "fieldname": "config_section",
+   "fieldtype": "Section Break",
+   "label": "Configuration"
+  },
+  {
+   "fieldname": "machine_key",
+   "fieldtype": "Data",
+   "label": "Machine Key",
+   "description": "Links this step to a machine in Estimate Settings (blank = none)"
+  },
+  {
+   "fieldname": "in_factory",
+   "fieldtype": "Check",
+   "label": "In Factory (attracts rent)",
+   "default": "1"
+  },
+  {
+   "fieldname": "is_misc",
+   "fieldtype": "Check",
+   "label": "Miscellaneous / Extra Step (17)"
+  },
+  {
+   "fieldname": "is_custom",
+   "fieldtype": "Check",
+   "label": "Custom Added Row"
+  }
+ ],
+ "istable": 1,
+ "links": [],
+ "modified": "2026-07-24 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Mallet Estimator",
+ "name": "Estimate Labor",
+ "owner": "Administrator",
+ "permissions": [],
+ "sort_field": "modified",
+ "sort_order": "DESC"
+}
