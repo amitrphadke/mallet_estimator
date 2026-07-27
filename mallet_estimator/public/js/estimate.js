@@ -20,5 +20,18 @@ frappe.ui.form.on("Estimate", {
         );
       }).addClass("btn-primary");
     }
+
+    if (!frm.is_new()) {
+      frm.add_custom_button(__("Build BOMs"), () => {
+        frappe.confirm(__("Create/refresh a BOM per SKU (materials + operations) for manufacturing?"), () => {
+          frm.call("build_boms").then((r) => {
+            const m = (r && r.message) || {};
+            let body = __("BOMs created: {0}", [(m.boms || []).length]);
+            if (m.errors && m.errors.length) body += "<br><b>" + __("Errors") + ":</b><br>" + m.errors.join("<br>");
+            frappe.msgprint({ title: __("Build BOMs"), message: body, indicator: (m.errors && m.errors.length) ? "orange" : "green" });
+          });
+        });
+      }, __("Manufacture"));
+    }
   },
 });
