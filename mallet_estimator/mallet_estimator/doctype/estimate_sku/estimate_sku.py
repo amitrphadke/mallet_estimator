@@ -1,8 +1,10 @@
+import json
+
 import frappe
 from frappe import _
 from frappe.model.document import Document
 
-from mallet_estimator import opencutlist
+from mallet_estimator import opencutlist, estimate_pdf
 from mallet_estimator.estimator import (
     STEP_TEMPLATE, OPERATION_STANDARDS, calc_sku, sku_code, customer_initials, op_phase,
 )
@@ -18,9 +20,14 @@ def get_default_item_group():
 
 
 def ensure_material_item(code, uom="Nos"):
-    """Return the rate-card price for a material Item, creating it (rate 0) if new."""
+    """Return the best available inventory/rate-card price for a material Item,
+    creating it (rate 0) if new. Prefers valuation rate, then last purchase, then
+    the standard buying rate."""
     if frappe.db.exists("Item", code):
-        return frappe.db.get_value("Item", code, "standard_rate") or 0
+        v = frappe.db.get_value(
+            "Item", code, ["valuation_rate", "last_purchase_rate", "standard_rate"], as_dict=True
+        ) or {}
+        return v.get("valuation_rate") or v.get("last_purchase_rate") or v.get("standard_rate") or 0
     item = frappe.new_doc("Item")
     item.item_code = code
     item.item_name = code[:140]
@@ -36,7 +43,21 @@ class EstimateSKU(Document):
     def validate(self):
         self.ensure_steps()
         self.compute_code()
+        self.enforce_locked_qty()
         self.compute_costs()
+
+    def enforce_locked_qty(self):
+        """Locked operations (sheet lamination/tape/cutting, edge banding) always
+        take their computed qty from the last import — they can't be hand-edited."""
+        if not self.import_drivers:
+            return
+        try:
+            q = json.loads(self.import_drivers)
+        except Exception:
+            return
+        for row in self.labor:
+            if row.phase in estimate_pdf.LOCKED_OPERATIONS and row.phase in q:
+                row.qty = q[row.phase]
 
     def on_update(self):
         if self.create_item:
@@ -179,5 +200,94 @@ def import_opencutlist(estimate_sku, csv_text):
         "priced": priced,
         "unpriced": len(lines) - priced,
         "drivers": drivers,
+        "material_cost": doc.material_cost,
+    }
+
+
+def _file_content(file_url):
+    name = frappe.db.get_value("File", {"file_url": file_url}, "name")
+    if not name:
+        frappe.throw(_("Uploaded file not found: {0}").format(file_url))
+    return frappe.get_doc("File", name).get_content()
+
+
+def _pdf_item_code(m):
+    if m["kind"] == "sheet" and m.get("thickness"):
+        return f"{m['name']}_{m['thickness']:g}mm"
+    return m["name"]
+
+
+def _pdf_desc(m):
+    if m["kind"] == "sheet":
+        return f"{m['name']} {m['thickness']:g}mm — {m['qty']} sheet(s)"
+    if m["kind"] == "laminate":
+        return f"{m['name']} laminate — {m['qty']} sheet(s)"
+    if m["kind"] == "edge":
+        return f"{m['name']} edge banding — {m['qty']} roll(s)"
+    return f"{m['name']} — {m['qty']} nos"
+
+
+@frappe.whitelist()
+def import_estimate(estimate_sku, pdf_file_url, csv_file_url=None):
+    """Import accurate material quantities from the OpenCutList Estimate PDF and
+    the part count from the parts CSV. Material lines are priced from ERPNext Item
+    inventory rates; operation quantities follow the fixed mapping (locked ops
+    1-4 computed and enforced, the rest editable defaults)."""
+    doc = frappe.get_doc("Estimate SKU", estimate_sku)
+    if not doc.has_permission("write"):
+        frappe.throw(_("Not permitted to edit {0}").format(estimate_sku), frappe.PermissionError)
+
+    materials = estimate_pdf.parse_estimate_pdf(estimate_pdf.read_pdf_text(_file_content(pdf_file_url)))
+    if not materials:
+        frappe.throw(_("No materials found in the PDF. Is it an OpenCutList Estimate export?"))
+
+    part_count = 0
+    if csv_file_url:
+        content = _file_content(csv_file_url)
+        if isinstance(content, bytes):
+            content = content.decode("utf-8", "ignore")
+        rows = opencutlist.parse_opencutlist_csv(content)
+        part_count = sum(1 for r in rows if (r.get("Material type") or "").strip().lower() == "sheet goods")
+
+    # Material lines from PDF quantities, priced from inventory Items.
+    doc.set("materials", [])
+    priced = 0
+    for m in materials:
+        code = _pdf_item_code(m)
+        rate = ensure_material_item(code, "Nos")
+        if rate:
+            priced += 1
+        qty = m["qty"] or 0
+        doc.append("materials", {
+            "item": code,
+            "material": m["name"],
+            "description": _pdf_desc(m)[:140],
+            "qty": qty,
+            "unit_cost": rate,
+            "line_cost": qty * (rate or 0),
+        })
+
+    # Operation quantities per the fixed mapping; store for locked-cell enforcement.
+    opq = estimate_pdf.operation_quantities(materials, part_count)
+    for row in doc.labor:
+        op = op_phase(row)
+        if op in opq:
+            row.qty = opq[op]
+        std = OPERATION_STANDARDS.get(op)
+        if std and not float(row.carp_min or 0):
+            row.carp_min = std["min_per_unit"]
+            row.helper_min = std["min_per_unit"]
+    doc.import_drivers = json.dumps(opq)
+    doc.estimate_pdf = pdf_file_url
+    if csv_file_url:
+        doc.parts_csv = csv_file_url
+
+    doc.save()
+    return {
+        "materials": len(materials),
+        "priced": priced,
+        "unpriced": len(materials) - priced,
+        "part_count": part_count,
+        "operations": opq,
         "material_cost": doc.material_cost,
     }
