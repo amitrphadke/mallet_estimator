@@ -3,7 +3,9 @@ from frappe import _
 from frappe.model.document import Document
 
 from mallet_estimator import opencutlist
-from mallet_estimator.estimator import STEP_TEMPLATE, calc_sku, sku_code
+from mallet_estimator.estimator import (
+    STEP_TEMPLATE, OPERATION_STANDARDS, calc_sku, sku_code, customer_initials, op_phase,
+)
 
 
 def get_default_item_group():
@@ -62,10 +64,15 @@ class EstimateSKU(Document):
         return frappe.db.get_value("Customer", self.customer, "customer_name") or self.customer
 
     def compute_code(self):
+        # Every article is built for a specific customer, so the code always
+        # carries the customer initials as a prefix.
+        ci = customer_initials(self.customer_display_name())
         if self.auto_name:
             self.sku_code = sku_code(self.customer_display_name(), self.room, self.article_name)
+        elif self.sku_code and ci and not self.sku_code.upper().startswith(ci):
+            self.sku_code = f"{ci}_{self.sku_code}"
         if not self.sku_code:
-            self.sku_code = self.article_name or self.name
+            self.sku_code = "_".join(x for x in [ci, self.article_name] if x) or self.name
 
     # --- costs -------------------------------------------------------------
     def compute_costs(self):
@@ -126,12 +133,15 @@ def import_opencutlist(estimate_sku, csv_text):
     if not rows:
         frappe.throw(_("No parts found in the CSV. Is it a native OpenCutList export?"))
 
-    lines = opencutlist.aggregate(
+    agg = opencutlist.aggregate(
         rows,
         sheet_length_mm=settings.sheet_length_mm or 2440,
         sheet_width_mm=settings.sheet_width_mm or 1220,
         wastage_pct=settings.wastage_pct if settings.wastage_pct not in (None, "") else 12,
     )
+    lines, drivers = agg["lines"], agg["drivers"]
+
+    # Material lines, priced from the Item rate card.
     doc.set("materials", [])
     priced = 0
     for l in lines:
@@ -148,11 +158,26 @@ def import_opencutlist(estimate_sku, csv_text):
             "unit_cost": rate,
             "line_cost": qty * (rate or 0),
         })
+
+    # Auto-fill each operation's Qty from the material drivers, and default the
+    # crew minutes/unit from the operation standard (without clobbering edits).
+    for row in doc.labor:
+        std = OPERATION_STANDARDS.get(op_phase(row))
+        if not std:
+            continue
+        if std["qty_source"] != "manual":
+            row.qty = drivers.get(std["qty_source"], 0) or 0
+        if not float(row.carp_min or 0):
+            row.carp_min = std["min_per_unit"]
+        if not float(row.helper_min or 0):
+            row.helper_min = std["min_per_unit"]
+
     doc.save()
     return {
         "parts": len(rows),
         "materials": len(lines),
         "priced": priced,
         "unpriced": len(lines) - priced,
+        "drivers": drivers,
         "material_cost": doc.material_cost,
     }

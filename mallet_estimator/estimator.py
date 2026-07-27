@@ -143,23 +143,58 @@ def abbr(text):
     return "".join(w[0] for w in words).upper() if len(words) > 1 else s[:3].upper()
 
 
-def sku_code(customer_name, room, article_name):
+def customer_initials(customer_name):
     parts = str(customer_name or "").split()
     cf = parts[0][0] if parts else ""
     cl = parts[-1][0] if len(parts) > 1 else ""
-    client = (cf + cl).upper()
-    return "_".join(x for x in [client, initials(room), abbr(article_name)] if x)
+    return (cf + cl).upper()
+
+
+def sku_code(customer_name, room, article_name):
+    return "_".join(x for x in [customer_initials(customer_name), initials(room), abbr(article_name)] if x)
+
+
+# Default operation standards: which material driver fills each operation's Qty
+# and the crew minutes per unit. Editable per SKU on the labor table.
+OPERATION_STANDARDS = {
+    "Sheet Lamination":       {"qty_source": "laminate_sheets", "min_per_unit": 15},
+    "Sheet Tape Removal":     {"qty_source": "sheets",          "min_per_unit": 3},
+    "Sheet Cutting":          {"qty_source": "sheets",          "min_per_unit": 20},
+    "Edge Banding":           {"qty_source": "edge_parts",      "min_per_unit": 3},
+    "Minifix Boring":         {"qty_source": "minifix",         "min_per_unit": 1},
+    "Drilling":               {"qty_source": "hinges",          "min_per_unit": 3},
+    "Grooving":               {"qty_source": "manual",          "min_per_unit": 5},
+    "Assembly":               {"qty_source": "panels",          "min_per_unit": 4},
+    "Install Hardware":       {"qty_source": "hardware_total",  "min_per_unit": 2},
+    "Disassembly":            {"qty_source": "manual",          "min_per_unit": 15},
+    "Packing":                {"qty_source": "sheets",          "min_per_unit": 8},
+    "Loading":                {"qty_source": "manual",          "min_per_unit": 30},
+    "Transport":              {"qty_source": "manual",          "min_per_unit": 30},
+    "Unloading":              {"qty_source": "manual",          "min_per_unit": 30},
+    "Assembly (on-site)":     {"qty_source": "manual",          "min_per_unit": 45},
+    "Installation":           {"qty_source": "manual",          "min_per_unit": 60},
+    "Miscellaneous / extra":  {"qty_source": "manual",          "min_per_unit": 0},
+}
+
+
+def op_phase(row):
+    """Canonical operation name for a labor row (the misc/custom row is generic)."""
+    if getattr(row, "is_misc", 0):
+        return "Miscellaneous / extra"
+    return row.phase
 
 
 def calc_sku(sku, settings):
-    """Compute all cost figures for one Estimate SKU document.
+    """Compute all cost figures for one Estimate SKU (native workstation model).
 
-    `sku` exposes: materials (list with .line_cost), labor (list of step rows),
-    include_misc, design_hours, design_flat.
-    `settings` exposes rates, rent, machines. Returns a dict of figures and also
-    sets carp_total / helper_total on each labor row.
+    Each operation's crew minutes = qty x carp_min (carp_min = crew minutes per
+    unit; the 2-person crew is priced inside the workstation hour-rate). Operating
+    cost = crew-hours x workstation rate, split into labour / machine (dep) / rent
+    components for the breakdown. Materials priced from their line cost; design as
+    hours x rate + flat.
     """
-    machines = {m.machine_key: m for m in (settings.machines or [])}
+    ws_rates = {w["name"]: w for w in workstation_rates(settings)}
+    default_ws = "Assembly Station"
     markup = {
         "material": _num(settings.markup_material),
         "labor": _num(settings.markup_labor),
@@ -167,35 +202,36 @@ def calc_sku(sku, settings):
         "design": _num(settings.markup_design),
     }
 
-    carp_min_total = 0.0
-    helper_min_total = 0.0
+    crew_min_total = 0.0
+    labor_cost = 0.0
     machine_cost = 0.0
-    rent_hours = 0.0
+    rent_cost = 0.0
 
     for s in sku.labor or []:
         if getattr(s, "is_misc", 0) and not sku.include_misc:
             s.carp_total = 0
             s.helper_total = 0
             continue
-        c_min = _num(s.qty) * _num(s.carp_no) * _num(s.carp_min)
-        h_min = _num(s.qty) * _num(s.helper_no) * _num(s.helper_min)
-        s.carp_total = c_min
-        s.helper_total = h_min
-        carp_min_total += c_min
-        helper_min_total += h_min
-        if s.machine_key and s.machine_key in machines:
-            m = machines[s.machine_key]
-            machine_cost += machine_hour_rate(m.capital_cost, m.life_years, settings) * (c_min / 60.0)
-        if s.in_factory:
-            rent_hours += c_min / 60.0
+        crew_min = _num(s.qty) * _num(s.carp_min)  # carp_min = crew minutes/unit
+        s.carp_total = crew_min
+        s.helper_total = crew_min
+        crew_min_total += crew_min
+        ws_name = OPERATION_WORKSTATION.get(op_phase(s), default_ws)
+        r = ws_rates.get(ws_name) or ws_rates.get(default_ws)
+        hrs = crew_min / 60.0
+        if r:
+            labor_cost += hrs * r["labour_hr"]
+            machine_cost += hrs * r["dep_hr"]
+            rent_cost += hrs * r["rent_hr"]
 
-    carpenter_cost = (carp_min_total / 60.0) * _num(settings.carpenter_rate)
-    helper_cost = (helper_min_total / 60.0) * _num(settings.helper_rate)
-    labor_cost = carpenter_cost + helper_cost
-    rent_cost = rent_per_hour(settings) * rent_hours
+    carp_min_total = crew_min_total
+    helper_min_total = crew_min_total
+    carpenter_cost = labor_cost  # labour is the 2-person crew (folded)
+    helper_cost = 0.0
     material_cost = sum(_num(m.line_cost) for m in (sku.materials or []))
     design_cost = _num(sku.design_hours) * _num(settings.design_rate) + _num(sku.design_flat)
     overhead_cost = machine_cost + rent_cost
+    rent_hours = crew_min_total / 60.0
     internal_cost = material_cost + labor_cost + overhead_cost + design_cost
 
     client_material = material_cost * (1 + markup["material"] / 100.0)

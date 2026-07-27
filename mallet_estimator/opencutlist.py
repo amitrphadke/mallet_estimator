@@ -63,12 +63,36 @@ def parse_opencutlist_csv(text):
     return out
 
 
-def aggregate(rows, sheet_length_mm=2440.0, sheet_width_mm=1220.0, wastage_pct=12.0):
-    """Aggregate parsed part rows into material estimate lines.
+def classify_hardware(name):
+    """Bucket a hardware material name into an operation-driver category."""
+    n = (name or "").lower()
+    if "minifix" in n:
+        return "minifix"
+    if "hinge" in n:
+        return "hinges"
+    if "handle" in n:
+        return "handles"
+    if "rail" in n:
+        return "rails"
+    if "shelf" in n or "support" in n:
+        return "shelf_supports"
+    if "lock" in n or "tower" in n or "bolt" in n:
+        return "locks"
+    if "screw" in n:
+        return "screws"
+    return "other"
 
-    Returns a list of dicts: {kind, material, thickness, uom, qty, area, desc}.
-    `qty` is whole sheets (sheet/laminate), running meters (edge), or count
-    (hardware). Prices are applied later from the Item rate card.
+
+def aggregate(rows, sheet_length_mm=2440.0, sheet_width_mm=1220.0, wastage_pct=12.0):
+    """Aggregate parsed part rows into material estimate lines + operation drivers.
+
+    Returns {"lines": [...], "drivers": {...}}. Each line is
+    {kind, material, thickness, uom, qty, area, desc}; `qty` is whole sheets
+    (sheet/laminate), running meters (edge) or count (hardware). `drivers` gives
+    the quantities that auto-fill the labor/operation table (sheets, laminate
+    sheets, edge parts/meters, panels, minifix, hinges, handles, rails, shelf
+    supports, locks, screws, hardware_total). Prices come later from the Item
+    rate card.
     """
     sheet_area = (sheet_length_mm * sheet_width_mm) / 1_000_000.0  # m² per sheet
     factor = 1 + (wastage_pct / 100.0)
@@ -77,17 +101,22 @@ def aggregate(rows, sheet_length_mm=2440.0, sheet_width_mm=1220.0, wastage_pct=1
     laminate = {}  # material -> area m²
     edging = {}    # material -> meters
     hardware = {}  # material -> count
+    hw_cat = {}    # category -> count
+    panels = 0
+    edge_parts = 0
 
     for r in rows:
         mtype = (r.get("Material type") or "").strip().lower()
         mname = (r.get("Material name") or "").strip()
         if mtype in SHEET_TYPES:
+            panels += 1
             area = _num(r.get("Area - final") or r.get("Area"))
             th = _num(r.get("Thickness") or r.get("Thickness - raw"))
             sheets[(mname, th)] = sheets.get((mname, th), 0.0) + area
 
             length_m = _num(r.get("Length") or r.get("Length - raw")) / 1000.0
             width_m = _num(r.get("Width") or r.get("Width - raw")) / 1000.0
+            has_edge = False
             for col, dim in (
                 ("Edge Length 1", length_m), ("Edge Length 2", length_m),
                 ("Edge Width 1", width_m), ("Edge Width 2", width_m),
@@ -95,6 +124,9 @@ def aggregate(rows, sheet_length_mm=2440.0, sheet_width_mm=1220.0, wastage_pct=1
                 eb = _material_from(r.get(col))
                 if eb:
                     edging[eb] = edging.get(eb, 0.0) + dim
+                    has_edge = True
+            if has_edge:
+                edge_parts += 1
             for col in ("Frontside", "Backside"):
                 lam = _material_from(r.get(col))
                 if lam:
@@ -102,6 +134,8 @@ def aggregate(rows, sheet_length_mm=2440.0, sheet_width_mm=1220.0, wastage_pct=1
         elif mtype in HARDWARE_TYPES:
             if mname:
                 hardware[mname] = hardware.get(mname, 0) + 1
+                cat = classify_hardware(mname)
+                hw_cat[cat] = hw_cat.get(cat, 0) + 1
 
     lines = []
     for (mname, th), area in sorted(sheets.items()):
@@ -129,7 +163,26 @@ def aggregate(rows, sheet_length_mm=2440.0, sheet_width_mm=1220.0, wastage_pct=1
             "kind": "hardware", "material": mname, "thickness": 0, "uom": "Nos",
             "qty": count, "area": 0, "desc": f"{mname} — {count} nos",
         })
-    return lines
+
+    drivers = {
+        "sheets": sum(l["qty"] for l in lines if l["kind"] == "sheet"),
+        "laminate_sheets": sum(l["qty"] for l in lines if l["kind"] == "laminate"),
+        "edge_meters": round(sum(l["qty"] for l in lines if l["kind"] == "edge"), 2),
+        "edge_parts": edge_parts,
+        "panels": panels,
+        "minifix": hw_cat.get("minifix", 0),
+        "hinges": hw_cat.get("hinges", 0),
+        "handles": hw_cat.get("handles", 0),
+        "rails": hw_cat.get("rails", 0),
+        "shelf_supports": hw_cat.get("shelf_supports", 0),
+        "locks": hw_cat.get("locks", 0),
+        "screws": hw_cat.get("screws", 0),
+    }
+    drivers["hardware_total"] = (
+        drivers["minifix"] + drivers["hinges"] + drivers["handles"]
+        + drivers["rails"] + drivers["shelf_supports"] + drivers["locks"]
+    )
+    return {"lines": lines, "drivers": drivers}
 
 
 def item_code_for(line):
