@@ -131,13 +131,12 @@ def ensure_workspace():
 
 
 def seed_settings():
+    # Persist the single so default rates/rent are stored (workstation costing
+    # reads them). Machine masters live as ERPNext Workstations, not here.
     settings = frappe.get_single("Estimate Settings")
-    if not settings.machines:
-        for m in DEFAULT_MACHINES:
-            settings.append("machines", m)
-        settings.flags.ignore_permissions = True
-        settings.save()
-        frappe.db.commit()
+    settings.flags.ignore_permissions = True
+    settings.save()
+    frappe.db.commit()
 
 
 def ensure_print_format():

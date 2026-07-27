@@ -19,8 +19,8 @@
   "sheet_length_mm",
   "sheet_width_mm",
   "wastage_pct",
-  "machines_section",
-  "machines",
+  "calculator_section",
+  "cost_calculator_html",
   "markup_section",
   "markup_material",
   "markup_labor",
@@ -111,15 +111,14 @@
    "default": "12"
   },
   {
-   "fieldname": "machines_section",
+   "fieldname": "calculator_section",
    "fieldtype": "Section Break",
-   "label": "Machines (depreciation basis)"
+   "label": "Workstation Cost Calculator"
   },
   {
-   "fieldname": "machines",
-   "fieldtype": "Table",
-   "label": "Machines",
-   "options": "Estimate Machine"
+   "fieldname": "cost_calculator_html",
+   "fieldtype": "HTML",
+   "label": "Workstation Cost Calculator"
   },
   {
    "fieldname": "markup_section",

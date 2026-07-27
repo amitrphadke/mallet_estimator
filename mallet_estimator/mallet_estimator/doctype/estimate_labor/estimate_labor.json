@@ -33,7 +33,8 @@
    "fieldtype": "Float",
    "in_list_view": 1,
    "label": "Qty",
-   "default": "1"
+   "default": "1",
+   "read_only_depends_on": "eval:['Sheet Lamination','Sheet Tape Removal','Sheet Cutting','Edge Banding'].includes(doc.phase)"
   },
   {
    "fieldname": "carp_no",

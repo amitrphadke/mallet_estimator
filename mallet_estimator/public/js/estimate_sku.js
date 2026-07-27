@@ -1,7 +1,6 @@
 // Estimate SKU form: import material quantities from the OpenCutList Estimate PDF
-// (+ parts CSV for the edge-banding part count), and lock the computed qty cells.
-const LOCKED_OPS = ["Sheet Lamination", "Sheet Tape Removal", "Sheet Cutting", "Edge Banding"];
-
+// (+ parts CSV for the edge-banding part count). The computed qty cells (steps
+// 1-4) are locked natively via read_only_depends_on on the child field.
 frappe.ui.form.on("Estimate SKU", {
   refresh(frm) {
     frm.add_custom_button(__("Import OpenCutList Estimate"), () => open_estimate_dialog(frm), __("Material"));
@@ -17,15 +16,6 @@ frappe.ui.form.on("Estimate SKU", {
     if (frm.doc.item) {
       frm.add_custom_button(__("Open Item"), () => frappe.set_route("Form", "Item", frm.doc.item));
     }
-  },
-});
-
-// Lock the Qty cell for the four computed operations.
-frappe.ui.form.on("Estimate Labor", {
-  form_render(frm, cdt, cdn) {
-    const row = locals[cdt][cdn];
-    const gr = frm.fields_dict.labor.grid.grid_rows_by_docname[cdn];
-    if (gr && gr.toggle_editable) gr.toggle_editable("qty", !LOCKED_OPS.includes(row.phase));
   },
 });
 

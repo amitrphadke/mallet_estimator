@@ -5,19 +5,26 @@ from frappe.model.document import Document
 
 class ExecutionEstimate(Document):
     def validate(self):
-        self.rollup()
+        self.aggregate_project_skus()
 
-    def rollup(self):
+    def aggregate_project_skus(self):
+        """Rebuild the SKU list from every Estimate SKU linked to this Project
+        (no manual add, so a SKU can't be counted twice) and roll up the totals."""
+        names = frappe.get_all(
+            "Estimate SKU", filters={"project": self.project}, order_by="room asc, article_name asc", pluck="name"
+        ) if self.project else []
+        self.set("skus", [])
         totals = dict(material=0, labor=0, overhead=0, design=0, internal=0, client=0)
-        for row in self.skus:
-            if not row.estimate_sku:
-                continue
-            s = frappe.get_doc("Estimate SKU", row.estimate_sku)
-            row.item = s.item
-            row.room = s.room
-            row.article_name = s.article_name
-            row.internal_cost = s.internal_cost
-            row.client_total = s.client_total
+        for name in names:
+            s = frappe.get_doc("Estimate SKU", name)
+            self.append("skus", {
+                "estimate_sku": s.name,
+                "item": s.item,
+                "room": s.room,
+                "article_name": s.article_name,
+                "internal_cost": s.internal_cost,
+                "client_total": s.client_total,
+            })
             totals["material"] += s.material_cost or 0
             totals["labor"] += s.labor_cost or 0
             totals["overhead"] += s.overhead_cost or 0
@@ -42,6 +49,8 @@ class ExecutionEstimate(Document):
         quo.quotation_to = "Customer"
         quo.party_name = self.customer
         quo.order_type = "Sales"
+        if self.project:
+            quo.project = self.project
         for row in self.skus:
             s = frappe.get_doc("Estimate SKU", row.estimate_sku)
             if not s.item:
