@@ -1,6 +1,8 @@
 import frappe
+from frappe import _
 from frappe.model.document import Document
 
+from mallet_estimator import opencutlist
 from mallet_estimator.estimator import STEP_TEMPLATE, calc_sku, sku_code
 
 
@@ -13,6 +15,21 @@ def get_default_item_group():
     )
 
 
+def ensure_material_item(code, uom="Nos"):
+    """Return the rate-card price for a material Item, creating it (rate 0) if new."""
+    if frappe.db.exists("Item", code):
+        return frappe.db.get_value("Item", code, "standard_rate") or 0
+    item = frappe.new_doc("Item")
+    item.item_code = code
+    item.item_name = code[:140]
+    item.item_group = get_default_item_group()
+    item.stock_uom = uom or "Nos"
+    item.is_stock_item = 0
+    item.standard_rate = 0
+    item.insert(ignore_permissions=True)
+    return 0
+
+
 class EstimateSKU(Document):
     def validate(self):
         self.ensure_steps()
@@ -22,6 +39,46 @@ class EstimateSKU(Document):
     def on_update(self):
         if self.create_item:
             self.sync_item()
+
+    # --- OpenCutList import -----------------------------------------------
+    @frappe.whitelist()
+    def import_opencutlist(self, csv_text):
+        """Aggregate a native OpenCutList parts CSV into material lines, pricing
+        each from the ERPNext Item rate card (Items auto-created at rate 0)."""
+        settings = frappe.get_single("Estimate Settings")
+        rows = opencutlist.parse_opencutlist_csv(csv_text or "")
+        if not rows:
+            frappe.throw(_("No parts found in the CSV. Is it a native OpenCutList export?"))
+        lines = opencutlist.aggregate(
+            rows,
+            sheet_length_mm=settings.sheet_length_mm or 2440,
+            sheet_width_mm=settings.sheet_width_mm or 1220,
+            wastage_pct=settings.wastage_pct if settings.wastage_pct not in (None, "") else 12,
+        )
+        self.set("materials", [])
+        priced = 0
+        for l in lines:
+            code = opencutlist.item_code_for(l)
+            rate = ensure_material_item(code, l.get("uom"))
+            if rate:
+                priced += 1
+            qty = l.get("qty") or 0
+            self.append("materials", {
+                "item": code,
+                "material": l["material"],
+                "description": (l["desc"] or "")[:140],
+                "qty": qty,
+                "unit_cost": rate,
+                "line_cost": qty * (rate or 0),
+            })
+        self.save()
+        return {
+            "parts": len(rows),
+            "materials": len(lines),
+            "priced": priced,
+            "unpriced": len(lines) - priced,
+            "material_cost": self.material_cost,
+        }
 
     # --- steps -------------------------------------------------------------
     def ensure_steps(self):

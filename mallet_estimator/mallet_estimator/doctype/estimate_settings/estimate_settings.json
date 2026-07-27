@@ -16,6 +16,9 @@
   "factory_section",
   "factory_length_ft",
   "factory_width_ft",
+  "sheet_length_mm",
+  "sheet_width_mm",
+  "wastage_pct",
   "machines_section",
   "machines",
   "markup_section",
@@ -87,6 +90,25 @@
    "fieldtype": "Float",
    "label": "Width (ft)",
    "default": "23"
+  },
+  {
+   "fieldname": "sheet_length_mm",
+   "fieldtype": "Float",
+   "label": "Sheet Length (mm)",
+   "default": "2440",
+   "description": "Standard sheet size for whole-sheet material estimation"
+  },
+  {
+   "fieldname": "sheet_width_mm",
+   "fieldtype": "Float",
+   "label": "Sheet Width (mm)",
+   "default": "1220"
+  },
+  {
+   "fieldname": "wastage_pct",
+   "fieldtype": "Percent",
+   "label": "Sheet Wastage %",
+   "default": "12"
   },
   {
    "fieldname": "machines_section",

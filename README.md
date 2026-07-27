@@ -27,8 +27,11 @@ Cost math lives in `mallet_estimator/estimator.py` and mirrors the React prototy
 
 - **Customer** — picked on Estimate SKU / Execution Estimate (native `Customer` link). Drives
   the SKU code (`ClientInitials_Room_Article`, e.g. `KP_MB_VAN`).
-- **Item** — each Estimate SKU creates/updates an `Item` (item_code = SKU code, non-stock,
-  `standard_rate` = client total) when *Create / update Item on save* is ticked.
+- **Item** — two ways: (a) each **material** in an OpenCutList import becomes an `Item`
+  (item_code = OpenCutList material name, e.g. `SG_PLY_V0_a_a_16mm`, `HWD_Hinge`,
+  `EB_PVC_IN_a`) — this is your **rate card**, priced via `standard_rate`; (b) each **SKU**
+  creates/updates its own finished `Item` (item_code = SKU code, `standard_rate` = client
+  total) when *Create / update Item on save* is ticked.
 - **Quotation** — *Create Quotation* on an Execution Estimate makes a `Quotation`
   (`quotation_to = Customer`), one line per SKU at its client total. Convert it to Sales Order
   / Sales Invoice with ERPNext's normal flow. See
@@ -73,8 +76,13 @@ bench --site <your-site> clear-cache
    the 5 machines seeded.
 2. **New Estimate SKU** — pick Customer, set Article = "Vanity", Room = "Master Bedroom",
    outer 600×450×720. Save → labor auto-seeds the 16+1 steps and `sku_code` = `KP_MB_VAN`.
-3. On the SKU, **Material ▸ Import OpenCutList CSV** (attach or paste) → lines fill in; enter
-   carpenter/helper minutes on the labor rows; save → costs compute and an **Item** is created.
+3. On the SKU, **Material ▸ Import OpenCutList CSV** (attach or paste the **native**
+   semicolon export) → parts are **aggregated** into sheets (whole-sheet, area ÷ sheet size ×
+   wastage), hardware (counts), edge banding (meters) and laminate; each material is priced
+   from its **ERPNext Item rate card** (Items auto-created at rate 0 — set their prices once in
+   Item, and re-import). Enter carpenter/helper minutes on the labor rows; save → costs
+   compute and the SKU's own **Item** is created/updated. Sheet size + wastage live in
+   **Estimate Settings**.
 4. **New Execution Estimate** — pick the Customer, add the SKU(s) in the table, save (totals
    roll up), **Submit**, then **Create Quotation**.
 5. Print the Execution Estimate with the **Mallet Client Estimate** format.
