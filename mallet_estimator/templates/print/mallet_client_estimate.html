@@ -57,7 +57,7 @@
 
   <div class="parties">
     <div><div class="lbl">Customer</div><b>{{ frappe.db.get_value("Customer", doc.customer, "customer_name") or doc.customer }}</b></div>
-    <div><div class="lbl">Project</div>{{ doc.project_name or "—" }}</div>
+    <div><div class="lbl">Project</div>{{ doc.project or "—" }}</div>
     <div><div class="lbl">Designed by</div>{{ doc.designed_by or "—" }}</div>
   </div>
 

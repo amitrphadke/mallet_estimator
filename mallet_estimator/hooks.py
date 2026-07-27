@@ -16,5 +16,5 @@ after_migrate = "mallet_estimator.install.after_migrate"
 doctype_js = {
     "Estimate Settings": "public/js/estimate_settings.js",
     "Estimate SKU": "public/js/estimate_sku.js",
-    "Execution Estimate": "public/js/execution_estimate.js",
+    "Estimate": "public/js/estimate.js",
 }

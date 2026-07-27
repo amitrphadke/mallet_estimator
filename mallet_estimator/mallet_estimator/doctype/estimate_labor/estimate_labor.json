@@ -6,16 +6,17 @@
  "engine": "InnoDB",
  "field_order": [
   "phase",
+  "workstation",
   "qty",
-  "carp_no",
   "carp_min",
-  "helper_no",
-  "helper_min",
   "carp_total",
-  "helper_total",
+  "op_cost",
   "remark",
   "config_section",
-  "machine_key",
+  "carp_no",
+  "helper_no",
+  "helper_min",
+  "helper_total",
   "in_factory",
   "is_misc",
   "is_custom"
@@ -27,6 +28,13 @@
    "in_list_view": 1,
    "label": "Phase of Execution",
    "reqd": 1
+  },
+  {
+   "fieldname": "workstation",
+   "fieldtype": "Link",
+   "options": "Workstation",
+   "in_list_view": 1,
+   "label": "Workstation"
   },
   {
    "fieldname": "qty",
@@ -66,7 +74,14 @@
    "fieldname": "carp_total",
    "fieldtype": "Float",
    "in_list_view": 1,
-   "label": "Carp Total",
+   "label": "Crew Min (total)",
+   "read_only": 1
+  },
+  {
+   "fieldname": "op_cost",
+   "fieldtype": "Currency",
+   "in_list_view": 1,
+   "label": "Phase Cost",
    "read_only": 1
   },
   {
@@ -85,12 +100,6 @@
    "fieldname": "config_section",
    "fieldtype": "Section Break",
    "label": "Configuration"
-  },
-  {
-   "fieldname": "machine_key",
-   "fieldtype": "Data",
-   "label": "Machine Key",
-   "description": "Links this step to a machine in Estimate Settings (blank = none)"
   },
   {
    "fieldname": "in_factory",

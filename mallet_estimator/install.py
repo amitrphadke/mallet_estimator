@@ -153,7 +153,7 @@ def ensure_print_format():
         pf = frappe.new_doc("Print Format")
         pf.name = PRINT_FORMAT_NAME
 
-    pf.doc_type = "Execution Estimate"
+    pf.doc_type = "Estimate"
     pf.module = "Mallet Estimator"
     pf.print_format_type = "Jinja"
     pf.custom_format = 1

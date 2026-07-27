@@ -6,8 +6,32 @@ from frappe.model.document import Document
 
 from mallet_estimator import opencutlist, estimate_pdf
 from mallet_estimator.estimator import (
-    STEP_TEMPLATE, OPERATION_STANDARDS, calc_sku, sku_code, customer_initials, op_phase,
+    STEP_TEMPLATE, OPERATION_STANDARDS, OPERATION_WORKSTATION, calc_sku, sku_code,
+    customer_initials, op_phase,
 )
+
+DEFAULT_WORKSTATION = "Assembly Station"
+
+
+def default_workstation(row):
+    return OPERATION_WORKSTATION.get(op_phase(row), DEFAULT_WORKSTATION)
+
+
+def workstation_rate_map():
+    """Live rates from the ERPNext Workstation masters (so in-app edits apply)."""
+    m = {}
+    for w in frappe.get_all(
+        "Workstation",
+        fields=["name", "hour_rate_rent", "hour_rate_consumable", "hour_rate_labour", "hour_rate"],
+    ):
+        total = w.hour_rate or ((w.hour_rate_rent or 0) + (w.hour_rate_consumable or 0) + (w.hour_rate_labour or 0))
+        m[w.name] = {
+            "rent_hr": w.hour_rate_rent or 0,
+            "dep_hr": w.hour_rate_consumable or 0,
+            "labour_hr": w.hour_rate_labour or 0,
+            "total_hr": total,
+        }
+    return m
 
 
 def get_default_item_group():
@@ -66,11 +90,15 @@ class EstimateSKU(Document):
     # --- steps -------------------------------------------------------------
     def ensure_steps(self):
         if self.labor:
+            # Backfill workstation on any row that is missing it.
+            for row in self.labor:
+                if not row.workstation:
+                    row.workstation = default_workstation(row)
             return
         for t in STEP_TEMPLATE:
             self.append("labor", {
                 "phase": t["phase"],
-                "machine_key": t.get("machine") or "",
+                "workstation": OPERATION_WORKSTATION.get(t["phase"], DEFAULT_WORKSTATION),
                 "in_factory": t.get("in_factory", 0),
                 "is_misc": t.get("is_misc", 0),
                 "qty": 1,
@@ -101,7 +129,8 @@ class EstimateSKU(Document):
         for m in self.materials:
             if not m.line_cost and m.unit_cost:
                 m.line_cost = (m.qty or 1) * m.unit_cost
-        r = calc_sku(self, settings)
+        ws_rates = workstation_rate_map() or None  # live Workstation master rates
+        r = calc_sku(self, settings, ws_rates)
         for k in (
             "material_cost", "labor_cost", "machine_cost", "rent_cost", "overhead_cost",
             "design_cost", "internal_cost", "client_material", "client_design_exec",

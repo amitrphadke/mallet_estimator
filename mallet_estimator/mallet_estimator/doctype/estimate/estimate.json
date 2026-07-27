@@ -48,10 +48,10 @@
   {"fieldname": "quotation", "fieldtype": "Link", "label": "Quotation", "options": "Quotation", "read_only": 1}
  ],
  "links": [],
- "modified": "2026-07-24 00:00:00.000000",
+ "modified": "2026-07-27 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "Mallet Estimator",
- "name": "Execution Estimate",
+ "name": "Estimate",
  "owner": "Administrator",
  "permissions": [
   {"cancel": 1, "create": 1, "delete": 1, "email": 1, "export": 1, "print": 1, "read": 1, "report": 1, "role": "System Manager", "share": 1, "submit": 1, "write": 1, "amend": 1},

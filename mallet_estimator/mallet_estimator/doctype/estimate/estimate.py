@@ -3,7 +3,7 @@ from frappe import _
 from frappe.model.document import Document
 
 
-class ExecutionEstimate(Document):
+class Estimate(Document):
     def validate(self):
         self.aggregate_project_skus()
 
@@ -43,7 +43,7 @@ class ExecutionEstimate(Document):
         if self.quotation and frappe.db.exists("Quotation", self.quotation):
             frappe.throw(_("Quotation {0} already exists for this estimate.").format(self.quotation))
         if not self.skus:
-            frappe.throw(_("Add at least one SKU before creating a Quotation."))
+            frappe.throw(_("Add at least one SKU (link SKUs to this Project) before creating a Quotation."))
 
         quo = frappe.new_doc("Quotation")
         quo.quotation_to = "Customer"

@@ -1,5 +1,5 @@
-// Execution Estimate: create a Quotation from the rolled-up SKUs.
-frappe.ui.form.on("Execution Estimate", {
+// Estimate: aggregate a Project's SKUs and create a Quotation.
+frappe.ui.form.on("Estimate", {
   refresh(frm) {
     if (frm.doc.quotation) {
       frm.add_custom_button(__("View Quotation"), () =>

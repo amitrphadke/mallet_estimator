@@ -184,16 +184,20 @@ def op_phase(row):
     return row.phase
 
 
-def calc_sku(sku, settings):
+def calc_sku(sku, settings, ws_rates=None):
     """Compute all cost figures for one Estimate SKU (native workstation model).
 
-    Each operation's crew minutes = qty x carp_min (carp_min = crew minutes per
-    unit; the 2-person crew is priced inside the workstation hour-rate). Operating
-    cost = crew-hours x workstation rate, split into labour / machine (dep) / rent
-    components for the breakdown. Materials priced from their line cost; design as
-    hours x rate + flat.
+    Each phase's crew minutes = qty x carp_min (carp_min = crew minutes per unit;
+    the 2-person crew is priced inside the workstation hour-rate). Phase cost =
+    crew-hours x that phase's workstation rate, split into labour / machine (dep)
+    / rent for the breakdown, and written back to each row's op_cost.
+
+    `ws_rates` is {workstation_name: {rent_hr, dep_hr, labour_hr, total_hr}} — the
+    controller passes the live ERPNext Workstation master rates; if omitted we fall
+    back to the computed rates so the function stays unit-testable.
     """
-    ws_rates = {w["name"]: w for w in workstation_rates(settings)}
+    if ws_rates is None:
+        ws_rates = {w["name"]: w for w in workstation_rates(settings)}
     default_ws = "Assembly Station"
     markup = {
         "material": _num(settings.markup_material),
@@ -211,18 +215,19 @@ def calc_sku(sku, settings):
         if getattr(s, "is_misc", 0) and not sku.include_misc:
             s.carp_total = 0
             s.helper_total = 0
+            s.op_cost = 0
             continue
         crew_min = _num(s.qty) * _num(s.carp_min)  # carp_min = crew minutes/unit
         s.carp_total = crew_min
         s.helper_total = crew_min
         crew_min_total += crew_min
-        ws_name = OPERATION_WORKSTATION.get(op_phase(s), default_ws)
-        r = ws_rates.get(ws_name) or ws_rates.get(default_ws)
+        ws_name = getattr(s, "workstation", None) or OPERATION_WORKSTATION.get(op_phase(s), default_ws)
+        r = ws_rates.get(ws_name) or ws_rates.get(default_ws) or {"labour_hr": 0, "dep_hr": 0, "rent_hr": 0}
         hrs = crew_min / 60.0
-        if r:
-            labor_cost += hrs * r["labour_hr"]
-            machine_cost += hrs * r["dep_hr"]
-            rent_cost += hrs * r["rent_hr"]
+        labor_cost += hrs * r["labour_hr"]
+        machine_cost += hrs * r["dep_hr"]
+        rent_cost += hrs * r["rent_hr"]
+        s.op_cost = hrs * (r["labour_hr"] + r["dep_hr"] + r["rent_hr"])
 
     carp_min_total = crew_min_total
     helper_min_total = crew_min_total
