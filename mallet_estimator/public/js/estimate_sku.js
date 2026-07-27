@@ -34,9 +34,9 @@ function open_csv_dialog(frm) {
     primary_action(values) {
       const run = (csv_text) => {
         if (!csv_text || !csv_text.trim()) { frappe.msgprint(__("Attach a file or paste CSV text.")); return; }
-        frm.call({
-          method: "import_opencutlist",
-          args: { csv_text },
+        frappe.call({
+          method: "mallet_estimator.mallet_estimator.doctype.estimate_sku.estimate_sku.import_opencutlist",
+          args: { estimate_sku: frm.doc.name, csv_text },
           freeze: true,
           freeze_message: __("Aggregating parts and pricing from the rate card…"),
         }).then((r) => {

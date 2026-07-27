@@ -40,46 +40,6 @@ class EstimateSKU(Document):
         if self.create_item:
             self.sync_item()
 
-    # --- OpenCutList import -----------------------------------------------
-    @frappe.whitelist()
-    def import_opencutlist(self, csv_text):
-        """Aggregate a native OpenCutList parts CSV into material lines, pricing
-        each from the ERPNext Item rate card (Items auto-created at rate 0)."""
-        settings = frappe.get_single("Estimate Settings")
-        rows = opencutlist.parse_opencutlist_csv(csv_text or "")
-        if not rows:
-            frappe.throw(_("No parts found in the CSV. Is it a native OpenCutList export?"))
-        lines = opencutlist.aggregate(
-            rows,
-            sheet_length_mm=settings.sheet_length_mm or 2440,
-            sheet_width_mm=settings.sheet_width_mm or 1220,
-            wastage_pct=settings.wastage_pct if settings.wastage_pct not in (None, "") else 12,
-        )
-        self.set("materials", [])
-        priced = 0
-        for l in lines:
-            code = opencutlist.item_code_for(l)
-            rate = ensure_material_item(code, l.get("uom"))
-            if rate:
-                priced += 1
-            qty = l.get("qty") or 0
-            self.append("materials", {
-                "item": code,
-                "material": l["material"],
-                "description": (l["desc"] or "")[:140],
-                "qty": qty,
-                "unit_cost": rate,
-                "line_cost": qty * (rate or 0),
-            })
-        self.save()
-        return {
-            "parts": len(rows),
-            "materials": len(lines),
-            "priced": priced,
-            "unpriced": len(lines) - priced,
-            "material_cost": self.material_cost,
-        }
-
     # --- steps -------------------------------------------------------------
     def ensure_steps(self):
         if self.labor:
@@ -148,3 +108,51 @@ class EstimateSKU(Document):
             target = item.name
         # persist the link without re-triggering validate/on_update
         self.db_set("item", target, update_modified=False)
+
+
+@frappe.whitelist()
+def import_opencutlist(estimate_sku, csv_text):
+    """Aggregate a native OpenCutList parts CSV into the SKU's material lines,
+    pricing each from the ERPNext Item rate card (Items auto-created at rate 0).
+
+    Module-level whitelisted function (called from the form by full dotted path).
+    """
+    doc = frappe.get_doc("Estimate SKU", estimate_sku)
+    if not doc.has_permission("write"):
+        frappe.throw(_("Not permitted to edit {0}").format(estimate_sku), frappe.PermissionError)
+
+    settings = frappe.get_single("Estimate Settings")
+    rows = opencutlist.parse_opencutlist_csv(csv_text or "")
+    if not rows:
+        frappe.throw(_("No parts found in the CSV. Is it a native OpenCutList export?"))
+
+    lines = opencutlist.aggregate(
+        rows,
+        sheet_length_mm=settings.sheet_length_mm or 2440,
+        sheet_width_mm=settings.sheet_width_mm or 1220,
+        wastage_pct=settings.wastage_pct if settings.wastage_pct not in (None, "") else 12,
+    )
+    doc.set("materials", [])
+    priced = 0
+    for l in lines:
+        code = opencutlist.item_code_for(l)
+        rate = ensure_material_item(code, l.get("uom"))
+        if rate:
+            priced += 1
+        qty = l.get("qty") or 0
+        doc.append("materials", {
+            "item": code,
+            "material": l["material"],
+            "description": (l["desc"] or "")[:140],
+            "qty": qty,
+            "unit_cost": rate,
+            "line_cost": qty * (rate or 0),
+        })
+    doc.save()
+    return {
+        "parts": len(rows),
+        "materials": len(lines),
+        "priced": priced,
+        "unpriced": len(lines) - priced,
+        "material_cost": doc.material_cost,
+    }
