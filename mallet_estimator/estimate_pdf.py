@@ -87,9 +87,10 @@ def _hw(materials):
     }
 
 
-def sg_sheet_total(materials):
-    """Total sheets across all SG (sheet + veneer/laminate) materials."""
-    return sum(m["qty"] for m in materials if m["kind"] in ("sheet", "laminate"))
+def sheet_goods_sheets(materials):
+    """Full plywood sheets from the 'Sheet goods' table only (excludes veneer/
+    laminate). This is what gets cut/taped/laminated."""
+    return sum(m["qty"] for m in materials if m["kind"] == "sheet")
 
 
 def operation_quantities(materials, part_count):
@@ -97,7 +98,7 @@ def operation_quantities(materials, part_count):
     count. Follows the fixed mapping (locked ops 1-4; the rest are editable
     defaults). Returns {operation_name: qty}."""
     hw = _hw(materials)
-    sg = sg_sheet_total(materials)
+    sg = sheet_goods_sheets(materials)
     assembly = 1 + hw["rails"]
     q = {
         "Sheet Lamination": sg,

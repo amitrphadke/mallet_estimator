@@ -242,12 +242,14 @@ def import_estimate(estimate_sku, pdf_file_url, csv_file_url=None):
         frappe.throw(_("No materials found in the PDF. Is it an OpenCutList Estimate export?"))
 
     part_count = 0
+    parts = []
     if csv_file_url:
         content = _file_content(csv_file_url)
         if isinstance(content, bytes):
             content = content.decode("utf-8", "ignore")
         rows = opencutlist.parse_opencutlist_csv(content)
-        part_count = sum(1 for r in rows if (r.get("Material type") or "").strip().lower() == "sheet goods")
+        parts = opencutlist.parts_list(rows)
+        part_count = len(parts)
 
     # Material lines from PDF quantities, priced from inventory Items.
     doc.set("materials", [])
@@ -281,6 +283,20 @@ def import_estimate(estimate_sku, pdf_file_url, csv_file_url=None):
     doc.estimate_pdf = pdf_file_url
     if csv_file_url:
         doc.parts_csv = csv_file_url
+
+    # Store the part list (with QR part numbers) for job-card tracking.
+    if parts:
+        doc.set("parts", [])
+        for p in parts:
+            doc.append("parts", {
+                "part_no": p["part_no"],
+                "designation": p["designation"],
+                "material": p["material"],
+                "tag": p["tag"],
+                "length": p["length"],
+                "width": p["width"],
+                "thickness": p["thickness"],
+            })
 
     doc.save()
     return {

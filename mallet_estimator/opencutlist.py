@@ -63,6 +63,29 @@ def parse_opencutlist_csv(text):
     return out
 
 
+def parts_list(rows):
+    """Extract the panel part list (Material type = Sheet Goods, name starts SG)
+    from the parts CSV — one entry per part instance, carrying the part number
+    (the id encoded in the OpenCutList QR label) for job-card tracking."""
+    out = []
+    for r in rows:
+        if (r.get("Material type") or "").strip().lower() != "sheet goods":
+            continue
+        name = (r.get("Material name") or "").strip()
+        if not name.upper().startswith("SG"):
+            continue
+        out.append({
+            "part_no": (r.get("No.") or "").strip(),
+            "designation": (r.get("Designation") or r.get("Instance") or "").strip(),
+            "material": name,
+            "length": _num(r.get("Length") or r.get("Length - raw")),
+            "width": _num(r.get("Width") or r.get("Width - raw")),
+            "thickness": _num(r.get("Thickness") or r.get("Thickness - raw")),
+            "tag": (r.get("Tag") or "").strip(),
+        })
+    return out
+
+
 def classify_hardware(name):
     """Bucket a hardware material name into an operation-driver category."""
     n = (name or "").lower()
