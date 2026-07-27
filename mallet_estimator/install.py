@@ -3,7 +3,10 @@ import os
 
 import frappe
 
-from mallet_estimator.estimator import DEFAULT_MACHINES
+from mallet_estimator.estimator import (
+    DEFAULT_MACHINES, STEP_TEMPLATE, WORKSTATIONS, OPERATION_WORKSTATION,
+    ROUTING_NAME, workstation_rates,
+)
 
 PRINT_FORMAT_NAME = "Mallet Client Estimate"
 WORKSPACE_NAME = "Mallet Estimator"
@@ -11,14 +14,68 @@ WORKSPACE_NAME = "Mallet Estimator"
 
 def after_install():
     seed_settings()
+    ensure_manufacturing_masters()
     ensure_print_format()
     ensure_workspace()
 
 
 def after_migrate():
-    # Keep the shipped print format and desk workspace in sync on every deploy.
+    # Keep shipped print format, workspace and manufacturing masters in sync.
+    ensure_manufacturing_masters()
     ensure_print_format()
     ensure_workspace()
+
+
+def _op_name(phase):
+    # Doc names avoid "/" which is awkward in Frappe routing/urls.
+    return phase.replace(" / ", " - ").replace("/", "-")
+
+
+def ensure_manufacturing_masters():
+    """Create the 7 Workstations (space-based hour rates), 17 Operations and the
+    standard Routing as ERPNext manufacturing masters. Idempotent: existing
+    records are left untouched so in-app rate edits survive re-deploys."""
+    settings = frappe.get_single("Estimate Settings")
+    rates = {w["name"]: w for w in workstation_rates(settings)}
+
+    for w in WORKSTATIONS:
+        if frappe.db.exists("Workstation", w["name"]):
+            continue
+        r = rates[w["name"]]
+        ws = frappe.new_doc("Workstation")
+        ws.workstation_name = w["name"]
+        ws.hour_rate_rent = round(r["rent_hr"], 2)
+        ws.hour_rate_consumable = round(r["dep_hr"], 2)
+        ws.hour_rate_labour = round(r["labour_hr"], 2)
+        ws.hour_rate_electricity = 0
+        ws.production_capacity = 1
+        ws.flags.ignore_permissions = True
+        ws.insert(ignore_permissions=True)
+
+    for t in STEP_TEMPLATE:
+        op_name = _op_name(t["phase"])
+        if frappe.db.exists("Operation", op_name):
+            continue
+        op = frappe.new_doc("Operation")
+        op.name = op_name
+        op.workstation = OPERATION_WORKSTATION.get(t["phase"])
+        op.flags.ignore_permissions = True
+        op.insert(ignore_permissions=True, set_name=op_name)
+
+    if not frappe.db.exists("Routing", ROUTING_NAME):
+        routing = frappe.new_doc("Routing")
+        routing.routing_name = ROUTING_NAME
+        for i, t in enumerate(STEP_TEMPLATE, start=1):
+            routing.append("operations", {
+                "sequence_id": i,
+                "operation": _op_name(t["phase"]),
+                "workstation": OPERATION_WORKSTATION.get(t["phase"]),
+                "time_in_mins": 0,
+            })
+        routing.flags.ignore_permissions = True
+        routing.insert(ignore_permissions=True)
+
+    frappe.db.commit()
 
 
 def ensure_workspace():
