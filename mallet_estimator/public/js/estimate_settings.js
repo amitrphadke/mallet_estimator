@@ -8,8 +8,8 @@ frappe.ui.form.on("Estimate Settings", {
         freeze_message: __("Creating Workstations, Operations, Routing…"),
       }).then((r) => {
         const m = (r && r.message) || {};
-        let body = __("Workstations created: {0}<br>Operations created: {1}<br>Routing created: {2}", [
-          m.workstations || 0, m.operations || 0, m.routing || 0,
+        let body = __("Workstations created: {0}<br>Operations created: {1}<br>Routing created: {2}<br>Workspace present: {3}", [
+          m.workstations || 0, m.operations || 0, m.routing || 0, m.workspace_exists ? "yes ✓" : "NO",
         ]);
         if (m.errors && m.errors.length) {
           body += "<br><br><b>" + __("Errors") + ":</b><br>" + frappe.utils.escape_html(m.errors.join("\n")).replace(/\n/g, "<br>");

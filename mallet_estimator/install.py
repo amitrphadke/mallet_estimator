@@ -14,16 +14,23 @@ WORKSPACE_NAME = "Mallet Estimator"
 
 def after_install():
     seed_settings()
-    ensure_manufacturing_masters()
-    ensure_print_format()
-    ensure_workspace()
+    _safe(ensure_manufacturing_masters)
+    _safe(ensure_print_format)
+    _safe(ensure_workspace)
 
 
 def after_migrate():
-    # Keep shipped print format, workspace and manufacturing masters in sync.
-    ensure_manufacturing_masters()
-    ensure_print_format()
-    ensure_workspace()
+    # Keep masters, print format and workspace in sync — but never break migrate.
+    _safe(ensure_manufacturing_masters)
+    _safe(ensure_print_format)
+    _safe(ensure_workspace)
+
+
+def _safe(fn):
+    try:
+        fn()
+    except Exception:
+        frappe.log_error(frappe.get_traceback(), f"mallet_estimator {fn.__name__}")
 
 
 def _op_name(phase):
@@ -101,31 +108,41 @@ def setup():
         frappe.throw("Not permitted")
     seed_settings()
     result = ensure_manufacturing_masters()
-    try:
-        ensure_print_format()
-        ensure_workspace()
-        result["print_format_workspace"] = "ok"
-    except Exception as exc:
-        result.setdefault("errors", []).append(f"print format / workspace: {exc}")
+    for fn in (ensure_print_format, ensure_workspace):
+        try:
+            fn()
+        except Exception as exc:
+            frappe.log_error(frappe.get_traceback(), f"mallet_estimator {fn.__name__}")
+            result.setdefault("errors", []).append(f"{fn.__name__}: {exc}")
+    result["workspace_exists"] = bool(frappe.db.exists("Workspace", WORKSPACE_NAME))
     return result
 
 
 def ensure_workspace():
-    """Create/refresh the desk Workspace from the shipped JSON (disk sync of
-    workspaces is unreliable across benches, so we upsert it explicitly)."""
-    path = os.path.join(
-        frappe.get_app_path("mallet_estimator"),
-        "mallet_estimator", "workspace", "mallet_estimator", "mallet_estimator.json",
-    )
-    with open(path, "r", encoding="utf-8") as f:
-        data = json.load(f)
-
+    """Create/refresh the desk Workspace programmatically (disk sync of
+    workspaces is unreliable across benches)."""
     if frappe.db.exists("Workspace", WORKSPACE_NAME):
         frappe.delete_doc("Workspace", WORKSPACE_NAME, ignore_permissions=True, force=True)
 
-    doc = frappe.get_doc(data)
-    doc.flags.ignore_permissions = True
-    doc.insert(ignore_permissions=True)
+    ws = frappe.new_doc("Workspace")
+    ws.name = WORKSPACE_NAME
+    ws.label = WORKSPACE_NAME
+    ws.title = WORKSPACE_NAME
+    ws.public = 1
+    ws.module = "Mallet Estimator"
+    ws.icon = "project"
+    ws.content = json.dumps([{"id": "mest_card", "type": "card", "data": {"card_name": "Estimating", "col": 4}}])
+    for typ, label, dt in [
+        ("Card Break", "Estimating", None),
+        ("Link", "Estimate SKU", "Estimate SKU"),
+        ("Link", "Estimate", "Estimate"),
+        ("Link", "Estimate Settings", "Estimate Settings"),
+    ]:
+        row = {"type": typ, "label": label}
+        if dt:
+            row.update({"link_type": "DocType", "link_to": dt})
+        ws.append("links", row)
+    ws.insert(ignore_permissions=True)
     frappe.db.commit()
     frappe.clear_cache()
 
