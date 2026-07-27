@@ -38,13 +38,13 @@
    "fieldname": "carpenter_rate",
    "fieldtype": "Currency",
    "label": "Carpenter Rate (per hour)",
-   "default": "150"
+   "default": "157"
   },
   {
    "fieldname": "helper_rate",
    "fieldtype": "Currency",
    "label": "Helper Rate (per hour)",
-   "default": "100"
+   "default": "107"
   },
   {
    "fieldname": "design_rate",

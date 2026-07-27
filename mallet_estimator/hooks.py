@@ -14,6 +14,7 @@ after_migrate = "mallet_estimator.install.after_migrate"
 
 # Client scripts loaded on the respective form.
 doctype_js = {
+    "Estimate Settings": "public/js/estimate_settings.js",
     "Estimate SKU": "public/js/estimate_sku.js",
     "Execution Estimate": "public/js/execution_estimate.js",
 }

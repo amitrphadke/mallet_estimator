@@ -34,48 +34,80 @@ def _op_name(phase):
 def ensure_manufacturing_masters():
     """Create the 7 Workstations (space-based hour rates), 17 Operations and the
     standard Routing as ERPNext manufacturing masters. Idempotent: existing
-    records are left untouched so in-app rate edits survive re-deploys."""
+    records are left untouched so in-app rate edits survive re-deploys. Each
+    record is created independently so one failure doesn't abort the rest."""
     settings = frappe.get_single("Estimate Settings")
     rates = {w["name"]: w for w in workstation_rates(settings)}
+    result = {"workstations": 0, "operations": 0, "routing": 0, "errors": []}
+
+    def fail(label, exc):
+        result["errors"].append(f"{label}: {exc}")
+        frappe.log_error(frappe.get_traceback(), f"mallet_estimator masters: {label}")
 
     for w in WORKSTATIONS:
-        if frappe.db.exists("Workstation", w["name"]):
-            continue
-        r = rates[w["name"]]
-        ws = frappe.new_doc("Workstation")
-        ws.workstation_name = w["name"]
-        ws.hour_rate_rent = round(r["rent_hr"], 2)
-        ws.hour_rate_consumable = round(r["dep_hr"], 2)
-        ws.hour_rate_labour = round(r["labour_hr"], 2)
-        ws.hour_rate_electricity = 0
-        ws.production_capacity = 1
-        ws.flags.ignore_permissions = True
-        ws.insert(ignore_permissions=True)
+        try:
+            if frappe.db.exists("Workstation", w["name"]):
+                continue
+            r = rates[w["name"]]
+            ws = frappe.new_doc("Workstation")
+            ws.workstation_name = w["name"]
+            ws.hour_rate_rent = round(r["rent_hr"], 2)
+            ws.hour_rate_consumable = round(r["dep_hr"], 2)
+            ws.hour_rate_labour = round(r["labour_hr"], 2)
+            ws.hour_rate_electricity = 0
+            ws.insert(ignore_permissions=True)
+            result["workstations"] += 1
+        except Exception as exc:
+            fail(f"Workstation {w['name']}", exc)
 
     for t in STEP_TEMPLATE:
         op_name = _op_name(t["phase"])
-        if frappe.db.exists("Operation", op_name):
-            continue
-        op = frappe.new_doc("Operation")
-        op.name = op_name
-        op.workstation = OPERATION_WORKSTATION.get(t["phase"])
-        op.flags.ignore_permissions = True
-        op.insert(ignore_permissions=True, set_name=op_name)
+        try:
+            if frappe.db.exists("Operation", op_name):
+                continue
+            op = frappe.new_doc("Operation")
+            op.name = op_name
+            op.workstation = OPERATION_WORKSTATION.get(t["phase"])
+            op.insert(ignore_permissions=True, set_name=op_name)
+            result["operations"] += 1
+        except Exception as exc:
+            fail(f"Operation {op_name}", exc)
 
-    if not frappe.db.exists("Routing", ROUTING_NAME):
-        routing = frappe.new_doc("Routing")
-        routing.routing_name = ROUTING_NAME
-        for i, t in enumerate(STEP_TEMPLATE, start=1):
-            routing.append("operations", {
-                "sequence_id": i,
-                "operation": _op_name(t["phase"]),
-                "workstation": OPERATION_WORKSTATION.get(t["phase"]),
-                "time_in_mins": 0,
-            })
-        routing.flags.ignore_permissions = True
-        routing.insert(ignore_permissions=True)
+    try:
+        if not frappe.db.exists("Routing", ROUTING_NAME):
+            routing = frappe.new_doc("Routing")
+            routing.routing_name = ROUTING_NAME
+            for i, t in enumerate(STEP_TEMPLATE, start=1):
+                routing.append("operations", {
+                    "sequence_id": i,
+                    "operation": _op_name(t["phase"]),
+                    "workstation": OPERATION_WORKSTATION.get(t["phase"]),
+                    "time_in_mins": 0,
+                })
+            routing.insert(ignore_permissions=True)
+            result["routing"] = 1
+    except Exception as exc:
+        fail("Routing", exc)
 
     frappe.db.commit()
+    return result
+
+
+@frappe.whitelist()
+def setup():
+    """Manually (re)create all app masters — callable from the Estimate Settings
+    button. Returns a summary so the UI can report what was created and any error."""
+    if not frappe.has_permission("Estimate Settings", "write"):
+        frappe.throw("Not permitted")
+    seed_settings()
+    result = ensure_manufacturing_masters()
+    try:
+        ensure_print_format()
+        ensure_workspace()
+        result["print_format_workspace"] = "ok"
+    except Exception as exc:
+        result.setdefault("errors", []).append(f"print format / workspace: {exc}")
+    return result
 
 
 def ensure_workspace():

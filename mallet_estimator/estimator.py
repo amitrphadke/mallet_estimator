@@ -46,18 +46,20 @@ DEFAULT_MACHINES = [
 ]
 
 # --- ERPNext Manufacturing masters -----------------------------------------
-# Workstations with their factory footprint (sq ft), machine capital for
-# depreciation, and operator wage. Space-based rent is recovered in full across
-# the billable footprints (inventory rack + aisles are absorbed), over the
-# working hours per month. On-Site has no footprint (off-site work, no rent).
+# Workstations with their factory footprint (sq ft) and machine capital for
+# depreciation. Space-based rent is recovered in full across the billable
+# footprints (inventory rack + aisles absorbed) over the working hours per
+# month. Every operation is worked by a 2-person crew (1 carpenter + 1 helper),
+# so labour per hour = carpenter_rate + helper_rate from Estimate Settings.
+# On-Site has no footprint (off-site work, no rent).
 WORKSTATIONS = [
-    {"name": "Panel Saw",        "area_sqft": 26 * 15, "capital": ###, "life_years": 10, "labour_per_hr": 150},
-    {"name": "Edge Bander",      "area_sqft": 16 * 4,  "capital": ###, "life_years": 10, "labour_per_hr": 150},
-    {"name": "Drill Press",      "area_sqft": 16 * 3,  "capital": ###,  "life_years": 10, "labour_per_hr": 150},
-    {"name": "Pasting Station",  "area_sqft": 12 * 8,  "capital": 0,      "life_years": 10, "labour_per_hr": 150},
-    {"name": "Assembly Station", "area_sqft": 14 * 15, "capital": ###,  "life_years": 10, "labour_per_hr": 250},
-    {"name": "Project Room",     "area_sqft": 14 * 15, "capital": 0,      "life_years": 10, "labour_per_hr": 150},
-    {"name": "On-Site",          "area_sqft": 0,       "capital": 0,      "life_years": 10, "labour_per_hr": 250},
+    {"name": "Panel Saw",        "area_sqft": 26 * 15, "capital": ###, "life_years": 10},
+    {"name": "Edge Bander",      "area_sqft": 16 * 4,  "capital": ###, "life_years": 10},
+    {"name": "Drill Press",      "area_sqft": 16 * 3,  "capital": ###,  "life_years": 10},
+    {"name": "Pasting Station",  "area_sqft": 12 * 8,  "capital": 0,      "life_years": 10},
+    {"name": "Assembly Station", "area_sqft": 14 * 15, "capital": ###,  "life_years": 10},
+    {"name": "Project Room",     "area_sqft": 14 * 15, "capital": 0,      "life_years": 10},
+    {"name": "On-Site",          "area_sqft": 0,       "capital": 0,      "life_years": 10},
 ]
 
 # Which workstation each of the 17 operations runs on (matches STEP_TEMPLATE).
@@ -93,13 +95,14 @@ def workstation_rates(settings):
     """
     whm = working_hours_per_month(settings)
     monthly_rent = _num(settings.monthly_rent)
+    # Every operation is a 2-person crew (1 carpenter + 1 helper).
+    labour_hr = _num(settings.carpenter_rate) + _num(settings.helper_rate)
     billable_area = sum(w["area_sqft"] for w in WORKSTATIONS if w["area_sqft"] > 0)
     rent_per_sqft = (monthly_rent / billable_area) if billable_area else 0.0
     out = []
     for w in WORKSTATIONS:
         rent_hr = (w["area_sqft"] * rent_per_sqft / whm) if whm else 0.0
         dep_hr = (w["capital"] / (w["life_years"] * whm * 12)) if (w["life_years"] and whm) else 0.0
-        labour_hr = _num(w["labour_per_hr"])
         out.append({**w, "rent_hr": rent_hr, "dep_hr": dep_hr, "labour_hr": labour_hr,
                     "total_hr": rent_hr + dep_hr + labour_hr})
     return out
