@@ -12,11 +12,6 @@
   "carp_total",
   "op_cost",
   "remark",
-  "config_section",
-  "carp_no",
-  "helper_no",
-  "helper_min",
-  "helper_total",
   "in_factory",
   "is_misc",
   "is_custom"
@@ -49,7 +44,7 @@
    "fieldtype": "Float",
    "in_list_view": 1,
    "label": "Min / Unit",
-   "description": "Minutes the workstation is occupied per unit (crew wage is in the workstation rate)."
+   "description": "Minutes the workstation is occupied per unit. The crew wage is already in the workstation rate."
   },
   {
    "fieldname": "carp_total",
@@ -66,58 +61,33 @@
    "read_only": 1
   },
   {
-   "fieldname": "carp_no",
-   "fieldtype": "Float",
-   "label": "Carpenters",
-   "default": "1"
-  },
-  {
-   "fieldname": "helper_no",
-   "fieldtype": "Float",
-   "label": "Helpers",
-   "default": "1"
-  },
-  {
-   "fieldname": "helper_min",
-   "fieldtype": "Float",
-   "label": "Helper Min / Unit"
-  },
-  {
-   "fieldname": "helper_total",
-   "fieldtype": "Float",
-   "label": "Helper Total Min",
-   "read_only": 1
-  },
-  {
    "fieldname": "remark",
    "fieldtype": "Data",
    "label": "Remark"
   },
   {
-   "fieldname": "config_section",
-   "fieldtype": "Section Break",
-   "label": "Configuration"
-  },
-  {
    "fieldname": "in_factory",
    "fieldtype": "Check",
-   "label": "In Factory (attracts rent)",
-   "default": "1"
+   "label": "In Factory",
+   "default": "1",
+   "hidden": 1
   },
   {
    "fieldname": "is_misc",
    "fieldtype": "Check",
-   "label": "Miscellaneous / Extra Step (17)"
+   "label": "Miscellaneous / Extra Step (17)",
+   "hidden": 1
   },
   {
    "fieldname": "is_custom",
    "fieldtype": "Check",
-   "label": "Custom Added Row"
+   "label": "Custom Added Row",
+   "hidden": 1
   }
  ],
  "istable": 1,
  "links": [],
- "modified": "2026-07-24 00:00:00.000000",
+ "modified": "2026-07-29 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "Mallet Estimator",
  "name": "Estimate Labor",

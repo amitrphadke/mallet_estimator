@@ -97,8 +97,9 @@ class EstimateSKU(Document):
                 row.qty = opq[op]
             std = OPERATION_STANDARDS.get(op)
             if std and not float(row.carp_min or 0):
+                # carp_min = minutes the workstation is occupied per unit (the
+                # single time driver; the crew wage lives in the workstation rate).
                 row.carp_min = std["min_per_unit"]
-                row.helper_min = std["min_per_unit"]
         self.import_drivers = json.dumps(opq)
 
         if parts:
@@ -158,8 +159,6 @@ class EstimateSKU(Document):
                 "in_factory": t.get("in_factory", 0),
                 "is_misc": t.get("is_misc", 0),
                 "qty": 1,
-                "carp_no": 1,
-                "helper_no": 1,
             })
 
     # --- naming ------------------------------------------------------------

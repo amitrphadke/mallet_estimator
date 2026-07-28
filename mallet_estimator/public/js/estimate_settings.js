@@ -40,7 +40,6 @@ function render_calculator(frm) {
           <td>${frappe.utils.escape_html(w.name)}</td>
           <td class="text-right">${money(w.rent_hr)}</td>
           <td class="text-right">${money(w.wages_hr != null ? w.wages_hr : w.labour_hr)}</td>
-          <td class="text-right">${money(w.machine_hr != null ? w.machine_hr : w.dep_hr)}</td>
           <td class="text-right">${money(w.elec_hr || 0)}</td>
           <td class="text-right">${money(w.consumable_hr || 0)}</td>
           <td class="text-right"><b>${money(w.net_hr != null ? w.net_hr : w.total_hr)}</b></td>
@@ -51,14 +50,14 @@ function render_calculator(frm) {
             These seed each ERPNext <b>Workstation</b>'s <b>Operating Components Cost</b> (Net Hour Rate) — what every process step is charged.
             <b>Rent</b> = factory rent (${money(d.monthly_rent)}/mo over ${d.billable_area} billable sq ft) prorated by footprint over ${d.working_hours_per_month} hrs/mo.
             <b>Wages</b> = the 2-person crew (carpenter + helper = ${money(d.crew_rate)}/hr), folded in.
-            <b>Machinery</b> = depreciation over ${d.working_hours_per_year} hrs/yr. <b>Electricity</b> + <b>Consumables</b> are per-workstation.
+            <b>Electricity</b> + <b>Consumables</b> are per-workstation (machine depreciation is folded into Consumables).
             Once seeded, edit any cell on the Workstation and the estimator reads the live rate.
           </p>
           <table class="table table-bordered" style="margin:0">
             <thead><tr>
               <th>Workstation</th>
               <th class="text-right">Rent ₹/hr</th><th class="text-right">Wages ₹/hr</th>
-              <th class="text-right">Machinery ₹/hr</th><th class="text-right">Electricity ₹/hr</th>
+              <th class="text-right">Electricity ₹/hr</th>
               <th class="text-right">Consumables ₹/hr</th><th class="text-right">Net ₹/hr</th>
             </tr></thead>
             <tbody>${rows}</tbody>

@@ -67,8 +67,11 @@ WORKSTATIONS = [
     {"name": "On-Site",          "area_sqft": 0,       "capital": 0,      "life_years": 10, "elec_hr": 0,  "consumable_hr": 20},
 ]
 
-# Canonical order of the operating-cost components on every Workstation.
-WS_COMPONENTS = ["Rent", "Wages", "Machinery", "Electricity", "Consumables"]
+# Canonical order of the operating-cost components on every Workstation. These
+# are the four standard ERPNext "Workstation Operating Component" records; machine
+# depreciation is folded into Consumables (no separate "Machinery" component to
+# create). Wages = the 2-person crew, so labour lives inside the workstation rate.
+WS_COMPONENTS = ["Rent", "Wages", "Electricity", "Consumables"]
 
 # Which workstation each of the 17 operations runs on (matches STEP_TEMPLATE).
 OPERATION_WORKSTATION = {
@@ -118,20 +121,21 @@ def workstation_rates(settings):
         rent_hr = (w["area_sqft"] * rent_per_sqft / whm) if whm else 0.0
         machine_hr = (w["capital"] / (w["life_years"] * whm * 12)) if (w["life_years"] and whm) else 0.0
         elec_hr = _num(w.get("elec_hr"))
-        consumable_hr = _num(w.get("consumable_hr"))
+        # Machine depreciation is folded into Consumables (no separate component).
+        consumable_hr = _num(w.get("consumable_hr")) + machine_hr
         comp_vals = {
-            "Rent": rent_hr, "Wages": wages_hr, "Machinery": machine_hr,
+            "Rent": rent_hr, "Wages": wages_hr,
             "Electricity": elec_hr, "Consumables": consumable_hr,
         }
         components = [(c, comp_vals[c]) for c in WS_COMPONENTS]
         net_hr = sum(v for _, v in components)
         out.append({
             **w,
-            "rent_hr": rent_hr, "wages_hr": wages_hr, "machine_hr": machine_hr,
+            "rent_hr": rent_hr, "wages_hr": wages_hr, "machine_hr": 0.0,
             "elec_hr": elec_hr, "consumable_hr": consumable_hr,
             "components": components, "net_hr": net_hr,
             # legacy aliases
-            "labour_hr": wages_hr, "dep_hr": machine_hr, "total_hr": net_hr,
+            "labour_hr": wages_hr, "dep_hr": 0.0, "total_hr": net_hr,
         })
     return out
 

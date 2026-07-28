@@ -56,19 +56,19 @@ def _op_name(phase):
 
 
 def _ensure_operating_components():
-    """Create the native 'Operating Component' masters (Rent/Wages/Machinery/
-    Electricity/Consumables) if the doctype exists on this ERPNext version."""
-    if not frappe.db.exists("DocType", "Operating Component"):
+    """Make sure the native 'Workstation Operating Component' masters
+    (Rent/Wages/Electricity/Consumables) exist. ERPNext ships these, but create
+    any that are missing so seeding a workstation's costs never fails on a bad
+    link. (autoname = field:component_name.)"""
+    dt = "Workstation Operating Component"
+    if not frappe.db.exists("DocType", dt):
         return
     for c in WS_COMPONENTS:
-        if not frappe.db.exists("Operating Component", c):
+        if not frappe.db.exists(dt, c):
             try:
-                doc = frappe.new_doc("Operating Component")
-                # field is usually the autoname title; set both defensively
-                if doc.meta.has_field("operating_component"):
-                    doc.operating_component = c
-                doc.name = c
-                doc.insert(ignore_permissions=True, set_name=c)
+                doc = frappe.new_doc(dt)
+                doc.component_name = c
+                doc.insert(ignore_permissions=True)
             except Exception:
                 frappe.log_error(frappe.get_traceback(), f"mallet_estimator operating component: {c}")
 

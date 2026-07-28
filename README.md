@@ -27,21 +27,25 @@ design) and gives you an **estimate-vs-actual margin** report at the end of each
 Rate** — the native ERPNext *Operating Components Cost* table on the Workstation
 (Manufacturing → Workstation → Operating Costs). The components are:
 
-| Workstation | Rent | Wages (crew) | Machinery (dep.) | Electricity | Consumables | **Net ₹/hr** |
-|---|--:|--:|--:|--:|--:|--:|
-| Panel Saw | 200* | 264 | 10 | 50 | 50 | **564*** |
-| Edge Bander | 18 | 264 | 5 | 40 | 60 | 387 |
-| Drill Press | 14 | 264 | 2 | 20 | 20 | 320 |
-| Pasting Station | 27 | 264 | 0 | 10 | 40 | 341 |
-| Assembly Station | 60 | 264 | 1 | 10 | 20 | 355 |
-| Project Room | 60 | 264 | 0 | 20 | 10 | 354 |
-| On-Site | 0 | 264 | 0 | 0 | 20 | 284 |
+These are the four standard ERPNext *Workstation Operating Component* records (machine
+depreciation is folded into **Consumables**, so there is no separate component to create):
+
+| Workstation | Rent | Wages (crew) | Electricity | Consumables | **Net ₹/hr** |
+|---|--:|--:|--:|--:|--:|
+| Panel Saw | 200* | 264 | 50 | 50 | **564*** |
+| Edge Bander | 18 | 264 | 40 | 65 | 387 |
+| Drill Press | 14 | 264 | 20 | 22 | 320 |
+| Pasting Station | 27 | 264 | 10 | 40 | 341 |
+| Assembly Station | 60 | 264 | 10 | 21 | 355 |
+| Project Room | 60 | 264 | 20 | 10 | 354 |
+| On-Site | 0 | 264 | 0 | 20 | 284 |
 
 \* Panel Saw shows the values you set by hand; the installer preserves any workstation you've
 already configured and only seeds the rest. **Wages (the 2-person crew, carpenter ₹157 + helper
-₹107) are folded into the workstation rate** — there is no separate carpenter/helper charge on
-the step. Edit any component right on the Workstation and the Net Hour Rate re-sums; the
-estimator reads that live rate. A step's cost = its Workstation Net Hour Rate × (Qty × Min/Unit ÷ 60).
+₹107) are folded into the workstation rate** — there are **no carpenter/helper inputs on the
+step**; the process step only has **Qty** and **Min / Unit** (minutes the workstation is
+occupied per unit). Edit any component right on the Workstation and the Net Hour Rate re-sums;
+the estimator reads that live rate. A step's cost = **Net Hour Rate × (Qty × Min/Unit ÷ 60)**.
 
 ### Per project
 5. Create an ERPNext **Project** for the customer (Projects → New). Everything hangs off this.
