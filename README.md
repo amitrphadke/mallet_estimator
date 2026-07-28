@@ -1,100 +1,106 @@
-# Mallet Estimator — ERPNext custom app
+# Mallet Estimator — ERPNext app
 
-A Frappe/ERPNext custom app that turns the standalone SKU estimator into a native part of
-your ERPNext SaaS install on `mcftpvtltd.m.frappe.cloud`. It estimates a SKU's execution
-cost (**material + labor + machinery + rent + design**), links each SKU to an ERPNext
-**Item**, rolls SKUs up per **room** into an **Execution Estimate**, and produces an ERPNext
-**Quotation** plus a printable client estimate.
+Turns your SketchUp + OpenCutList design into a **priced estimate**, a client **quotation**,
+and (on approval) an ERPNext **manufacturing + project** job — all inside your ERPNext site.
+It reproduces your factory's cost model (material + labour + machinery + factory-space rent +
+design) and gives you an **estimate-vs-actual margin** report at the end of each project.
 
-> **Not yet run against a live bench.** This app was authored as source and validated at the
-> code level (Python compiles, DocType JSON parses, Jinja parses). Install it on a **local or
-> staging bench first**, run through the smoke test below, then promote to production.
+> **Status:** running on staging (`mcft-stg`). Author-built, tested through the estimate +
+> quotation flow; the Work Order / Job Card execution chain is being finished. Install on a
+> staging site first (see "Deploy" at the bottom).
 
-## What it adds
+---
 
-| DocType | Purpose |
+## How you use it (end-to-end, plain language)
+
+### One-time setup
+1. Open **Estimate Settings** (search with ⌘K / Ctrl+K).
+2. Fill your rates: **Carpenter ₹/hr, Helper ₹/hr, Design ₹/hr**, **Monthly Rent**, working
+   days/hours, sheet size (2440×1220), wastage %.
+3. Look at the **Workstation Cost Calculator** on that page — it shows, per workstation, the
+   ₹/hr made up of **space rent + machine depreciation + the 2-person crew wage**. This is what
+   each process step is charged at.
+4. Click **"Create / refresh manufacturing masters"** once. This creates your 7 **Workstations**,
+   17 **Operations**, a **Routing**, the standard **Rooms**, and the print format. The popup
+   confirms what was created.
+
+### Per project
+5. Create an ERPNext **Project** for the customer (Projects → New). Everything hangs off this.
+
+### Per article (SKU)
+6. In SketchUp/OpenCutList, export the article's **Estimate PDF** and its **Parts CSV**
+   (`..._Loft.csv`). Optionally save a **rendered image** of the article.
+7. In ERPNext, create a new **Estimate SKU**:
+   - Pick the **Project** (required) and **Room** (required — dropdown; add new rooms as
+     master data, or pick **Other**). Customer is filled from the Project.
+   - Type the **Article name** (e.g. "Wardrobe"). A code like `YS_MB_WAR` is generated
+     (customer initials + room + article) — every article is tagged to its customer.
+   - Enter the **outer size**, a **description**, and attach the **Article image** (it prints
+     on the client estimate).
+   - In the **Material** section, attach the **Estimate PDF** and the **Parts CSV**, then
+     **Save**.
+8. On Save, the app automatically:
+   - reads the **accurate sheet/hardware quantities** from the Estimate PDF,
+   - creates/links an ERPNext **Item** per material (your rate card — set the prices once),
+   - fills the **17 process steps** with quantities derived from the design (sheets, minifix,
+     hinges, drawer rails, etc.) and each step's **Workstation** and **Phase Cost**,
+   - stores the **parts list** (with the QR part numbers from your labels) for the shop floor,
+   - computes **Material + Labour + Machine + Rent + Design = internal cost**, then the
+     **client price** using your markups.
+   - The first four steps (Lamination / Tape / Cutting / Edge Banding) are **calculated and
+     locked**; the rest you can fine-tune (minutes per unit, workstation, quantity).
+
+### Quote the project
+9. Create an **Estimate** (the doctype), pick the **Project**. It **automatically lists every
+   SKU** of that project and totals them — no manual adding, no duplicates.
+10. Click **Create Quotation** → an ERPNext **Quotation** is created for the customer, one line
+    per article at its client price, linked to the Project.
+11. **Print** the Estimate with the **"Mallet Client Estimate"** format → a clean PDF grouped
+    by room, with each article's image, description, size, material amounts and totals
+    (overhead is folded into "Design & execution" — the client never sees your factory costs).
+
+### On approval → manufacture (ERPNext-native)
+12. Convert the **Quotation → Sales Order** (standard ERPNext button).
+13. On the Estimate, click **Build BOMs** → a **BOM** per article (materials + operations).
+14. From the **Sales Order → Create → Work Order** → ERPNext creates **Work Orders** and
+    **Job Cards** for each process step. The shop floor works/scans the job cards (what to do
+    now/next).
+15. Job Card time + material issued + purchases post against the **Project**; invoices too.
+
+### See your real margin
+16. Open the **Project Margin** report. Per project it shows **Estimated** cost/price/margin vs
+    **Actual** labour + material + billed, and the **Margin Variance** — so you see exactly
+    where a custom job ate into the margin.
+
+---
+
+## What ERPNext data this creates (so nothing is a black box)
+
+| You do | ERPNext gets |
 |---|---|
-| **Estimate Settings** (Single) | Factory-wide rates, rent, working time, markups, and the machines table (seeded on install). |
-| **Estimate SKU** | One article/estimate. Identity + room + outer boundary, Material lines, the 16+1 Labor steps, Design. Computes all costs and **creates/links an ERPNext Item**. |
-| **Execution Estimate** (submittable) | One project/customer. Rolls up its SKUs, shows totals, and has **Create Quotation**. |
-| Estimate Material / Estimate Labor / Estimate Machine / Execution Estimate SKU | Child tables. |
-| **Mallet Client Estimate** (Print Format) | Client-facing document: grouped by room, amounts only, "Design & execution" line, room-wise summary, assumed unit-price schedule. Overhead never shown. |
+| Fill Estimate Settings → Create masters | **Workstations**, **Operations**, **Routing**, **Rooms**, print format |
+| Save an Estimate SKU with the PDF | one **Item** per material (rate card) + one **Item** for the article |
+| Create an Estimate + Create Quotation | a **Quotation** for the customer, linked to the Project |
+| Build BOMs | a **BOM** per article |
+| Sales Order → Create Work Order | **Work Orders** + **Job Cards** |
+| Shop floor + purchases + invoices | costs & revenue on the **Project** → **Project Margin** report |
 
-Cost math lives in `mallet_estimator/estimator.py` and mirrors the React prototype
-(`../SKU_Estimator`) exactly — verified: 1610 carpenter-min / 895 helper-min, code `KP_MB_VAN`.
+Everything is standard ERPNext underneath — so Sales, Purchase, Inventory, Manufacturing,
+Projects and Accounting all see the same data.
 
-## How data flows with ERPNext
+---
 
-- **Customer** — picked on Estimate SKU / Execution Estimate (native `Customer` link). Drives
-  the SKU code (`ClientInitials_Room_Article`, e.g. `KP_MB_VAN`).
-- **Item** — two ways: (a) each **material** in an OpenCutList import becomes an `Item`
-  (item_code = OpenCutList material name, e.g. `SG_PLY_V0_a_a_16mm`, `HWD_Hinge`,
-  `EB_PVC_IN_a`) — this is your **rate card**, priced via `standard_rate`; (b) each **SKU**
-  creates/updates its own finished `Item` (item_code = SKU code, `standard_rate` = client
-  total) when *Create / update Item on save* is ticked.
-- **Quotation** — *Create Quotation* on an Execution Estimate makes a `Quotation`
-  (`quotation_to = Customer`), one line per SKU at its client total. Convert it to Sales Order
-  / Sales Invoice with ERPNext's normal flow. See
-  https://docs.frappe.io/erpnext/quotation.
+## Notes
+- **No buttons on the SKU** — the import runs on Save. Just attach the two files.
+- **Rooms** are a master (Estimate Room). Add/rename them there; "Other" is included.
+- **Rates** live in Estimate Settings (not on individual Workstations, because ERPNext v16
+  reorganised the Workstation rate fields). The Cost Calculator shows the resulting ₹/hr.
+- The standalone React prototype is in `../SKU_Estimator` (same cost model, offline) — this
+  Frappe app is the ERPNext-integrated version.
 
-## Install on a bench (local or staging)
-
-```bash
-# from your bench directory, with an ERPNext v14/v15/v16 site
-bench get-app mallet_estimator /path/to/mallet_estimator      # or a git URL
-bench --site <your-site> install-app mallet_estimator
-bench --site <your-site> migrate
-bench --site <your-site> clear-cache
-```
-
-`after_install` seeds Estimate Settings (rates + 5 machines) and the print format.
-
-## Deploy to Frappe Cloud (custom app plan)
-
-1. **Push this folder to a Git repo** (GitHub, private is fine):
-   ```bash
-   cd mallet_estimator
-   git init && git add -A && git commit -m "Mallet Estimator v0.0.1"
-   git branch -M main
-   git remote add origin <your-repo-url>
-   git push -u origin main
-   ```
-   Keep the app on the **same major version branch as your bench** (v14 or v15).
-2. In the **Frappe Cloud dashboard** → your **Bench group** → **Apps** → **Add App** →
-   **From GitHub**, add the repo and branch. (First time you may need to install the Frappe
-   Cloud GitHub app on the repo.)
-3. **Deploy** the bench group (this builds a new image with the app).
-4. On your **site** → **Apps** → **Install** → `mallet_estimator`.
-5. Open **Estimate Settings**, confirm rates/rent and the machines, set your markups.
-
-> I can't log into or deploy to your frappe.cloud instance for you — steps 1–4 are yours to
-> run (I can guide each command). Everything up to the push is in this repo.
-
-## Smoke test after install
-
-1. **Estimate Settings** — set carpenter/helper/design rates, rent, working days/hours; check
-   the 5 machines seeded.
-2. **New Estimate SKU** — pick Customer, set Article = "Vanity", Room = "Master Bedroom",
-   outer 600×450×720. Save → labor auto-seeds the 16+1 steps and `sku_code` = `KP_MB_VAN`.
-3. On the SKU, **Material ▸ Import OpenCutList CSV** (attach or paste the **native**
-   semicolon export) → parts are **aggregated** into sheets (whole-sheet, area ÷ sheet size ×
-   wastage), hardware (counts), edge banding (meters) and laminate; each material is priced
-   from its **ERPNext Item rate card** (Items auto-created at rate 0 — set their prices once in
-   Item, and re-import). Enter carpenter/helper minutes on the labor rows; save → costs
-   compute and the SKU's own **Item** is created/updated. Sheet size + wastage live in
-   **Estimate Settings**.
-4. **New Execution Estimate** — pick the Customer, add the SKU(s) in the table, save (totals
-   roll up), **Submit**, then **Create Quotation**.
-5. Print the Execution Estimate with the **Mallet Client Estimate** format.
-
-## Updating later
-
-Push changes to the repo, redeploy the bench on Frappe Cloud, then `bench migrate` runs
-`after_migrate`, which refreshes the print format from
-`templates/print/mallet_client_estimate.html`.
-
-## Relationship to the React app
-
-`../SKU_Estimator` (Vite/React) remains as the standalone prototype and shares the exact cost
-model. This Frappe app is the ERPNext-native implementation; use whichever fits — but only the
-Frappe app integrates live with Customers, Items and Quotations.
+## Deploy (Frappe Cloud custom app)
+1. Push this repo to GitHub.
+2. Frappe Cloud → your **Bench group → Apps → Add App** (GitHub, branch `main`) → **Deploy**.
+3. Site → **Install App** → `mallet_estimator`.
+4. Open **Estimate Settings** → **Create / refresh manufacturing masters**.
+5. After any code update: push → **Deploy** → hard-refresh the browser (⌘⇧R) to load new JS.

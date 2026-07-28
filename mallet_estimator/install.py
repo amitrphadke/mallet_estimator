@@ -12,18 +12,35 @@ PRINT_FORMAT_NAME = "Mallet Client Estimate"
 WORKSPACE_NAME = "Mallet Estimator"
 
 
+DEFAULT_ROOMS = [
+    "Master Bedroom", "Kids Bedroom", "Guest Bedroom", "Living Room", "Dining Room",
+    "Kitchen", "Study", "Pooja Room", "Foyer", "Balcony", "Bathroom", "Utility", "Other",
+]
+
+
 def after_install():
     seed_settings()
+    _safe(ensure_rooms)
     _safe(ensure_manufacturing_masters)
     _safe(ensure_print_format)
     _safe(ensure_workspace)
 
 
 def after_migrate():
-    # Keep masters, print format and workspace in sync — but never break migrate.
+    # Keep masters, rooms, print format and workspace in sync — never break migrate.
+    _safe(ensure_rooms)
     _safe(ensure_manufacturing_masters)
     _safe(ensure_print_format)
     _safe(ensure_workspace)
+
+
+def ensure_rooms():
+    for r in DEFAULT_ROOMS:
+        if not frappe.db.exists("Estimate Room", r):
+            doc = frappe.new_doc("Estimate Room")
+            doc.room_name = r
+            doc.insert(ignore_permissions=True)
+    frappe.db.commit()
 
 
 def _safe(fn):
@@ -114,6 +131,7 @@ def setup():
     if not frappe.has_permission("Estimate Settings", "write"):
         frappe.throw("Not permitted")
     seed_settings()
+    _safe(ensure_rooms)
     result = ensure_manufacturing_masters()
     for fn in (ensure_print_format, ensure_workspace):
         try:

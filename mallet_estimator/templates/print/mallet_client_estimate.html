@@ -79,6 +79,7 @@
           <div>{{ money(s.client_total) }}</div>
         </div>
         {% if s.description %}<div class="desc">{{ s.description }}</div>{% endif %}
+        {% if s.article_image %}<div style="margin:6px 0;"><img src="{{ s.article_image }}" style="max-width:220px;max-height:180px;border:1px solid #e2e6eb;border-radius:6px;"></div>{% endif %}
         {% if s.materials %}
         <table>
           <thead><tr><th>Material</th><th>Item</th><th class="r">Qty</th><th class="r">Amount</th></tr></thead>
