@@ -17,23 +17,6 @@ def default_workstation(row):
     return OPERATION_WORKSTATION.get(op_phase(row), DEFAULT_WORKSTATION)
 
 
-def workstation_rate_map():
-    """Live rates from the ERPNext Workstation masters (so in-app edits apply)."""
-    m = {}
-    for w in frappe.get_all(
-        "Workstation",
-        fields=["name", "hour_rate_rent", "hour_rate_consumable", "hour_rate_labour", "hour_rate"],
-    ):
-        total = w.hour_rate or ((w.hour_rate_rent or 0) + (w.hour_rate_consumable or 0) + (w.hour_rate_labour or 0))
-        m[w.name] = {
-            "rent_hr": w.hour_rate_rent or 0,
-            "dep_hr": w.hour_rate_consumable or 0,
-            "labour_hr": w.hour_rate_labour or 0,
-            "total_hr": total,
-        }
-    return m
-
-
 def get_default_item_group():
     return (
         frappe.db.get_single_value("Stock Settings", "item_group")
@@ -66,9 +49,65 @@ def ensure_material_item(code, uom="Nos"):
 class EstimateSKU(Document):
     def validate(self):
         self.ensure_steps()
+        self.maybe_import()
         self.compute_code()
         self.enforce_locked_qty()
         self.compute_costs()
+
+    def maybe_import(self):
+        """When an OpenCutList Estimate PDF is attached (or changed), import the
+        material quantities + operation quantities automatically on save — no
+        button. The Parts CSV, if attached, gives the edge-banding part count and
+        the QR part list."""
+        if not self.estimate_pdf:
+            return
+        if self.materials and not self.has_value_changed("estimate_pdf") and not self.has_value_changed("parts_csv"):
+            return
+        self.do_import()
+
+    def do_import(self):
+        settings = frappe.get_single("Estimate Settings")
+        materials = estimate_pdf.parse_estimate_pdf(estimate_pdf.read_pdf_text(_file_content(self.estimate_pdf)))
+        if not materials:
+            frappe.throw(_("No materials found in the Estimate PDF. Is it an OpenCutList Estimate export?"))
+
+        part_count, parts = 0, []
+        if self.parts_csv:
+            content = _file_content(self.parts_csv)
+            if isinstance(content, bytes):
+                content = content.decode("utf-8", "ignore")
+            rows = opencutlist.parse_opencutlist_csv(content)
+            parts = opencutlist.parts_list(rows)
+            part_count = len(parts)
+
+        self.set("materials", [])
+        for m in materials:
+            code = _pdf_item_code(m)
+            rate = ensure_material_item(code, "Nos")
+            qty = m["qty"] or 0
+            self.append("materials", {
+                "item": code, "material": m["name"], "description": _pdf_desc(m)[:140],
+                "qty": qty, "unit_cost": rate, "line_cost": qty * (rate or 0),
+            })
+
+        opq = estimate_pdf.operation_quantities(materials, part_count)
+        for row in self.labor:
+            op = op_phase(row)
+            if op in opq:
+                row.qty = opq[op]
+            std = OPERATION_STANDARDS.get(op)
+            if std and not float(row.carp_min or 0):
+                row.carp_min = std["min_per_unit"]
+                row.helper_min = std["min_per_unit"]
+        self.import_drivers = json.dumps(opq)
+
+        if parts:
+            self.set("parts", [])
+            for p in parts:
+                self.append("parts", {
+                    "part_no": p["part_no"], "designation": p["designation"], "material": p["material"],
+                    "tag": p["tag"], "length": p["length"], "width": p["width"], "thickness": p["thickness"],
+                })
 
     def enforce_locked_qty(self):
         """Locked operations (sheet lamination/tape/cutting, edge banding) always
@@ -129,8 +168,9 @@ class EstimateSKU(Document):
         for m in self.materials:
             if not m.line_cost and m.unit_cost:
                 m.line_cost = (m.qty or 1) * m.unit_cost
-        ws_rates = workstation_rate_map() or None  # live Workstation master rates
-        r = calc_sku(self, settings, ws_rates)
+        # Rates come from Estimate Settings (carpenter/helper wage + rent +
+        # workstation footprints) via workstation_rates(); see the Cost Calculator.
+        r = calc_sku(self, settings)
         for k in (
             "material_cost", "labor_cost", "machine_cost", "rent_cost", "overhead_cost",
             "design_cost", "internal_cost", "client_material", "client_design_exec",
@@ -167,72 +207,6 @@ class EstimateSKU(Document):
         self.db_set("item", target, update_modified=False)
 
 
-@frappe.whitelist()
-def import_opencutlist(estimate_sku, csv_text):
-    """Aggregate a native OpenCutList parts CSV into the SKU's material lines,
-    pricing each from the ERPNext Item rate card (Items auto-created at rate 0).
-
-    Module-level whitelisted function (called from the form by full dotted path).
-    """
-    doc = frappe.get_doc("Estimate SKU", estimate_sku)
-    if not doc.has_permission("write"):
-        frappe.throw(_("Not permitted to edit {0}").format(estimate_sku), frappe.PermissionError)
-
-    settings = frappe.get_single("Estimate Settings")
-    rows = opencutlist.parse_opencutlist_csv(csv_text or "")
-    if not rows:
-        frappe.throw(_("No parts found in the CSV. Is it a native OpenCutList export?"))
-
-    agg = opencutlist.aggregate(
-        rows,
-        sheet_length_mm=settings.sheet_length_mm or 2440,
-        sheet_width_mm=settings.sheet_width_mm or 1220,
-        wastage_pct=settings.wastage_pct if settings.wastage_pct not in (None, "") else 12,
-    )
-    lines, drivers = agg["lines"], agg["drivers"]
-
-    # Material lines, priced from the Item rate card.
-    doc.set("materials", [])
-    priced = 0
-    for l in lines:
-        code = opencutlist.item_code_for(l)
-        rate = ensure_material_item(code, l.get("uom"))
-        if rate:
-            priced += 1
-        qty = l.get("qty") or 0
-        doc.append("materials", {
-            "item": code,
-            "material": l["material"],
-            "description": (l["desc"] or "")[:140],
-            "qty": qty,
-            "unit_cost": rate,
-            "line_cost": qty * (rate or 0),
-        })
-
-    # Auto-fill each operation's Qty from the material drivers, and default the
-    # crew minutes/unit from the operation standard (without clobbering edits).
-    for row in doc.labor:
-        std = OPERATION_STANDARDS.get(op_phase(row))
-        if not std:
-            continue
-        if std["qty_source"] != "manual":
-            row.qty = drivers.get(std["qty_source"], 0) or 0
-        if not float(row.carp_min or 0):
-            row.carp_min = std["min_per_unit"]
-        if not float(row.helper_min or 0):
-            row.helper_min = std["min_per_unit"]
-
-    doc.save()
-    return {
-        "parts": len(rows),
-        "materials": len(lines),
-        "priced": priced,
-        "unpriced": len(lines) - priced,
-        "drivers": drivers,
-        "material_cost": doc.material_cost,
-    }
-
-
 def _file_content(file_url):
     name = frappe.db.get_value("File", {"file_url": file_url}, "name")
     if not name:
@@ -254,85 +228,3 @@ def _pdf_desc(m):
     if m["kind"] == "edge":
         return f"{m['name']} edge banding — {m['qty']} roll(s)"
     return f"{m['name']} — {m['qty']} nos"
-
-
-@frappe.whitelist()
-def import_estimate(estimate_sku, pdf_file_url, csv_file_url=None):
-    """Import accurate material quantities from the OpenCutList Estimate PDF and
-    the part count from the parts CSV. Material lines are priced from ERPNext Item
-    inventory rates; operation quantities follow the fixed mapping (locked ops
-    1-4 computed and enforced, the rest editable defaults)."""
-    doc = frappe.get_doc("Estimate SKU", estimate_sku)
-    if not doc.has_permission("write"):
-        frappe.throw(_("Not permitted to edit {0}").format(estimate_sku), frappe.PermissionError)
-
-    materials = estimate_pdf.parse_estimate_pdf(estimate_pdf.read_pdf_text(_file_content(pdf_file_url)))
-    if not materials:
-        frappe.throw(_("No materials found in the PDF. Is it an OpenCutList Estimate export?"))
-
-    part_count = 0
-    parts = []
-    if csv_file_url:
-        content = _file_content(csv_file_url)
-        if isinstance(content, bytes):
-            content = content.decode("utf-8", "ignore")
-        rows = opencutlist.parse_opencutlist_csv(content)
-        parts = opencutlist.parts_list(rows)
-        part_count = len(parts)
-
-    # Material lines from PDF quantities, priced from inventory Items.
-    doc.set("materials", [])
-    priced = 0
-    for m in materials:
-        code = _pdf_item_code(m)
-        rate = ensure_material_item(code, "Nos")
-        if rate:
-            priced += 1
-        qty = m["qty"] or 0
-        doc.append("materials", {
-            "item": code,
-            "material": m["name"],
-            "description": _pdf_desc(m)[:140],
-            "qty": qty,
-            "unit_cost": rate,
-            "line_cost": qty * (rate or 0),
-        })
-
-    # Operation quantities per the fixed mapping; store for locked-cell enforcement.
-    opq = estimate_pdf.operation_quantities(materials, part_count)
-    for row in doc.labor:
-        op = op_phase(row)
-        if op in opq:
-            row.qty = opq[op]
-        std = OPERATION_STANDARDS.get(op)
-        if std and not float(row.carp_min or 0):
-            row.carp_min = std["min_per_unit"]
-            row.helper_min = std["min_per_unit"]
-    doc.import_drivers = json.dumps(opq)
-    doc.estimate_pdf = pdf_file_url
-    if csv_file_url:
-        doc.parts_csv = csv_file_url
-
-    # Store the part list (with QR part numbers) for job-card tracking.
-    if parts:
-        doc.set("parts", [])
-        for p in parts:
-            doc.append("parts", {
-                "part_no": p["part_no"],
-                "designation": p["designation"],
-                "material": p["material"],
-                "tag": p["tag"],
-                "length": p["length"],
-                "width": p["width"],
-                "thickness": p["thickness"],
-            })
-
-    doc.save()
-    return {
-        "materials": len(materials),
-        "priced": priced,
-        "unpriced": len(materials) - priced,
-        "part_count": part_count,
-        "operations": opq,
-        "material_cost": doc.material_cost,
-    }

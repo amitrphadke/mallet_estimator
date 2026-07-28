@@ -58,10 +58,17 @@ def ensure_manufacturing_masters():
             r = rates[w["name"]]
             ws = frappe.new_doc("Workstation")
             ws.workstation_name = w["name"]
-            ws.hour_rate_rent = round(r["rent_hr"], 2)
-            ws.hour_rate_consumable = round(r["dep_hr"], 2)
-            ws.hour_rate_labour = round(r["labour_hr"], 2)
-            ws.hour_rate_electricity = 0
+            # Set only the rate fields this ERPNext version actually has (v16
+            # reorganised the Workstation hour-rate fields).
+            meta = frappe.get_meta("Workstation")
+            for field, val in (
+                ("hour_rate_rent", r["rent_hr"]),
+                ("hour_rate_consumable", r["dep_hr"]),
+                ("hour_rate_labour", r["labour_hr"]),
+                ("hour_rate", r["total_hr"]),
+            ):
+                if meta.has_field(field):
+                    ws.set(field, round(val, 2))
             ws.insert(ignore_permissions=True)
             result["workstations"] += 1
         except Exception as exc:
