@@ -1,0 +1,50 @@
+name: Deploy to Frappe Cloud (staging)
+
+# Push to main -> trigger a Frappe Cloud deploy of the staging bench.
+# Frappe Cloud then builds the image and emails the result to your FC account
+# (superadmin@malletcrafts.com). The GitHub Actions run itself also shows
+# pass/fail, and GitHub emails you if this trigger step fails.
+#
+# ONE-TIME SETUP (in the GitHub repo -> Settings -> Secrets and variables -> Actions):
+#   Secrets:
+#     FRAPPE_CLOUD_API_KEY     - from Frappe Cloud: account/team -> API Access
+#     FRAPPE_CLOUD_API_SECRET  - shown once when you generate the key
+#   Variables (optional; defaults shown):
+#     FC_HOST   = frappecloud.com     (Frappe Cloud API host)
+#     FC_BENCH  = bench-44687         (your staging bench/release-group id, from the dashboard URL)
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger Frappe Cloud deploy
+        env:
+          FC_HOST: ${{ vars.FC_HOST != '' && vars.FC_HOST || 'frappecloud.com' }}
+          FC_BENCH: ${{ vars.FC_BENCH != '' && vars.FC_BENCH || 'bench-44687' }}
+          FC_KEY: ${{ secrets.FRAPPE_CLOUD_API_KEY }}
+          FC_SECRET: ${{ secrets.FRAPPE_CLOUD_API_SECRET }}
+        run: |
+          set -euo pipefail
+          if [ -z "${FC_KEY:-}" ] || [ -z "${FC_SECRET:-}" ]; then
+            echo "::error::Missing FRAPPE_CLOUD_API_KEY / FRAPPE_CLOUD_API_SECRET repo secrets."
+            exit 1
+          fi
+          echo "Triggering deploy of $FC_BENCH on $FC_HOST ..."
+          resp=$(curl -sS -w $'\n%{http_code}' -X POST \
+            "https://$FC_HOST/api/method/press.api.bench.deploy" \
+            -H "Authorization: token $FC_KEY:$FC_SECRET" \
+            -H "Content-Type: application/json" \
+            -d "{\"name\": \"$FC_BENCH\"}") || true
+          code=$(printf '%s' "$resp" | tail -n1)
+          body=$(printf '%s' "$resp" | sed '$d')
+          echo "HTTP $code"
+          echo "$body"
+          if [ "${code:-0}" -ge 400 ] || [ -z "${code:-}" ]; then
+            echo "::error::Frappe Cloud deploy trigger failed (HTTP ${code:-none}). If the method name is wrong for your FC version, adjust the press.api endpoint in this workflow."
+            exit 1
+          fi
+          echo "Deploy triggered — Frappe Cloud is building and will email the result to your FC account."

@@ -117,3 +117,15 @@ push deploy **staging** automatically:
 
 So: tag staging once, put `press-deploy` in your commits, and each `git push` auto-deploys
 staging — while production stays a deliberate manual **Deploy**.
+
+### Fully hands-off via GitHub Actions (recommended for active dev)
+`.github/workflows/deploy-staging.yml` triggers a Frappe Cloud deploy on every push to `main`,
+so you don't click anything and Frappe Cloud emails you the result. One-time setup:
+1. In **Frappe Cloud → your account/team → API Access**, generate an **API key + secret**.
+2. In **GitHub → repo → Settings → Secrets and variables → Actions**, add secrets
+   `FRAPPE_CLOUD_API_KEY` and `FRAPPE_CLOUD_API_SECRET`. Optionally add variables `FC_HOST`
+   (default `frappecloud.com`) and `FC_BENCH` (default `bench-44687`, your staging bench id).
+3. Push → the workflow triggers the deploy; Frappe Cloud builds and emails the outcome.
+
+If the workflow errors with a bad method name, the `press.api` endpoint in the workflow may
+differ for your FC version — adjust that one line.
