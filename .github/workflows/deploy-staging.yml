@@ -1,17 +1,23 @@
 name: Deploy to Frappe Cloud (staging)
 
 # Push to main -> trigger a Frappe Cloud deploy of the staging bench.
-# Frappe Cloud then builds the image and emails the result to your FC account
-# (superadmin@malletcrafts.com). The GitHub Actions run itself also shows
-# pass/fail, and GitHub emails you if this trigger step fails.
+# Frappe Cloud then builds the image and emails the result to your FC account.
+# The GitHub Actions run itself also shows pass/fail (and GitHub emails you on failure).
 #
-# ONE-TIME SETUP (in the GitHub repo -> Settings -> Secrets and variables -> Actions):
+# HOW IT WORKS (matches the FC dashboard "Deploy" button exactly):
+#   1. POST press.api.bench.deploy_information -> list of apps + which have an update.
+#   2. Build the `apps` payload from the apps whose update_available == true.
+#   3. POST press.api.bench.deploy {name, apps}  (apps is a REQUIRED argument;
+#      omitting it is what caused the earlier HTTP 500 {"exc_type":"TypeError"}).
+#   If no app has an update, there is nothing to deploy and the job succeeds as a no-op.
+#
+# ONE-TIME SETUP (GitHub repo -> Settings -> Secrets and variables -> Actions):
 #   Secrets:
-#     FRAPPE_CLOUD_API_KEY     - from Frappe Cloud: account/team -> API Access
+#     FRAPPE_CLOUD_API_KEY     - Frappe Cloud: account/team -> API Access -> generate
 #     FRAPPE_CLOUD_API_SECRET  - shown once when you generate the key
 #   Variables (optional; defaults shown):
-#     FC_HOST   = frappecloud.com     (Frappe Cloud API host)
-#     FC_BENCH  = bench-44687         (your staging bench/release-group id, from the dashboard URL)
+#     FC_HOST   = cloud.frappe.io   (frappecloud.com just redirects here)
+#     FC_BENCH  = bench-44687       (staging release-group / bench id from the dashboard URL)
 
 on:
   push:
@@ -33,18 +39,39 @@ jobs:
             echo "::error::Missing FRAPPE_CLOUD_API_KEY / FRAPPE_CLOUD_API_SECRET repo secrets."
             exit 1
           fi
-          echo "Triggering deploy of $FC_BENCH on $FC_HOST ..."
-          # -L follows redirects (frappecloud.com -> cloud.frappe.io) keeping POST.
-          resp=$(curl -sSL -w $'\n%{http_code}' -X POST \
-            "https://$FC_HOST/api/method/press.api.bench.deploy" \
-            -H "Authorization: token $FC_KEY:$FC_SECRET" \
-            -H "Content-Type: application/json" \
-            -d "{\"name\": \"$FC_BENCH\"}") || true
-          code=$(printf '%s' "$resp" | tail -n1)
-          body=$(printf '%s' "$resp" | sed '$d')
-          echo "HTTP $code"
-          echo "$body"
-          case "${code:-000}" in
-            2*) echo "Deploy triggered — Frappe Cloud is building and will email the result." ;;
-            *)  echo "::error::Frappe Cloud deploy trigger did NOT succeed (HTTP ${code:-none}). If this is a 404/417, the press.api method name differs for your FC version — paste this log and it will be adjusted."; exit 1 ;;
+          AUTH="Authorization: token ${FC_KEY}:${FC_SECRET}"
+          BASE="https://${FC_HOST}/api/method/press.api.bench"
+
+          call() { # $1 = method, $2 = json body  ->  sets globals CODE, BODY
+            local resp
+            resp=$(curl -sSL -w $'\n%{http_code}' -X POST "${BASE}.$1" \
+              -H "$AUTH" -H "Content-Type: application/json" -d "$2") || true
+            CODE=$(printf '%s' "$resp" | tail -n1)
+            BODY=$(printf '%s' "$resp" | sed '$d')
+          }
+
+          echo "Fetching deploy information for ${FC_BENCH} on ${FC_HOST} ..."
+          call deploy_information "$(jq -nc --arg n "$FC_BENCH" '{name:$n}')"
+          echo "HTTP $CODE"
+          if [ "${CODE:0:1}" != "2" ]; then
+            echo "$BODY"
+            echo "::error::deploy_information failed (HTTP ${CODE:-none}). Check FC_BENCH id and API key team/permissions."
+            exit 1
+          fi
+
+          APPS=$(printf '%s' "$BODY" | jq -c '[.message.apps[]? | select(.update_available == true) | {app: .app, source: .source, release: .next_release}]')
+          echo "Apps with an update available: $APPS"
+
+          if [ "$APPS" = "[]" ] || [ -z "$APPS" ]; then
+            echo "No app has an update available — nothing to deploy. (Frappe Cloud already has this commit, or the push hasn't been ingested yet.)"
+            exit 0
+          fi
+
+          echo "Triggering deploy ..."
+          call deploy "$(jq -nc --arg n "$FC_BENCH" --argjson a "$APPS" '{name:$n, apps:$a}')"
+          echo "HTTP $CODE"
+          echo "$BODY"
+          case "${CODE:-000}" in
+            2*) echo "Deploy triggered (candidate build: $(printf '%s' "$BODY" | jq -r '.message // "?"')). Frappe Cloud is building and will email the result." ;;
+            *)  echo "::error::Deploy trigger did NOT succeed (HTTP ${CODE:-none}). Response above."; exit 1 ;;
           esac
