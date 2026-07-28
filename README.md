@@ -18,11 +18,30 @@ design) and gives you an **estimate-vs-actual margin** report at the end of each
 2. Fill your rates: **Carpenter ₹/hr, Helper ₹/hr, Design ₹/hr**, **Monthly Rent**, working
    days/hours, sheet size (2440×1220), wastage %.
 3. Look at the **Workstation Cost Calculator** on that page — it shows, per workstation, the
-   ₹/hr made up of **space rent + machine depreciation + the 2-person crew wage**. This is what
-   each process step is charged at.
+   **Net Hour Rate** each process step is charged at.
 4. Click **"Create / refresh manufacturing masters"** once. This creates your 7 **Workstations**,
    17 **Operations**, a **Routing**, the standard **Rooms**, and the print format. The popup
    confirms what was created.
+
+**Costing is workstation-based.** Each process step is priced at its **Workstation's Net Hour
+Rate** — the native ERPNext *Operating Components Cost* table on the Workstation
+(Manufacturing → Workstation → Operating Costs). The components are:
+
+| Workstation | Rent | Wages (crew) | Machinery (dep.) | Electricity | Consumables | **Net ₹/hr** |
+|---|--:|--:|--:|--:|--:|--:|
+| Panel Saw | 200* | 264 | 10 | 50 | 50 | **564*** |
+| Edge Bander | 18 | 264 | 5 | 40 | 60 | 387 |
+| Drill Press | 14 | 264 | 2 | 20 | 20 | 320 |
+| Pasting Station | 27 | 264 | 0 | 10 | 40 | 341 |
+| Assembly Station | 60 | 264 | 1 | 10 | 20 | 355 |
+| Project Room | 60 | 264 | 0 | 20 | 10 | 354 |
+| On-Site | 0 | 264 | 0 | 0 | 20 | 284 |
+
+\* Panel Saw shows the values you set by hand; the installer preserves any workstation you've
+already configured and only seeds the rest. **Wages (the 2-person crew, carpenter ₹157 + helper
+₹107) are folded into the workstation rate** — there is no separate carpenter/helper charge on
+the step. Edit any component right on the Workstation and the Net Hour Rate re-sums; the
+estimator reads that live rate. A step's cost = its Workstation Net Hour Rate × (Qty × Min/Unit ÷ 60).
 
 ### Per project
 5. Create an ERPNext **Project** for the customer (Projects → New). Everything hangs off this.
@@ -51,24 +70,40 @@ design) and gives you an **estimate-vs-actual margin** report at the end of each
      locked**; the rest you can fine-tune (minutes per unit, workstation, quantity).
 
 ### Quote the project
-9. Create an **Estimate** (the doctype), pick the **Project**. It **automatically lists every
-   SKU** of that project and totals them — no manual adding, no duplicates.
-10. Click **Create Quotation** → an ERPNext **Quotation** is created for the customer, one line
-    per article at its client price, linked to the Project.
-11. **Print** the Estimate with the **"Mallet Client Estimate"** format → a clean PDF grouped
+9. Create an **Estimate** (the doctype), pick the **Project**. While it is a **Draft** it
+   **automatically lists every SKU** of that project and totals them — no manual adding, no
+   duplicates. Add another SKU later and it is pulled in automatically; the **Refresh SKUs**
+   button re-pulls on demand.
+10. **Approve = Submit.** When the estimate is right, click **Submit**. This is the approval /
+    lock point: the SKU list and totals are **frozen** as the baseline and can no longer be
+    edited. (Only submitted estimates should be quoted.)
+11. On the submitted estimate, click **Create Quotation** → an ERPNext **Quotation** is created
+    for the customer, one line per article at its client price, linked to the Project.
+12. **Print** the Estimate with the **"Mallet Client Estimate"** format → a clean PDF grouped
     by room, with each article's image, description, size, material amounts and totals
     (overhead is folded into "Design & execution" — the client never sees your factory costs).
 
+### If the article changes during execution (before handover)
+Do **not** edit the approved estimate in place — that would destroy the baseline the
+**Project Margin** report compares against. Use ERPNext's native **Amend**:
+- Open the approved estimate → **Cancel** → **Amend**. This creates a linked new version
+  (`MEST-EST-2026-0001-1`, tracked via *Amended From*) while the original stays as the frozen
+  baseline / audit trail.
+- Edit the amended draft (or its SKUs), **Submit** it, then **Create Quotation** again (or revise
+  the existing Quotation / Sales Order). The amend chain records exactly what changed and when.
+
+So the rule is: **approved = frozen; a scope change = a new amended version**, never an in-place edit.
+
 ### On approval → manufacture (ERPNext-native)
-12. Convert the **Quotation → Sales Order** (standard ERPNext button).
-13. On the Estimate, click **Build BOMs** → a **BOM** per article (materials + operations).
-14. From the **Sales Order → Create → Work Order** → ERPNext creates **Work Orders** and
+13. Convert the **Quotation → Sales Order** (standard ERPNext button).
+14. On the Estimate, click **Build BOMs** → a **BOM** per article (materials + operations).
+15. From the **Sales Order → Create → Work Order** → ERPNext creates **Work Orders** and
     **Job Cards** for each process step. The shop floor works/scans the job cards (what to do
     now/next).
-15. Job Card time + material issued + purchases post against the **Project**; invoices too.
+16. Job Card time + material issued + purchases post against the **Project**; invoices too.
 
 ### See your real margin
-16. Open the **Project Margin** report. Per project it shows **Estimated** cost/price/margin vs
+17. Open the **Project Margin** report. Per project it shows **Estimated** cost/price/margin vs
     **Actual** labour + material + billed, and the **Margin Variance** — so you see exactly
     where a custom job ate into the margin.
 
@@ -93,8 +128,12 @@ Projects and Accounting all see the same data.
 ## Notes
 - **No buttons on the SKU** — the import runs on Save. Just attach the two files.
 - **Rooms** are a master (Estimate Room). Add/rename them there; "Other" is included.
-- **Rates** live in Estimate Settings (not on individual Workstations, because ERPNext v16
-  reorganised the Workstation rate fields). The Cost Calculator shows the resulting ₹/hr.
+- **Rates** live natively on each **Workstation** (Manufacturing → Workstation → *Operating
+  Components Cost*: Rent + Wages + Machinery + Electricity + Consumables → **Net Hour Rate**).
+  Estimate Settings holds the inputs used to *seed* those (crew wage, rent, footprints, machine
+  capital); once seeded you tune each workstation directly and the estimator reads the live rate.
+- **Approval:** an Estimate is **submittable** — Draft (editable, auto-pulls SKUs) → **Submit**
+  (approved, frozen baseline) → Create Quotation. Post-approval changes go through **Amend**.
 - The standalone React prototype is in `../SKU_Estimator` (same cost model, offline) — this
   Frappe app is the ERPNext-integrated version.
 

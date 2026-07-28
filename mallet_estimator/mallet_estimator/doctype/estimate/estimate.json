@@ -4,6 +4,7 @@
  "creation": "2026-07-24 00:00:00.000000",
  "doctype": "DocType",
  "engine": "InnoDB",
+ "is_submittable": 1,
  "field_order": [
   "header_section",
   "naming_series",
@@ -23,7 +24,8 @@
   "column_break_totals",
   "total_internal",
   "total_client",
-  "quotation"
+  "quotation",
+  "amended_from"
  ],
  "fields": [
   {"fieldname": "header_section", "fieldtype": "Section Break", "label": "Project"},
@@ -44,7 +46,8 @@
   {"fieldname": "column_break_totals", "fieldtype": "Column Break"},
   {"fieldname": "total_internal", "fieldtype": "Currency", "label": "Internal Cost", "read_only": 1, "bold": 1},
   {"fieldname": "total_client", "fieldtype": "Currency", "label": "Total To Client", "read_only": 1, "bold": 1},
-  {"fieldname": "quotation", "fieldtype": "Link", "label": "Quotation", "options": "Quotation", "read_only": 1}
+  {"fieldname": "quotation", "fieldtype": "Link", "label": "Quotation", "options": "Quotation", "read_only": 1},
+  {"fieldname": "amended_from", "fieldtype": "Link", "label": "Amended From", "options": "Estimate", "no_copy": 1, "print_hide": 1, "read_only": 1}
  ],
  "links": [],
  "modified": "2026-07-27 00:00:00.000000",
@@ -53,9 +56,9 @@
  "name": "Estimate",
  "owner": "Administrator",
  "permissions": [
-  {"create": 1, "delete": 1, "email": 1, "export": 1, "print": 1, "read": 1, "report": 1, "role": "System Manager", "share": 1, "write": 1},
-  {"create": 1, "delete": 1, "email": 1, "export": 1, "print": 1, "read": 1, "report": 1, "role": "Manufacturing Manager", "share": 1, "write": 1},
-  {"create": 1, "print": 1, "read": 1, "report": 1, "role": "Manufacturing User", "write": 1}
+  {"amend": 1, "cancel": 1, "create": 1, "delete": 1, "email": 1, "export": 1, "print": 1, "read": 1, "report": 1, "role": "System Manager", "share": 1, "submit": 1, "write": 1},
+  {"amend": 1, "cancel": 1, "create": 1, "delete": 1, "email": 1, "export": 1, "print": 1, "read": 1, "report": 1, "role": "Manufacturing Manager", "share": 1, "submit": 1, "write": 1},
+  {"amend": 1, "cancel": 1, "create": 1, "print": 1, "read": 1, "report": 1, "role": "Manufacturing User", "submit": 1, "write": 1}
  ],
  "sort_field": "modified",
  "sort_order": "DESC"

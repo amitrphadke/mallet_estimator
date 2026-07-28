@@ -7,7 +7,7 @@ from frappe.model.document import Document
 from mallet_estimator import opencutlist, estimate_pdf
 from mallet_estimator.estimator import (
     STEP_TEMPLATE, OPERATION_STANDARDS, OPERATION_WORKSTATION, calc_sku, sku_code,
-    customer_initials, op_phase,
+    customer_initials, op_phase, live_workstation_rates,
 )
 
 DEFAULT_WORKSTATION = "Assembly Station"
@@ -125,6 +125,23 @@ class EstimateSKU(Document):
     def on_update(self):
         if self.create_item:
             self.sync_item()
+        self.refresh_project_estimates()
+
+    def refresh_project_estimates(self):
+        """Keep any DRAFT Estimate of this SKU's Project in sync, so a SKU added
+        (or edited) after the Estimate was created is pulled in automatically.
+        Submitted (approved) estimates are frozen and never touched."""
+        if not self.project:
+            return
+        for name in frappe.get_all(
+            "Estimate", filters={"project": self.project, "docstatus": 0}, pluck="name"
+        ):
+            try:
+                est = frappe.get_doc("Estimate", name)
+                est.aggregate_project_skus()
+                est.save(ignore_permissions=True)
+            except Exception:
+                frappe.log_error(frappe.get_traceback(), f"mallet_estimator refresh estimate {name}")
 
     # --- steps -------------------------------------------------------------
     def ensure_steps(self):
@@ -168,9 +185,11 @@ class EstimateSKU(Document):
         for m in self.materials:
             if not m.line_cost and m.unit_cost:
                 m.line_cost = (m.qty or 1) * m.unit_cost
-        # Rates come from Estimate Settings (carpenter/helper wage + rent +
-        # workstation footprints) via workstation_rates(); see the Cost Calculator.
-        r = calc_sku(self, settings)
+        # Each phase is priced at its Workstation's live Net Hour Rate from the
+        # ERPNext Manufacturing master (Rent + Wages + Machinery + Electricity +
+        # Consumables). Wages are folded in — no per-row carpenter/helper charge.
+        ws_rates = live_workstation_rates(settings)
+        r = calc_sku(self, settings, ws_rates=ws_rates)
         for k in (
             "material_cost", "labor_cost", "machine_cost", "rent_cost", "overhead_cost",
             "design_cost", "internal_cost", "client_material", "client_design_exec",

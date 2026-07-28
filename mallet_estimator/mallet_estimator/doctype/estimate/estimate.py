@@ -5,7 +5,20 @@ from frappe.model.document import Document
 
 class Estimate(Document):
     def validate(self):
+        # Only a draft (docstatus 0) re-pulls SKUs. Once submitted (approved) the
+        # SKU list and totals are frozen as the baseline; changes go via Amend.
+        if self.docstatus == 0:
+            self.aggregate_project_skus()
+
+    @frappe.whitelist()
+    def refresh_skus(self):
+        """Re-pull every Estimate SKU of this Project into a draft estimate.
+        Used by the 'Refresh SKUs' button after adding a SKU post-creation."""
+        if self.docstatus != 0:
+            frappe.throw(_("This estimate is approved (submitted). Amend it to change the SKUs."))
         self.aggregate_project_skus()
+        self.save(ignore_permissions=True)
+        return {"count": len(self.skus), "client": self.total_client}
 
     def aggregate_project_skus(self):
         """Rebuild the SKU list from every Estimate SKU linked to this Project

@@ -45,36 +45,17 @@
    "read_only_depends_on": "eval:['Sheet Lamination','Sheet Tape Removal','Sheet Cutting','Edge Banding'].includes(doc.phase)"
   },
   {
-   "fieldname": "carp_no",
-   "fieldtype": "Float",
-   "in_list_view": 1,
-   "label": "Carp No.",
-   "default": "1"
-  },
-  {
    "fieldname": "carp_min",
    "fieldtype": "Float",
    "in_list_view": 1,
-   "label": "Carp Min"
-  },
-  {
-   "fieldname": "helper_no",
-   "fieldtype": "Float",
-   "in_list_view": 1,
-   "label": "Help No.",
-   "default": "1"
-  },
-  {
-   "fieldname": "helper_min",
-   "fieldtype": "Float",
-   "in_list_view": 1,
-   "label": "Help Min"
+   "label": "Min / Unit",
+   "description": "Minutes the workstation is occupied per unit (crew wage is in the workstation rate)."
   },
   {
    "fieldname": "carp_total",
    "fieldtype": "Float",
    "in_list_view": 1,
-   "label": "Crew Min (total)",
+   "label": "Total Min",
    "read_only": 1
   },
   {
@@ -85,10 +66,26 @@
    "read_only": 1
   },
   {
+   "fieldname": "carp_no",
+   "fieldtype": "Float",
+   "label": "Carpenters",
+   "default": "1"
+  },
+  {
+   "fieldname": "helper_no",
+   "fieldtype": "Float",
+   "label": "Helpers",
+   "default": "1"
+  },
+  {
+   "fieldname": "helper_min",
+   "fieldtype": "Float",
+   "label": "Helper Min / Unit"
+  },
+  {
    "fieldname": "helper_total",
    "fieldtype": "Float",
-   "in_list_view": 1,
-   "label": "Help Total",
+   "label": "Helper Total Min",
    "read_only": 1
   },
   {

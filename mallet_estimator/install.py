@@ -5,7 +5,7 @@ import frappe
 
 from mallet_estimator.estimator import (
     DEFAULT_MACHINES, STEP_TEMPLATE, WORKSTATIONS, OPERATION_WORKSTATION,
-    ROUTING_NAME, workstation_rates,
+    ROUTING_NAME, WS_COMPONENTS, workstation_rates,
 )
 
 PRINT_FORMAT_NAME = "Mallet Client Estimate"
@@ -55,37 +55,72 @@ def _op_name(phase):
     return phase.replace(" / ", " - ").replace("/", "-")
 
 
+def _ensure_operating_components():
+    """Create the native 'Operating Component' masters (Rent/Wages/Machinery/
+    Electricity/Consumables) if the doctype exists on this ERPNext version."""
+    if not frappe.db.exists("DocType", "Operating Component"):
+        return
+    for c in WS_COMPONENTS:
+        if not frappe.db.exists("Operating Component", c):
+            try:
+                doc = frappe.new_doc("Operating Component")
+                # field is usually the autoname title; set both defensively
+                if doc.meta.has_field("operating_component"):
+                    doc.operating_component = c
+                doc.name = c
+                doc.insert(ignore_permissions=True, set_name=c)
+            except Exception:
+                frappe.log_error(frappe.get_traceback(), f"mallet_estimator operating component: {c}")
+
+
+def _set_workstation_costs(ws, rate):
+    """Populate a Workstation's native `workstation_costs` child table from the
+    computed component rates. Only used when the table is empty (never clobbers
+    hand-tuned rates). Returns True if rows were set."""
+    if not ws.meta.has_field("workstation_costs"):
+        return False
+    if getattr(ws, "workstation_costs", None):
+        return False  # already configured (e.g. a hand-set Panel Saw) — leave it
+    for label, val in rate["components"]:
+        if not val:
+            continue
+        ws.append("workstation_costs", {
+            "operating_component": label,
+            "operating_cost": round(val, 2),
+        })
+    return bool(getattr(ws, "workstation_costs", None))
+
+
 def ensure_manufacturing_masters():
-    """Create the 7 Workstations (space-based hour rates), 17 Operations and the
-    standard Routing as ERPNext manufacturing masters. Idempotent: existing
-    records are left untouched so in-app rate edits survive re-deploys. Each
-    record is created independently so one failure doesn't abort the rest."""
+    """Create the 7 Workstations (native operating-component hour rates), 17
+    Operations and the standard Routing as ERPNext manufacturing masters.
+    Idempotent: existing records keep their hand-tuned rates; a workstation that
+    has no operating-cost rows yet gets them backfilled. Each record is created
+    independently so one failure doesn't abort the rest."""
     settings = frappe.get_single("Estimate Settings")
     rates = {w["name"]: w for w in workstation_rates(settings)}
-    result = {"workstations": 0, "operations": 0, "routing": 0, "errors": []}
+    result = {"workstations": 0, "workstations_costed": 0, "operations": 0, "routing": 0, "errors": []}
 
     def fail(label, exc):
         result["errors"].append(f"{label}: {exc}")
         frappe.log_error(frappe.get_traceback(), f"mallet_estimator masters: {label}")
 
+    _ensure_operating_components()
+
     for w in WORKSTATIONS:
         try:
-            if frappe.db.exists("Workstation", w["name"]):
-                continue
             r = rates[w["name"]]
+            if frappe.db.exists("Workstation", w["name"]):
+                # Backfill operating costs only if this workstation has none yet,
+                # so a manually configured station (your Panel Saw) is preserved.
+                ws = frappe.get_doc("Workstation", w["name"])
+                if _set_workstation_costs(ws, r):
+                    ws.save(ignore_permissions=True)
+                    result["workstations_costed"] += 1
+                continue
             ws = frappe.new_doc("Workstation")
             ws.workstation_name = w["name"]
-            # Set only the rate fields this ERPNext version actually has (v16
-            # reorganised the Workstation hour-rate fields).
-            meta = frappe.get_meta("Workstation")
-            for field, val in (
-                ("hour_rate_rent", r["rent_hr"]),
-                ("hour_rate_consumable", r["dep_hr"]),
-                ("hour_rate_labour", r["labour_hr"]),
-                ("hour_rate", r["total_hr"]),
-            ):
-                if meta.has_field(field):
-                    ws.set(field, round(val, 2))
+            _set_workstation_costs(ws, r)
             ws.insert(ignore_permissions=True)
             result["workstations"] += 1
         except Exception as exc:

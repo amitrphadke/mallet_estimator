@@ -52,15 +52,23 @@ DEFAULT_MACHINES = [
 # month. Every operation is worked by a 2-person crew (1 carpenter + 1 helper),
 # so labour per hour = carpenter_rate + helper_rate from Estimate Settings.
 # On-Site has no footprint (off-site work, no rent).
+#
+# Each workstation's hourly cost is broken into the SAME native ERPNext
+# "Operating Components Cost" the Workstation master uses: Rent + Wages +
+# Machinery (depreciation) + Electricity + Consumables. `elec_hr`/`consumable_hr`
+# are per-workstation defaults (₹/hr) you can override directly on the Workstation.
 WORKSTATIONS = [
-    {"name": "Panel Saw",        "area_sqft": 26 * 15, "capital": ###, "life_years": 10},
-    {"name": "Edge Bander",      "area_sqft": 16 * 4,  "capital": ###, "life_years": 10},
-    {"name": "Drill Press",      "area_sqft": 16 * 3,  "capital": ###,  "life_years": 10},
-    {"name": "Pasting Station",  "area_sqft": 12 * 8,  "capital": 0,      "life_years": 10},
-    {"name": "Assembly Station", "area_sqft": 14 * 15, "capital": ###,  "life_years": 10},
-    {"name": "Project Room",     "area_sqft": 14 * 15, "capital": 0,      "life_years": 10},
-    {"name": "On-Site",          "area_sqft": 0,       "capital": 0,      "life_years": 10},
+    {"name": "Panel Saw",        "area_sqft": 26 * 15, "capital": ###, "life_years": 10, "elec_hr": 50, "consumable_hr": 50},
+    {"name": "Edge Bander",      "area_sqft": 16 * 4,  "capital": ###, "life_years": 10, "elec_hr": 40, "consumable_hr": 60},
+    {"name": "Drill Press",      "area_sqft": 16 * 3,  "capital": ###,  "life_years": 10, "elec_hr": 20, "consumable_hr": 20},
+    {"name": "Pasting Station",  "area_sqft": 12 * 8,  "capital": 0,      "life_years": 10, "elec_hr": 10, "consumable_hr": 40},
+    {"name": "Assembly Station", "area_sqft": 14 * 15, "capital": ###,  "life_years": 10, "elec_hr": 10, "consumable_hr": 20},
+    {"name": "Project Room",     "area_sqft": 14 * 15, "capital": 0,      "life_years": 10, "elec_hr": 20, "consumable_hr": 10},
+    {"name": "On-Site",          "area_sqft": 0,       "capital": 0,      "life_years": 10, "elec_hr": 0,  "consumable_hr": 20},
 ]
+
+# Canonical order of the operating-cost components on every Workstation.
+WS_COMPONENTS = ["Rent", "Wages", "Machinery", "Electricity", "Consumables"]
 
 # Which workstation each of the 17 operations runs on (matches STEP_TEMPLATE).
 OPERATION_WORKSTATION = {
@@ -87,25 +95,82 @@ ROUTING_NAME = "Mallet Standard Build"
 
 
 def workstation_rates(settings):
-    """Compute per-workstation hourly rates from footprint + machine + wage.
+    """Compute per-workstation hourly rates broken into the native ERPNext
+    operating components: Rent + Wages + Machinery + Electricity + Consumables.
 
     Rent recovers the FULL monthly rent across billable footprints over the
-    working hours/month. Returns each WORKSTATIONS entry plus rent_hr, dep_hr,
-    labour_hr and total_hr.
+    working hours/month. Wages is the 2-person crew (carpenter + helper).
+    Machinery is straight-line depreciation. Returns each WORKSTATIONS entry plus:
+      - rent_hr, wages_hr, machine_hr, elec_hr, consumable_hr
+      - components: [(label, ₹/hr), ...] in WS_COMPONENTS order
+      - net_hr: the Net Hour Rate (sum of components)
+      - legacy aliases labour_hr/dep_hr/total_hr so older callers still work.
     """
     whm = working_hours_per_month(settings)
     monthly_rent = _num(settings.monthly_rent)
-    # Every operation is a 2-person crew (1 carpenter + 1 helper).
-    labour_hr = _num(settings.carpenter_rate) + _num(settings.helper_rate)
+    # Every operation is a 2-person crew (1 carpenter + 1 helper); the wage is
+    # folded into the workstation rate, not charged per person on the row.
+    wages_hr = _num(settings.carpenter_rate) + _num(settings.helper_rate)
     billable_area = sum(w["area_sqft"] for w in WORKSTATIONS if w["area_sqft"] > 0)
     rent_per_sqft = (monthly_rent / billable_area) if billable_area else 0.0
     out = []
     for w in WORKSTATIONS:
         rent_hr = (w["area_sqft"] * rent_per_sqft / whm) if whm else 0.0
-        dep_hr = (w["capital"] / (w["life_years"] * whm * 12)) if (w["life_years"] and whm) else 0.0
-        out.append({**w, "rent_hr": rent_hr, "dep_hr": dep_hr, "labour_hr": labour_hr,
-                    "total_hr": rent_hr + dep_hr + labour_hr})
+        machine_hr = (w["capital"] / (w["life_years"] * whm * 12)) if (w["life_years"] and whm) else 0.0
+        elec_hr = _num(w.get("elec_hr"))
+        consumable_hr = _num(w.get("consumable_hr"))
+        comp_vals = {
+            "Rent": rent_hr, "Wages": wages_hr, "Machinery": machine_hr,
+            "Electricity": elec_hr, "Consumables": consumable_hr,
+        }
+        components = [(c, comp_vals[c]) for c in WS_COMPONENTS]
+        net_hr = sum(v for _, v in components)
+        out.append({
+            **w,
+            "rent_hr": rent_hr, "wages_hr": wages_hr, "machine_hr": machine_hr,
+            "elec_hr": elec_hr, "consumable_hr": consumable_hr,
+            "components": components, "net_hr": net_hr,
+            # legacy aliases
+            "labour_hr": wages_hr, "dep_hr": machine_hr, "total_hr": net_hr,
+        })
     return out
+
+
+def live_workstation_rates(settings):
+    """Return {workstation_name: rate_dict} using the ERPNext Workstation master
+    as the source of truth: each row of the native `workstation_costs` child table
+    (Rent/Wages/Machinery/Electricity/Consumables) plus the computed `hour_rate`
+    (Net Hour Rate). Falls back to the computed rate for any workstation that has
+    no operating-cost rows yet, so nothing prices at zero. Import-safe: only used
+    inside the ERPNext controller.
+    """
+    import frappe  # local import keeps this module unit-testable without frappe
+
+    computed = {w["name"]: w for w in workstation_rates(settings)}
+    rates = {}
+    for name in frappe.get_all("Workstation", pluck="name"):
+        doc = frappe.get_cached_doc("Workstation", name)
+        rows = getattr(doc, "workstation_costs", None) or []
+        if not rows:
+            if name in computed:
+                rates[name] = computed[name]
+            continue
+        comp = {r.operating_component: _num(r.operating_cost) for r in rows}
+        rent_hr = comp.get("Rent", 0)
+        wages_hr = comp.get("Wages", 0)
+        machine_hr = comp.get("Machinery", 0)
+        elec_hr = comp.get("Electricity", 0)
+        consumable_hr = comp.get("Consumables", 0)
+        net_hr = _num(getattr(doc, "hour_rate", 0)) or sum(comp.values())
+        rates[name] = {
+            "rent_hr": rent_hr, "wages_hr": wages_hr, "machine_hr": machine_hr,
+            "elec_hr": elec_hr, "consumable_hr": consumable_hr, "net_hr": net_hr,
+            "labour_hr": wages_hr, "dep_hr": machine_hr, "total_hr": net_hr,
+        }
+    # include any computed workstation that ERPNext doesn't have yet
+    for name, r in computed.items():
+        rates.setdefault(name, r)
+    return rates
 
 
 def _num(v):
@@ -207,9 +272,10 @@ def calc_sku(sku, settings, ws_rates=None):
     }
 
     crew_min_total = 0.0
-    labor_cost = 0.0
-    machine_cost = 0.0
-    rent_cost = 0.0
+    labor_cost = 0.0     # Wages component
+    machine_cost = 0.0   # Machinery (depreciation) component
+    rent_cost = 0.0      # Rent component
+    other_cost = 0.0     # Electricity + Consumables components
 
     for s in sku.labor or []:
         if getattr(s, "is_misc", 0) and not sku.include_misc:
@@ -217,25 +283,33 @@ def calc_sku(sku, settings, ws_rates=None):
             s.helper_total = 0
             s.op_cost = 0
             continue
-        crew_min = _num(s.qty) * _num(s.carp_min)  # carp_min = crew minutes/unit
+        crew_min = _num(s.qty) * _num(s.carp_min)  # carp_min = workstation minutes/unit
         s.carp_total = crew_min
         s.helper_total = crew_min
         crew_min_total += crew_min
         ws_name = getattr(s, "workstation", None) or OPERATION_WORKSTATION.get(op_phase(s), default_ws)
-        r = ws_rates.get(ws_name) or ws_rates.get(default_ws) or {"labour_hr": 0, "dep_hr": 0, "rent_hr": 0}
+        r = ws_rates.get(ws_name) or ws_rates.get(default_ws) or {}
         hrs = crew_min / 60.0
-        labor_cost += hrs * r["labour_hr"]
-        machine_cost += hrs * r["dep_hr"]
-        rent_cost += hrs * r["rent_hr"]
-        s.op_cost = hrs * (r["labour_hr"] + r["dep_hr"] + r["rent_hr"])
+        wages_hr = r.get("wages_hr", r.get("labour_hr", 0))
+        machine_hr = r.get("machine_hr", r.get("dep_hr", 0))
+        rent_hr = r.get("rent_hr", 0)
+        elec_hr = r.get("elec_hr", 0)
+        consumable_hr = r.get("consumable_hr", 0)
+        # Net Hour Rate: prefer the live ERPNext Workstation total when supplied.
+        net_hr = r.get("net_hr", wages_hr + machine_hr + rent_hr + elec_hr + consumable_hr)
+        labor_cost += hrs * wages_hr
+        machine_cost += hrs * machine_hr
+        rent_cost += hrs * rent_hr
+        other_cost += hrs * (elec_hr + consumable_hr)
+        s.op_cost = hrs * net_hr
 
     carp_min_total = crew_min_total
     helper_min_total = crew_min_total
-    carpenter_cost = labor_cost  # labour is the 2-person crew (folded)
+    carpenter_cost = labor_cost  # labour is the 2-person crew (folded into wages)
     helper_cost = 0.0
     material_cost = sum(_num(m.line_cost) for m in (sku.materials or []))
     design_cost = _num(sku.design_hours) * _num(settings.design_rate) + _num(sku.design_flat)
-    overhead_cost = machine_cost + rent_cost
+    overhead_cost = machine_cost + rent_cost + other_cost
     rent_hours = crew_min_total / 60.0
     internal_cost = material_cost + labor_cost + overhead_cost + design_cost
 
