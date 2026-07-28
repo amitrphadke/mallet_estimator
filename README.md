@@ -104,3 +104,16 @@ Projects and Accounting all see the same data.
 3. Site → **Install App** → `mallet_estimator`.
 4. Open **Estimate Settings** → **Create / refresh manufacturing masters**.
 5. After any code update: push → **Deploy** → hard-refresh the browser (⌘⇧R) to load new JS.
+
+### Auto-deploy on `git push` (optional)
+By default `git push` only updates GitHub; you then click **Deploy** in Frappe Cloud. To make a
+push deploy **staging** automatically:
+1. **One-time (Frappe Cloud dashboard):** open the **staging bench group** → **Tags** → add the
+   tag **`auto-deploy`**. (Leave the **production** bench group *without* this tag so prod is
+   never auto-deployed.)
+2. **Per push:** include the marker **`press-deploy`** in the commit message. Frappe Cloud then
+   creates and deploys a new build on every tagged bench where the app is installed. To target
+   only one bench, use `press-deploy-bench-<bench-id>`.
+
+So: tag staging once, put `press-deploy` in your commits, and each `git push` auto-deploys
+staging — while production stays a deliberate manual **Deploy**.
