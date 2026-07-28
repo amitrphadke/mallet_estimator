@@ -23,7 +23,7 @@ jobs:
     steps:
       - name: Trigger Frappe Cloud deploy
         env:
-          FC_HOST: ${{ vars.FC_HOST != '' && vars.FC_HOST || 'frappecloud.com' }}
+          FC_HOST: ${{ vars.FC_HOST != '' && vars.FC_HOST || 'cloud.frappe.io' }}
           FC_BENCH: ${{ vars.FC_BENCH != '' && vars.FC_BENCH || 'bench-44687' }}
           FC_KEY: ${{ secrets.FRAPPE_CLOUD_API_KEY }}
           FC_SECRET: ${{ secrets.FRAPPE_CLOUD_API_SECRET }}
@@ -34,7 +34,8 @@ jobs:
             exit 1
           fi
           echo "Triggering deploy of $FC_BENCH on $FC_HOST ..."
-          resp=$(curl -sS -w $'\n%{http_code}' -X POST \
+          # -L follows redirects (frappecloud.com -> cloud.frappe.io) keeping POST.
+          resp=$(curl -sSL -w $'\n%{http_code}' -X POST \
             "https://$FC_HOST/api/method/press.api.bench.deploy" \
             -H "Authorization: token $FC_KEY:$FC_SECRET" \
             -H "Content-Type: application/json" \
@@ -43,8 +44,7 @@ jobs:
           body=$(printf '%s' "$resp" | sed '$d')
           echo "HTTP $code"
           echo "$body"
-          if [ "${code:-0}" -ge 400 ] || [ -z "${code:-}" ]; then
-            echo "::error::Frappe Cloud deploy trigger failed (HTTP ${code:-none}). If the method name is wrong for your FC version, adjust the press.api endpoint in this workflow."
-            exit 1
-          fi
-          echo "Deploy triggered — Frappe Cloud is building and will email the result to your FC account."
+          case "${code:-000}" in
+            2*) echo "Deploy triggered — Frappe Cloud is building and will email the result." ;;
+            *)  echo "::error::Frappe Cloud deploy trigger did NOT succeed (HTTP ${code:-none}). If this is a 404/417, the press.api method name differs for your FC version — paste this log and it will be adjusted."; exit 1 ;;
+          esac
