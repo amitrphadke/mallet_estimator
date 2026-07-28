@@ -9,7 +9,7 @@ def execute():
     if not frappe.db.exists("DocType", old):
         return
     if not frappe.db.exists("DocType", new):
-        frappe.rename_doc("DocType", old, new, force=True, ignore_permissions=True)
+        frappe.rename_doc("DocType", old, new, force=True)
     else:
         # New already exists (freshly synced, empty). Move any old records over,
         # then drop the old doctype + its table.
