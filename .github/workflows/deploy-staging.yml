@@ -1,23 +1,18 @@
 name: Deploy to Frappe Cloud (staging)
 
-# Push to main -> trigger a Frappe Cloud deploy of the staging bench.
-# Frappe Cloud then builds the image and emails the result to your FC account.
-# The GitHub Actions run itself also shows pass/fail (and GitHub emails you on failure).
+# Push to main -> trigger a Frappe Cloud deploy of the staging bench AND wait for
+# the FC image build to finish. The job is green ONLY when the build actually
+# deploys (status = Success); a failed FC build now fails this job and prints the
+# failing build step, instead of reporting success the moment the deploy is queued.
 #
-# HOW IT WORKS (matches the FC dashboard "Deploy" button exactly):
-#   1. POST press.api.bench.deploy_information -> list of apps + which have an update.
-#   2. Build the `apps` payload from the apps whose update_available == true.
-#   3. POST press.api.bench.deploy {name, apps}  (apps is a REQUIRED argument;
-#      omitting it is what caused the earlier HTTP 500 {"exc_type":"TypeError"}).
-#   If no app has an update, there is nothing to deploy and the job succeeds as a no-op.
+# Flow (matches the FC dashboard "Deploy" button):
+#   1. deploy_information -> apps with an update (retried, to absorb webhook lag).
+#   2. deploy {name, apps}  -> returns the Deploy Candidate Build name.
+#   3. Poll deploy_information.last_deploy.status until Success / Failure.
 #
 # ONE-TIME SETUP (GitHub repo -> Settings -> Secrets and variables -> Actions):
-#   Secrets:
-#     FRAPPE_CLOUD_API_KEY     - Frappe Cloud: account/team -> API Access -> generate
-#     FRAPPE_CLOUD_API_SECRET  - shown once when you generate the key
-#   Variables (optional; defaults shown):
-#     FC_HOST   = cloud.frappe.io   (frappecloud.com just redirects here)
-#     FC_BENCH  = bench-44687       (staging release-group / bench id from the dashboard URL)
+#   Secrets: FRAPPE_CLOUD_API_KEY, FRAPPE_CLOUD_API_SECRET  (FC account -> API Access)
+#   Variables (optional): FC_HOST (default cloud.frappe.io), FC_BENCH (default bench-44687)
 
 on:
   push:
@@ -27,7 +22,7 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
-      - name: Trigger Frappe Cloud deploy
+      - name: Deploy to Frappe Cloud and wait for the build
         env:
           FC_HOST: ${{ vars.FC_HOST != '' && vars.FC_HOST || 'cloud.frappe.io' }}
           FC_BENCH: ${{ vars.FC_BENCH != '' && vars.FC_BENCH || 'bench-44687' }}
@@ -40,38 +35,68 @@ jobs:
             exit 1
           fi
           AUTH="Authorization: token ${FC_KEY}:${FC_SECRET}"
-          BASE="https://${FC_HOST}/api/method/press.api.bench"
+          BENCH_BASE="https://${FC_HOST}/api/method/press.api.bench"
+          CLIENT_BASE="https://${FC_HOST}/api/method/press.api.client"
 
-          call() { # $1 = method, $2 = json body  ->  sets globals CODE, BODY
+          call() { # $1 = full method url, $2 = json body  ->  sets CODE, BODY
             local resp
-            resp=$(curl -sSL -w $'\n%{http_code}' -X POST "${BASE}.$1" \
+            resp=$(curl -sSL -w $'\n%{http_code}' -X POST "$1" \
               -H "$AUTH" -H "Content-Type: application/json" -d "$2") || true
             CODE=$(printf '%s' "$resp" | tail -n1)
             BODY=$(printf '%s' "$resp" | sed '$d')
           }
+          info() { call "${BENCH_BASE}.deploy_information" "$(jq -nc --arg n "$FC_BENCH" '{name:$n}')"; }
 
-          echo "Fetching deploy information for ${FC_BENCH} on ${FC_HOST} ..."
-          call deploy_information "$(jq -nc --arg n "$FC_BENCH" '{name:$n}')"
-          echo "HTTP $CODE"
-          if [ "${CODE:0:1}" != "2" ]; then
-            echo "$BODY"
-            echo "::error::deploy_information failed (HTTP ${CODE:-none}). Check FC_BENCH id and API key team/permissions."
-            exit 1
-          fi
-
-          APPS=$(printf '%s' "$BODY" | jq -c '[.message.apps[]? | select(.update_available == true) | {app: .app, source: .source, release: .next_release}]')
+          # --- 1. find apps to deploy (retry to absorb push->FC webhook lag) -----
+          APPS="[]"
+          for attempt in 1 2 3 4 5 6; do
+            info
+            if [ "${CODE:0:1}" != "2" ]; then
+              echo "$BODY"
+              echo "::error::deploy_information failed (HTTP ${CODE:-none}). Check FC_BENCH / API key team."
+              exit 1
+            fi
+            APPS=$(printf '%s' "$BODY" | jq -c '[.message.apps[]? | select(.update_available == true) | {app: .app, source: .source, release: .next_release}]')
+            [ "$APPS" != "[]" ] && break
+            echo "No update visible yet (attempt $attempt) — Frappe Cloud may not have ingested the push. Waiting 20s ..."
+            sleep 20
+          done
           echo "Apps with an update available: $APPS"
-
           if [ "$APPS" = "[]" ] || [ -z "$APPS" ]; then
-            echo "No app has an update available — nothing to deploy. (Frappe Cloud already has this commit, or the push hasn't been ingested yet.)"
+            echo "Nothing to deploy after retries — Frappe Cloud already has this commit."
             exit 0
           fi
 
+          # --- 2. trigger the deploy --------------------------------------------
           echo "Triggering deploy ..."
-          call deploy "$(jq -nc --arg n "$FC_BENCH" --argjson a "$APPS" '{name:$n, apps:$a}')"
-          echo "HTTP $CODE"
-          echo "$BODY"
-          case "${CODE:-000}" in
-            2*) echo "Deploy triggered (candidate build: $(printf '%s' "$BODY" | jq -r '.message // "?"')). Frappe Cloud is building and will email the result." ;;
-            *)  echo "::error::Deploy trigger did NOT succeed (HTTP ${CODE:-none}). Response above."; exit 1 ;;
-          esac
+          call "${BENCH_BASE}.deploy" "$(jq -nc --arg n "$FC_BENCH" --argjson a "$APPS" '{name:$n, apps:$a}')"
+          echo "HTTP $CODE"; echo "$BODY"
+          if [ "${CODE:0:1}" != "2" ]; then
+            echo "::error::Deploy trigger did NOT succeed (HTTP ${CODE:-none}). Response above."
+            exit 1
+          fi
+          BUILD=$(printf '%s' "$BODY" | jq -r '.message // empty')
+          echo "Deploy triggered. Build candidate: ${BUILD:-<unknown>}. Waiting for Frappe Cloud to build ..."
+
+          # --- 3. wait for the build to finish (Success / Failure) --------------
+          for i in $(seq 1 60); do
+            sleep 20
+            info
+            STATUS=$(printf '%s' "$BODY" | jq -r '.message.last_deploy.status // "unknown"')
+            DNAME=$(printf '%s' "$BODY" | jq -r '.message.last_deploy.name // ""')
+            echo "[$((i*20))s] build ${DNAME} status=${STATUS}"
+            case "$STATUS" in
+              Success)
+                echo "✅ Deployed to Frappe Cloud (build ${DNAME})."
+                exit 0 ;;
+              Failure)
+                echo "::error::Frappe Cloud build FAILED (build ${DNAME})."
+                echo "--- failing build steps ---"
+                call "${CLIENT_BASE}.get" "$(jq -nc --arg d 'Deploy Candidate Build' --arg n "$DNAME" '{doctype:$d, name:$n}')"
+                printf '%s' "$BODY" | jq -r '.message.build_steps[]? | select(.status=="Failure") | "STEP: \(.stage_slug // .stage) / \(.step_slug // .step)\n\(.output // .command_output // "")"' 2>/dev/null | tail -80 || true
+                printf '%s' "$BODY" | jq -r '.message.build_output // empty' 2>/dev/null | tail -40 || true
+                exit 1 ;;
+            esac
+          done
+          echo "::error::Build ${BUILD} still not finished after 20 min — check Frappe Cloud."
+          exit 1
