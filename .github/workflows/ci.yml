@@ -76,6 +76,9 @@ jobs:
           bench init --skip-redis-config-generation --skip-assets --frappe-branch version-16 --python "$(which python)" frappe-bench
           cd frappe-bench
           bench get-app erpnext --branch version-16 --resolve-deps
+          # ERPNext v16 split payments into its own app; the Payment Gateway
+          # doctype it provides is referenced when creating parties.
+          bench get-app payments --branch version-16 || bench get-app payments
           bench get-app mallet_estimator "${GITHUB_WORKSPACE}/mallet_estimator"
 
       - name: Create test site + install apps
@@ -89,6 +92,7 @@ jobs:
             --db-root-password root --admin-password admin \
             --no-mariadb-socket --verbose
           bench --site test_site install-app erpnext
+          bench --site test_site install-app payments || true
           bench --site test_site install-app mallet_estimator
 
       - name: Run tests
