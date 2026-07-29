@@ -82,8 +82,9 @@ jobs:
           bench --site test_site install-app erpnext
           bench --site test_site install-app payments || true
           bench --site test_site install-app mallet_estimator
-          # a Company so warehouses exist, then create every master
-          bench --site test_site execute mallet_estimator.install.ensure_demo_company
+          # seed a Company + ERPNext fixtures (Warehouse Types, UOMs, defaults) the
+          # way the test runner does, then create every mallet master
+          bench --site test_site execute erpnext.setup.utils.before_tests
           bench --site test_site execute mallet_estimator.install.setup
           bench --site test_site set-config allow_tests true
           bench build --app frappe --app mallet_estimator
