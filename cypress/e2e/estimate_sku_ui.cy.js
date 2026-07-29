@@ -16,10 +16,12 @@ describe("Mallet Estimator — desk UI", () => {
 
   it("desk serves the Estimate SKU form to an authenticated user (not redirected to login)", () => {
     // The desk is a heavy SPA; assert the route is SERVED to the logged-in user
-    // (200, not a 302 to /login) rather than waiting on headless client render.
-    cy.request({ url: "/app/estimate-sku/new", followRedirect: false }).then((resp) => {
+    // (lands on the desk, not the login page) rather than waiting on headless
+    // client render. followRedirect handles the desk's URL-canonicalising 301.
+    cy.request("/app/estimate-sku/new").then((resp) => {
       expect(resp.status).to.eq(200);
-      expect(resp.body, "served the desk shell").to.include("/assets/frappe");
+      // the login page has a password field; the authenticated desk does not
+      expect(resp.body, "authenticated desk, not the login page").to.not.include('type="password"');
     });
   });
 
