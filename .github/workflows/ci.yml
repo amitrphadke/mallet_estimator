@@ -55,7 +55,7 @@ jobs:
           python-version: "3.14"   # Frappe v16.29 pins Python >=3.14,<3.15
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "24"   # Frappe v16 requires node >=24
 
       - name: Install system dependencies
         run: |
