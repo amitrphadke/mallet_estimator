@@ -101,7 +101,11 @@ jobs:
             if curl -sf http://localhost:8000/api/method/ping >/dev/null; then echo "up"; break; fi
             sleep 5
           done
-          bench --site test_site run-ui-tests mallet_estimator --headless --browser chrome
+          curl -sf http://localhost:8000/api/method/ping || (echo "site did not come up"; tail -n 80 ~/bench_start.log; exit 1)
+          # Run Cypress directly against the live bench using frappe's already-installed
+          # cypress binary + our self-contained cypress.config.js (no bench run-ui-tests).
+          cd apps/mallet_estimator
+          ../frappe/node_modules/.bin/cypress run --browser chrome --e2e
 
       - name: Server log on failure
         if: failure()
