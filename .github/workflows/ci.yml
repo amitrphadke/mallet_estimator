@@ -52,7 +52,7 @@ jobs:
 
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: "3.12"   # Frappe v16 needs 3.12+ (3.11 can't parse it)
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
