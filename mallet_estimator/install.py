@@ -7,7 +7,7 @@ from mallet_estimator.estimator import (
     DEFAULT_MACHINES, STEP_TEMPLATE, WORKSTATIONS, OPERATION_WORKSTATION,
     ROUTING_NAME, WS_COMPONENTS, workstation_rates,
 )
-from mallet_estimator.inventory import ensure_inventory_masters
+from mallet_estimator.inventory import ensure_inventory_masters, ensure_warehouses
 
 PRINT_FORMAT_NAME = "Mallet Client Estimate"
 WORKSPACE_NAME = "Mallet Estimator"
@@ -23,6 +23,7 @@ def after_install():
     seed_settings()
     _safe(ensure_rooms)
     _safe(ensure_inventory_masters)
+    _safe(ensure_warehouses)
     _safe(ensure_manufacturing_masters)
     _safe(ensure_print_format)
     _safe(ensure_workspace)
@@ -32,6 +33,7 @@ def after_migrate():
     # Keep masters, rooms, print format and workspace in sync — never break migrate.
     _safe(ensure_rooms)
     _safe(ensure_inventory_masters)
+    _safe(ensure_warehouses)
     _safe(ensure_manufacturing_masters)
     _safe(ensure_print_format)
     _safe(ensure_workspace)
@@ -170,14 +172,20 @@ def setup():
         frappe.throw("Not permitted")
     seed_settings()
     _safe(ensure_rooms)
-    inv = {}
+    inv, wh = {}, {}
     try:
         inv = ensure_inventory_masters()
     except Exception as exc:
         frappe.log_error(frappe.get_traceback(), "mallet_estimator ensure_inventory_masters")
         inv = {"errors": [f"inventory: {exc}"]}
+    try:
+        wh = ensure_warehouses()
+    except Exception as exc:
+        frappe.log_error(frappe.get_traceback(), "mallet_estimator ensure_warehouses")
+        wh = {"errors": [f"warehouses: {exc}"]}
     result = ensure_manufacturing_masters()
     result["inventory"] = inv
+    result["warehouses"] = wh
     for fn in (ensure_print_format, ensure_workspace):
         try:
             fn()

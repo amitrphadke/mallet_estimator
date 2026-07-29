@@ -51,7 +51,7 @@ class EstimateSKU(Document):
         if not materials:
             frappe.throw(_("No materials found in the Estimate PDF. Is it an OpenCutList Estimate export?"))
 
-        part_count, parts = 0, []
+        part_count, parts, agg = 0, [], None
         if self.parts_csv:
             content = _file_content(self.parts_csv)
             if isinstance(content, bytes):
@@ -59,24 +59,31 @@ class EstimateSKU(Document):
             rows = opencutlist.parse_opencutlist_csv(content)
             parts = opencutlist.parts_list(rows)
             part_count = len(parts)
+            # The CSV gives ACCURATE edge-banding running metres (the PDF only
+            # gives whole rolls). Use it so edge banding is stocked/costed per metre.
+            agg = opencutlist.aggregate(
+                rows,
+                sheet_length_mm=float(getattr(settings, "sheet_length", 0) or 2440),
+                sheet_width_mm=float(getattr(settings, "sheet_width", 0) or 1220),
+                wastage_pct=float(getattr(settings, "wastage_pct", 0) or 12),
+            )
 
         self.set("materials", [])
         unpriced = []
+        # Sheet goods, laminate, solid wood and hardware come from the PDF (its
+        # nesting is authoritative); edge banding comes from the CSV in metres.
         for m in materials:
-            # Ensure the material exists as a proper ERPNext stock Item (once) and
-            # pull its cost from ERPNext — valuation / last purchase / price list /
-            # standard rate. The PDF only says WHICH material and HOW MANY.
-            code, rate, source = inventory.ensure_material_item(
-                m["name"], kind=m.get("kind"), thickness=m.get("thickness") or 0
+            if m.get("kind") == "edge" and agg:
+                continue  # replaced by the CSV metre lines below
+            self._add_material_line(
+                m["name"], m.get("kind"), m.get("thickness") or 0, m["qty"] or 0,
+                _pdf_desc(m), unpriced,
             )
-            qty = m["qty"] or 0
-            self.append("materials", {
-                "item": code, "material": m["name"], "description": _pdf_desc(m)[:140],
-                "qty": qty, "unit_cost": rate, "line_cost": qty * (rate or 0),
-                "thickness": m.get("thickness") or 0,
-            })
-            if source == "unset":
-                unpriced.append(code)
+        if agg:
+            for ln in agg["lines"]:
+                if ln["kind"] == "edge":
+                    self._add_material_line(ln["material"], "edge", 0, ln["qty"], ln["desc"], unpriced)
+
         self.unpriced_materials = ", ".join(unpriced)
         if unpriced:
             frappe.msgprint(
@@ -105,6 +112,19 @@ class EstimateSKU(Document):
                     "part_no": p["part_no"], "designation": p["designation"], "material": p["material"],
                     "tag": p["tag"], "length": p["length"], "width": p["width"], "thickness": p["thickness"],
                 })
+
+    def _add_material_line(self, name, kind, thickness, qty, desc, unpriced):
+        """Create/link the ERPNext stock Item and append a costed material row."""
+        code, rate, source = inventory.ensure_material_item(name, kind=kind, thickness=thickness)
+        length, width, th = inventory.sheet_dims(kind, thickness)
+        self.append("materials", {
+            "item": code, "material": name, "description": (desc or name)[:140],
+            "qty": qty, "uom": inventory.stock_uom_for(kind),
+            "unit_cost": rate, "line_cost": qty * (rate or 0),
+            "length": length, "width": width, "thickness": th,
+        })
+        if source == "unset":
+            unpriced.append(code)
 
     def enforce_locked_qty(self):
         """Locked operations (sheet lamination/tape/cutting, edge banding) always
@@ -178,8 +198,12 @@ class EstimateSKU(Document):
     def compute_costs(self):
         settings = frappe.get_single("Estimate Settings")
         for m in self.materials:
-            if not m.line_cost and m.unit_cost:
-                m.line_cost = (m.qty or 1) * m.unit_cost
+            # Customer-supplied material (client buys & ships it to us) is tracked
+            # but never billed back — it carries no cost in the estimate.
+            if getattr(m, "customer_supplied", 0):
+                m.line_cost = 0
+            else:
+                m.line_cost = (m.qty or 0) * (m.unit_cost or 0)
         # Each phase is priced at its Workstation's live Net Hour Rate from the
         # ERPNext Manufacturing master (Rent + Wages + Machinery + Electricity +
         # Consumables). Wages are folded in — no per-row carpenter/helper charge.
@@ -222,9 +246,14 @@ class EstimateSKU(Document):
             item = frappe.new_doc("Item")
             item.item_code = code
             item.item_name = (self.article_name or code)[:140]
-            item.item_group = get_default_item_group()
+            # Finished client articles get their own group so they never mix with
+            # regular products and can be archived when the project closes.
+            item.item_group = (
+                inventory.CLIENT_SKU_GROUP if frappe.db.exists("Item Group", inventory.CLIENT_SKU_GROUP)
+                else get_default_item_group()
+            )
             item.stock_uom = "Nos"
-            item.is_stock_item = 0
+            item.is_stock_item = 1
             item.description = self.description or self.article_name
             item.standard_rate = self.client_total
             item.insert(ignore_permissions=True)

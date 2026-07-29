@@ -8,9 +8,15 @@ frappe.ui.form.on("Estimate Settings", {
         freeze_message: __("Creating Workstations, Operations, Routing…"),
       }).then((r) => {
         const m = (r && r.message) || {};
+        const inv = m.inventory || {}, wh = m.warehouses || {};
         let body = __("Workstations created: {0}<br>Operations created: {1}<br>Routing created: {2}<br>Workspace present: {3}", [
           m.workstations || 0, m.operations || 0, m.routing || 0, m.workspace_exists ? "yes ✓" : "NO",
         ]);
+        body += __("<br>Item Groups created: {0} · UOMs: {1} · Item fields: {2}<br>Warehouses created: {3}", [
+          inv.item_groups || 0, inv.uoms || 0, inv.custom_fields || 0, wh.warehouses || 0,
+        ]);
+        const allErr = [].concat(m.errors || [], inv.errors || [], wh.errors || []);
+        if (allErr.length) { m.errors = allErr; }
         if (m.errors && m.errors.length) {
           body += "<br><br><b>" + __("Errors") + ":</b><br>" + frappe.utils.escape_html(m.errors.join("\n")).replace(/\n/g, "<br>");
         }

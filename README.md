@@ -1,34 +1,56 @@
-# Mallet Estimator — ERPNext app
+# Mallet Estimator — ERPNext app for made-to-order furniture
 
-Turns your SketchUp + OpenCutList design into a **priced estimate**, a client **quotation**,
-and (on approval) an ERPNext **manufacturing + project** job — all inside your ERPNext site.
-It reproduces your factory's cost model (material + labour + machinery + factory-space rent +
-design) and gives you an **estimate-vs-actual margin** report at the end of each project.
+Turns your SketchUp + OpenCutList design into a **priced estimate**, a client **quotation**, and
+(on approval) a full ERPNext **buy → make → deliver → invoice** job — all inside your ERPNext
+site, using **native ERPNext objects** (Items, BOMs, Work Orders, Warehouses, Sales/Purchase
+cycles) so nothing is reinvented. It reproduces your factory's cost model (material + workstation
+time + design) and gives an **estimate-vs-actual margin** per project.
 
-> **Status:** running on staging (`mcft-stg`). Author-built, tested through the estimate +
-> quotation flow; the Work Order / Job Card execution chain is being finished. Install on a
-> staging site first (see "Deploy" at the bottom).
+> **Status:** running on staging (`mcft-stg`). Deploy to a staging site first (see "Deploy").
 
 ---
 
-## How you use it (end-to-end, plain language)
+## The big picture — how the whole ERP flows
 
-### One-time setup
-1. Open **Estimate Settings** (search with ⌘K / Ctrl+K).
+This is a **make-to-order** shop, so everything hangs off a **Project** (one customer job) and the
+flow follows the four standard ERP cycles:
+
+```
+  DESIGN            ESTIMATE / SALES              PROCUREMENT (Procure-to-Pay)
+  SketchUp   ->  Estimate SKU ─┐             ┌─ Material Request ─ Purchase Order ─ Purchase Receipt
+  OpenCutList     (per article)│             │        (raw material into the stores)
+   PDF + CSV                   ▼             │
+                          Estimate ─ Submit ─ Quotation ─ Sales Order ──┤
+                          (per project)        (Quote-to-Cash)          │
+                                                                        ▼
+                                              MANUFACTURING (Make-to-Order)
+                                        BOM ─ Work Order ─ Job Cards (16 phases)
+                                        raw material consumed  ->  Finished Good
+                                                                        │
+                                              DELIVER & BILL (Finance)  ▼
+                                        Delivery Note ─ Sales Invoice ─ Payment
+```
+
+Every cost (material issued, purchases, job-card time) and the revenue (invoice) posts against
+the **Project** → the **Project Margin** report shows estimated vs actual.
+
+---
+
+## 1. One-time setup
+
+1. Open **Estimate Settings** (⌘K / Ctrl+K → "Estimate Settings").
 2. Fill your rates: **Carpenter ₹/hr, Helper ₹/hr, Design ₹/hr**, **Monthly Rent**, working
    days/hours, sheet size (2440×1220), wastage %.
-3. Look at the **Workstation Cost Calculator** on that page — it shows, per workstation, the
-   **Net Hour Rate** each process step is charged at.
-4. Click **"Create / refresh manufacturing masters"** once. This creates your 7 **Workstations**,
-   17 **Operations**, a **Routing**, the standard **Rooms**, and the print format. The popup
-   confirms what was created.
+3. Click **"Create / refresh manufacturing masters"** once. The popup reports what it made:
+   - 7 **Workstations**, 17 **Operations**, a **Routing**, standard **Rooms**, the print format;
+   - the material **Item Groups**, the **UOMs** (Sheet / Meter / Roll / Square Meter), the Item
+     **dimension fields**, and the factory **Warehouses**.
+4. Set your **material prices** (see §2) and you're ready.
 
-**Costing is workstation-based.** Each process step is priced at its **Workstation's Net Hour
-Rate** — the native ERPNext *Operating Components Cost* table on the Workstation
-(Manufacturing → Workstation → Operating Costs). The components are:
-
-These are the four standard ERPNext *Workstation Operating Component* records (machine
-depreciation is folded into **Consumables**, so there is no separate component to create):
+### Workstation cost (what each process step is charged)
+Each step is priced at its **Workstation's Net Hour Rate** — the native ERPNext *Operating
+Components Cost* table (Manufacturing → Workstation → Operating Costs). Four standard components
+(machine depreciation folded into Consumables):
 
 | Workstation | Rent | Wages (crew) | Electricity | Consumables | **Net ₹/hr** |
 |---|--:|--:|--:|--:|--:|
@@ -40,142 +62,191 @@ depreciation is folded into **Consumables**, so there is no separate component t
 | Project Room | 60 | 264 | 20 | 10 | 354 |
 | On-Site | 0 | 264 | 0 | 20 | 284 |
 
-\* Panel Saw shows the values you set by hand; the installer preserves any workstation you've
-already configured and only seeds the rest. **Wages (the 2-person crew, carpenter ₹157 + helper
-₹107) are folded into the workstation rate** — there are **no carpenter/helper inputs on the
-step**; the process step only has **Qty** and **Min / Unit** (minutes the workstation is
-occupied per unit). Edit any component right on the Workstation and the Net Hour Rate re-sums;
-the estimator reads that live rate. A step's cost = **Net Hour Rate × (Qty × Min/Unit ÷ 60)**.
-
-### Per project
-5. Create an ERPNext **Project** for the customer (Projects → New). Everything hangs off this.
-
-### Per article (SKU)
-6. In SketchUp/OpenCutList, export the article's **Estimate PDF** and its **Parts CSV**
-   (`..._Loft.csv`). Optionally save a **rendered image** of the article.
-7. In ERPNext, create a new **Estimate SKU**:
-   - Pick the **Project** (required) and **Room** (required — dropdown; add new rooms as
-     master data, or pick **Other**). Customer is filled from the Project.
-   - Type the **Article name** (e.g. "Wardrobe"). A code like `YS_MB_WAR` is generated
-     (customer initials + room + article) — every article is tagged to its customer.
-   - Enter the **outer size**, a **description**, and attach the **Article image** (it prints
-     on the client estimate).
-   - In the **Material** section, attach the **Estimate PDF** and the **Parts CSV**, then
-     **Save**.
-8. On Save, the app automatically:
-   - reads the **accurate sheet/hardware quantities** from the Estimate PDF,
-   - makes sure every material exists as a proper ERPNext **stock Item** (created once,
-     never duplicated — keyed on its OpenCutList code + thickness, e.g. `SG_PLY_V0_a_a_16mm`),
-     grouped under **Mallet Materials** (Sheet Goods / Laminate / Edge Banding / Hardware /
-     Solid Wood), with the right UOM (Sheet / Meter / Nos) and the 1220×2440 sheet size,
-   - pulls each material's **cost from ERPNext** — valuation → last purchase → buying price →
-     standard rate (never from the PDF; the PDF only says *which* material and *how many*).
-     Anything **not priced yet** is flagged on the SKU so you know to set a rate,
-   - fills the **17 process steps** with quantities derived from the design (sheets, minifix,
-     hinges, drawer rails, etc.) and each step's **Workstation** and **Phase Cost**,
-   - stores the **parts list** (with the QR part numbers from your labels) for the shop floor,
-   - computes **Material + Labour + Machine + Rent + Design = internal cost**, then the
-     **client price** using your markups.
-   - The first four steps (Lamination / Tape / Cutting / Edge Banding) are **calculated and
-     locked**; the rest you can fine-tune (minutes per unit, workstation, quantity).
-
-### Quote the project
-9. Create an **Estimate** (the doctype), pick the **Project**. While it is a **Draft** it
-   **automatically lists every SKU** of that project and totals them — no manual adding, no
-   duplicates. Add another SKU later and it is pulled in automatically; the **Refresh SKUs**
-   button re-pulls on demand.
-10. **Approve = Submit.** When the estimate is right, click **Submit**. This is the approval /
-    lock point: the SKU list and totals are **frozen** as the baseline and can no longer be
-    edited. (Only submitted estimates should be quoted.)
-11. On the submitted estimate, click **Create Quotation** → an ERPNext **Quotation** is created
-    for the customer, one line per article at its client price, linked to the Project.
-12. **Print** the Estimate with the **"Mallet Client Estimate"** format → a clean PDF grouped
-    by room, with each article's image, description, size, material amounts and totals
-    (overhead is folded into "Design & execution" — the client never sees your factory costs).
-
-### If the article changes during execution (before handover)
-Do **not** edit the approved estimate in place — that would destroy the baseline the
-**Project Margin** report compares against. Use ERPNext's native **Amend**:
-- Open the approved estimate → **Cancel** → **Amend**. This creates a linked new version
-  (`MEST-EST-2026-0001-1`, tracked via *Amended From*) while the original stays as the frozen
-  baseline / audit trail.
-- Edit the amended draft (or its SKUs), **Submit** it, then **Create Quotation** again (or revise
-  the existing Quotation / Sales Order). The amend chain records exactly what changed and when.
-
-So the rule is: **approved = frozen; a scope change = a new amended version**, never an in-place edit.
-
-### On approval → manufacture (ERPNext-native)
-13. Convert the **Quotation → Sales Order** (standard ERPNext button).
-14. On the Estimate, click **Build BOMs** → a **BOM** per article (materials + operations).
-15. From the **Sales Order → Create → Work Order** → ERPNext creates **Work Orders** and
-    **Job Cards** for each process step. The shop floor works/scans the job cards (what to do
-    now/next).
-16. Job Card time + material issued + purchases post against the **Project**; invoices too.
-
-### See your real margin
-17. Open the **Project Margin** report. Per project it shows **Estimated** cost/price/margin vs
-    **Actual** labour + material + billed, and the **Margin Variance** — so you see exactly
-    where a custom job ate into the margin.
+\* The installer preserves any workstation you configured by hand and seeds the rest. **Wages =
+the 2-person crew (carpenter ₹157 + helper ₹107), folded in** — a step has only **Qty** and
+**Min/Unit**; there are no carpenter/helper inputs. Edit a component on the Workstation and the
+Net Hour Rate re-sums. **Step cost = Net Hour Rate × (Qty × Min/Unit ÷ 60).**
 
 ---
 
-## What ERPNext data this creates (so nothing is a black box)
+## 2. Material inventory (raw material as real stock)
+
+Materials are **native ERPNext stock Items** — the OpenCutList PDF only classifies *which*
+material and *how many*; the **cost comes from ERPNext**, never from the PDF.
+
+**Item Groups** (created for you), from the OpenCutList code prefix:
+
+| Code prefix | Example | Item Group | Stocked in | Bought in |
+|---|---|---|---|---|
+| `SG_` (plywood/MDF) | `SG_PLY_V0_a_a_16mm` | Sheet Goods | **Sheet** (1220×2440) | Sheet |
+| `SG_LAM_` / `DL_` | `SG_LAM_V0_12mm_a_a` | Laminate | **Sheet** | Sheet |
+| `EB_` | `EB_PVC_IN_a` | Edge Banding | **Meter** | **Roll = 50 m** |
+| `HWD_` | `HWD_Hinge` | Hardware | Nos | Nos |
+| `SW_` | `SW_Teak` | Solid Wood | Nos | Nos |
+
+- **UOM math is built in:** a plywood **Sheet** carries a `1 Sheet = 2.9768 m²` conversion (1220×2440);
+  edge banding is stocked per **Meter** with a `1 Roll = 50 Meter` purchase conversion, so you
+  **buy rolls, stock/consume metres**. Hardware is Nos.
+- **Created once, never duplicated** — the item_code is the OpenCutList code (+ thickness for
+  sheets), so re-importing the same design reuses the same Items.
+- Each sheet/laminate Item records **Length / Width / Thickness** (custom fields) and its
+  OpenCutList code.
+- **Cost source (in order):** moving-average **valuation** (from Purchase Receipts) → **last
+  purchase rate** → a **buying Item Price** → the Item's **standard rate**. Anything with **no
+  price yet** is flagged on the SKU (a popup + the "Materials Needing a Price" field).
+- **Mallet Materials report** (Reports → Mallet Materials): every material Item, its rate, the
+  cost source, a **Priced?** flag and **stock qty** — one screen to maintain prices.
+
+### Client-supplied material
+Occasionally a client buys plywood/laminate and ships it to you. Tick **"Cust. Supplied"** on that
+material line — it stays tracked but is **excluded from the client price**. In stock terms, receive
+it with a **Material Receipt / Purchase Receipt (rate 0)** into the **Customer Provided** warehouse
+(or mark the Item *Customer Provided* with the customer), so it never inflates your valuation.
+
+### Finished articles
+The article you estimate (e.g. `YS_MB_WAR`) becomes an Item in its own **Client SKU** group — so
+client pieces never mix with regular products and the whole group can be **archived when the
+project closes**.
+
+---
+
+## 3. Warehouses (your factory mapped to ERPNext)
+
+Created under your company's **All Warehouses**:
+
+| Physical area | ERPNext Warehouse | Used for |
+|---|---|---|
+| 7 storage racks (sheets/boards) | **Raw Materials → Board & Sheet Store** | plywood & laminate on receipt |
+| Hardware racks | **Raw Materials → Hardware Store** | hinges, screws, handles, minifix |
+| 2 tables (1 rack each) | **Work In Progress → Cut Parts - Table 1 / Table 2** | cut panels during a job |
+| Assembly area | **Work In Progress → Assembly Area** | assembling the article |
+| Project room | **Work In Progress → Project Room** | finished article takes shape |
+| Packed, ready to ship (also the racks) | **Finished Goods → Packed / Dispatch** | dismantled/packed FG awaiting delivery |
+| Client-shipped material | **Customer Provided** | plywood/laminate the client supplies |
+
+Work Orders draw raw material from the stores, move it through the WIP warehouses along the 16
+phases, and land the finished good in **Finished Goods**. (Want per-rack bins? Add child
+warehouses under Board & Sheet Store — the app won't clash with them.)
+
+---
+
+## 4. Per project → per article (design → estimate)
+
+5. **Projects → New** — one Project per customer job. Everything hangs off it.
+6. In OpenCutList, export the article's **Estimate PDF** and **Parts CSV**; optionally a rendered
+   image.
+7. **New Estimate SKU:** pick **Project** + **Room** (dropdown master; "Other" allowed); type the
+   **Article name** (a code `YS_MB_WAR` is generated); enter outer size, description, attach the
+   image; in **Material**, attach the **Estimate PDF** + **Parts CSV** and **Save**.
+8. On Save the app: creates/links each material **stock Item** and pulls its **ERPNext cost**
+   (edge banding in accurate **metres** from the CSV); fills the **17 process steps** (qty +
+   workstation + phase cost); stores the **parts list** (QR numbers) for the shop floor; and
+   computes **Material + Execution + Design = internal cost → client price**. Steps 1–4 are
+   locked (computed); the rest you can fine-tune. Phase costs auto-refresh when you re-open the SKU.
+
+---
+
+## 5. Quote the project (Quote-to-Cash)
+
+9. **New Estimate**, pick the **Project** — as a **Draft** it auto-lists every SKU of that project
+   and totals them (add a SKU later → pulled in automatically; **Refresh SKUs** re-pulls).
+10. **Submit = approve & freeze** the baseline (only submitted estimates are quoted).
+11. **Create Quotation** → a native **Quotation** for the customer, one line per article.
+12. **Print** with **"Mallet Client Estimate"** → room-grouped PDF with images (overhead folded
+    into "Design & execution"; the client never sees your factory costs).
+13. Client accepts → **Quotation → Sales Order** (standard button). The Sales Order is the
+    confirmed job.
+
+> **Change before handover?** Don't edit an approved estimate — **Cancel → Amend** (native) makes
+> a linked new version and keeps the original as the audit baseline; re-submit and re-quote.
+
+---
+
+## 6. Buy the raw material (Procure-to-Pay)
+
+14. From the **Sales Order → Create → Material Request** (or Manufacturing raises it from the
+    Work Order's shortage), listing the plywood/laminate/edge/hardware you need.
+15. **Material Request → Purchase Order** to your supplier.
+16. **Purchase Order → Purchase Receipt** when it arrives — receive into **Board & Sheet Store** /
+    **Hardware Store**. This sets each Item's **valuation rate**, which is exactly what the
+    estimate then uses as cost. (Client-shipped material → receive into **Customer Provided**.)
+17. **Purchase Receipt → Purchase Invoice** → **Payment Entry** pays the supplier.
+
+---
+
+## 7. Manufacture (Make-to-Order)
+
+18. On the **Estimate**, click **Build BOMs** → a native **BOM** per article (materials from stock
+    + the 16 operations).
+19. **Sales Order → Create → Work Order** (one per article). Set the **WIP warehouse** to *Work In
+    Progress* and the **FG warehouse** to *Finished Goods*.
+20. The Work Order generates a **Job Card per operation** (the 16 phases). The shop floor works /
+    scans each job card — Panel Saw → Edge Bander → Drill → … → Assembly → Disassembly → Pack.
+    Cut parts sit in **Cut Parts - Table 1/2**; assembly in **Assembly Area / Project Room**.
+21. **Job Card time** posts the actual labour; **material consumption** (Stock Entry:
+    Manufacture) issues the plywood/hardware from the stores and lands the **finished good** in
+    **Finished Goods**.
+22. **Ad-hoc operations** (joining oversized panels, cutting a hole for a glass door, etc.) are
+    added **as extra Job Cards / operations on the Work Order** when a job needs them — the 16
+    phases are the standard path, not a limit.
+
+---
+
+## 8. Deliver & bill (Finance)
+
+23. **Sales Order → Delivery Note** → ships the finished good from **Finished Goods** to site
+    (on-site assembly/installation are the last operations).
+24. **Sales Order / Delivery Note → Sales Invoice** → **Payment Entry** collects from the client.
+25. Everything posts to **Accounts** — no separate bookkeeping.
+
+---
+
+## 9. See your real margin
+
+26. **Project Margin** report: per project, **Estimated** cost/price/margin vs **Actual** (material
+    issued + job-card labour + purchases) vs **Billed**, and the **variance** — so you see exactly
+    where a job ate the margin.
+
+---
+
+## What ERPNext data this creates (nothing is a black box)
 
 | You do | ERPNext gets |
 |---|---|
-| Fill Estimate Settings → Create masters | **Workstations**, **Operations**, **Routing**, **Rooms**, **Item Groups** (Mallet Materials), **UOMs**, print format |
-| Save an Estimate SKU with the PDF | one **stock Item** per material (grouped, priced from ERPNext) + one **Item** for the article |
-| Set material prices | a **Purchase Receipt** (valuation), a **buying Item Price**, or the Item's standard rate — see the **Mallet Materials** report |
-| Create an Estimate + Create Quotation | a **Quotation** for the customer, linked to the Project |
-| Build BOMs | a **BOM** per article |
-| Sales Order → Create Work Order | **Work Orders** + **Job Cards** |
-| Shop floor + purchases + invoices | costs & revenue on the **Project** → **Project Margin** report |
-
-Everything is standard ERPNext underneath — so Sales, Purchase, Inventory, Manufacturing,
-Projects and Accounting all see the same data.
+| Estimate Settings → Create masters | Workstations, Operations, Routing, Rooms, **Item Groups**, **UOMs**, Item fields, **Warehouses**, print format |
+| Save an Estimate SKU + PDF/CSV | one **stock Item** per material (grouped, UOM'd, priced from ERPNext) + one **Client SKU** Item for the article |
+| Set prices | Purchase Receipt (valuation) / buying Item Price / standard rate — via the **Mallet Materials** report |
+| Estimate → Submit → Create Quotation | a **Quotation**, then **Sales Order** |
+| Material Request → PO → Purchase Receipt | priced **stock** in the stores |
+| Build BOMs → Work Order | **BOMs**, **Work Orders**, **Job Cards** |
+| Job cards + stock issue + delivery + invoice | costs & revenue on the **Project** → **Project Margin** |
 
 ---
 
 ## Notes
-- **No buttons on the SKU** — the import runs on Save. Just attach the two files.
-- **Rooms** are a master (Estimate Room). Add/rename them there; "Other" is included.
-- **Rates** live natively on each **Workstation** (Manufacturing → Workstation → *Operating
-  Components Cost*: Rent + Wages + Machinery + Electricity + Consumables → **Net Hour Rate**).
-  Estimate Settings holds the inputs used to *seed* those (crew wage, rent, footprints, machine
-  capital); once seeded you tune each workstation directly and the estimator reads the live rate.
-- **Approval:** an Estimate is **submittable** — Draft (editable, auto-pulls SKUs) → **Submit**
-  (approved, frozen baseline) → Create Quotation. Post-approval changes go through **Amend**.
-- The standalone React prototype is in `../SKU_Estimator` (same cost model, offline) — this
-  Frappe app is the ERPNext-integrated version.
+- **No buttons on the SKU** — import runs on Save; just attach the two files. Phase costs
+  re-price automatically when you open the SKU.
+- **Rooms** are a master (Estimate Room); "Other" is included.
+- **Workstation rates** live natively on each Workstation; Estimate Settings seeds them.
+- **Approval:** Estimate is submittable (Draft → Submit → Quotation); changes go via **Amend**.
+- The standalone React prototype in `../SKU_Estimator` shares the cost model (offline).
+
+---
 
 ## Deploy (Frappe Cloud custom app)
-1. Push this repo to GitHub.
-2. Frappe Cloud → your **Bench group → Apps → Add App** (GitHub, branch `main`) → **Deploy**.
-3. Site → **Install App** → `mallet_estimator`.
-4. Open **Estimate Settings** → **Create / refresh manufacturing masters**.
-5. After any code update: push → **Deploy** → hard-refresh the browser (⌘⇧R) to load new JS.
+1. Push this repo to GitHub; on Frappe Cloud add it to your **staging bench group → Apps**, then
+   **Install App** on the site.
+2. Open **Estimate Settings → Create / refresh manufacturing masters**.
+3. After a code update: the site must be **updated** to the new build (not just built).
 
-### Auto-deploy on `git push` (optional)
-By default `git push` only updates GitHub; you then click **Deploy** in Frappe Cloud. To make a
-push deploy **staging** automatically:
-1. **One-time (Frappe Cloud dashboard):** open the **staging bench group** → **Tags** → add the
-   tag **`auto-deploy`**. (Leave the **production** bench group *without* this tag so prod is
-   never auto-deployed.)
-2. **Per push:** include the marker **`press-deploy`** in the commit message. Frappe Cloud then
-   creates and deploys a new build on every tagged bench where the app is installed. To target
-   only one bench, use `press-deploy-bench-<bench-id>`.
-
-So: tag staging once, put `press-deploy` in your commits, and each `git push` auto-deploys
-staging — while production stays a deliberate manual **Deploy**.
-
-### Fully hands-off via GitHub Actions (recommended for active dev)
-`.github/workflows/deploy-staging.yml` triggers a Frappe Cloud deploy on every push to `main`,
-so you don't click anything and Frappe Cloud emails you the result. One-time setup:
-1. In **Frappe Cloud → your account/team → API Access**, generate an **API key + secret**.
-2. In **GitHub → repo → Settings → Secrets and variables → Actions**, add secrets
-   `FRAPPE_CLOUD_API_KEY` and `FRAPPE_CLOUD_API_SECRET`. Optionally add variables `FC_HOST`
-   (default `frappecloud.com`) and `FC_BENCH` (default `bench-44687`, your staging bench id).
-3. Push → the workflow triggers the deploy; Frappe Cloud builds and emails the outcome.
-
-If the workflow errors with a bad method name, the `press.api` endpoint in the workflow may
-differ for your FC version — adjust that one line.
+### Hands-off deploy on `git push` (GitHub Actions)
+`.github/workflows/deploy-staging.yml` runs the dashboard **"Update Now"** for you on every push
+to `main`, scoped to **`mallet_estimator` only** (ERPNext/others are never touched):
+1. In **Frappe Cloud → account → API Access**, generate an **API key + secret**.
+2. In **GitHub → repo → Settings → Secrets and variables → Actions**, add
+   `FRAPPE_CLOUD_API_KEY` and `FRAPPE_CLOUD_API_SECRET` (optionally vars `FC_HOST` =
+   `cloud.frappe.io`, `FC_BENCH` = your staging bench id).
+3. Push → the workflow calls `press.api.bench.deploy_and_update` (build **+** migrate the site)
+   and **waits until the bench actually carries the new commit** before going green — so a green
+   check means it's genuinely live, and a failed build fails the job with the error. ERPNext
+   updates stay a deliberate manual **Update Now**.
