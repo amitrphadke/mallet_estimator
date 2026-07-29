@@ -7,6 +7,7 @@ from mallet_estimator.estimator import (
     DEFAULT_MACHINES, STEP_TEMPLATE, WORKSTATIONS, OPERATION_WORKSTATION,
     ROUTING_NAME, WS_COMPONENTS, workstation_rates,
 )
+from mallet_estimator import inventory
 from mallet_estimator.inventory import ensure_inventory_masters, ensure_warehouses
 
 PRINT_FORMAT_NAME = "Mallet Client Estimate"
@@ -196,6 +197,66 @@ def setup():
             result.setdefault("errors", []).append(f"{fn.__name__}: {exc}")
     result["workspace_exists"] = bool(frappe.db.exists("Workspace", WORKSPACE_NAME))
     return result
+
+
+WAREHOUSE_LEAVES = [
+    "Board & Sheet Store", "Hardware Store", "Cut Parts - Table 1", "Cut Parts - Table 2",
+    "Assembly Area", "Project Room", "Packed / Dispatch", "Customer Provided",
+]
+ITEM_CUSTOM_FIELDS = ["mallet_oc_code", "mallet_thickness_mm", "mallet_sheet_length_mm", "mallet_sheet_width_mm"]
+
+
+@frappe.whitelist()
+def verify_setup():
+    """Config health-check — assert every master this app needs exists and is
+    shaped right. Returns {checks:[{name, ok, detail}], all_ok, failed}. Drives
+    the 'Verify setup' button AND is asserted by the automated tests, so the same
+    contract is checked by hand and in CI."""
+    checks = []
+
+    def chk(name, ok, detail=""):
+        checks.append({"name": name, "ok": bool(ok), "detail": detail})
+
+    def missing(dt, names, by_field=None):
+        out = []
+        for n in names:
+            exists = frappe.db.exists(dt, {by_field: n}) if by_field else frappe.db.exists(dt, n)
+            if not exists:
+                out.append(n)
+        return out
+
+    groups = [inventory.PARENT_GROUP, inventory.CLIENT_SKU_GROUP] + inventory.ITEM_GROUPS
+    m = missing("Item Group", groups)
+    chk("Item Groups", not m, ("missing: " + ", ".join(m)) if m else f"{len(groups)} present")
+
+    uoms = ["Sheet", "Meter", "Roll", "Square Meter"]
+    m = missing("UOM", uoms)
+    chk("UOMs", not m, ("missing: " + ", ".join(m)) if m else "Sheet, Meter, Roll, Square Meter ✓")
+
+    meta = frappe.get_meta("Item")
+    m = [f for f in ITEM_CUSTOM_FIELDS if not meta.has_field(f)]
+    chk("Item custom fields", not m, ("missing: " + ", ".join(m)) if m else "thickness + sheet L/W + OC code ✓")
+
+    m = missing("Warehouse", WAREHOUSE_LEAVES, by_field="warehouse_name")
+    chk("Warehouses", not m, ("missing: " + ", ".join(m)) if m else f"{len(WAREHOUSE_LEAVES)} present")
+
+    m = missing("Workstation", [w["name"] for w in WORKSTATIONS])
+    chk("Workstations", not m, ("missing: " + ", ".join(m)) if m else f"{len(WORKSTATIONS)} present")
+
+    n_ops = frappe.db.count("Operation")
+    chk("Operations", n_ops >= len(STEP_TEMPLATE), f"{n_ops} operations")
+    chk("Routing", frappe.db.exists("Routing", ROUTING_NAME), ROUTING_NAME)
+    chk("Print format", frappe.db.exists("Print Format", PRINT_FORMAT_NAME), PRINT_FORMAT_NAME)
+    chk("Workspace", frappe.db.exists("Workspace", WORKSPACE_NAME), WORKSPACE_NAME)
+
+    n_unpriced = frappe.db.count("Item", {
+        "item_group": ["in", inventory.ITEM_GROUPS], "disabled": 0, "valuation_rate": 0,
+        "last_purchase_rate": 0, "standard_rate": 0,
+    })
+    chk("Material prices", True, f"{n_unpriced} material(s) still unpriced" if n_unpriced else "all materials priced")
+
+    failed = [c["name"] for c in checks if not c["ok"]]
+    return {"checks": checks, "all_ok": not failed, "failed": failed}
 
 
 def ensure_workspace():

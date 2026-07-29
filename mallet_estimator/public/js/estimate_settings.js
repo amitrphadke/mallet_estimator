@@ -24,6 +24,22 @@ frappe.ui.form.on("Estimate Settings", {
         render_calculator(frm);
       });
     });
+
+    frm.add_custom_button(__("Verify setup"), () => {
+      frappe.call({ method: "mallet_estimator.install.verify_setup", freeze: true }).then((r) => {
+        const d = (r && r.message) || { checks: [] };
+        const rows = (d.checks || []).map((c) =>
+          `<tr><td>${c.ok ? "✅" : "❌"}</td><td>${frappe.utils.escape_html(c.name)}</td>` +
+          `<td class="text-muted">${frappe.utils.escape_html(c.detail || "")}</td></tr>`
+        ).join("");
+        frappe.msgprint({
+          title: d.all_ok ? __("Setup verified ✓") : __("Setup incomplete"),
+          indicator: d.all_ok ? "green" : "red",
+          message: `<table class="table table-bordered" style="font-size:12.5px;margin:0"><tbody>${rows}</tbody></table>` +
+            (d.all_ok ? "" : `<p class="text-muted" style="margin-top:8px">Run <b>Create / refresh manufacturing masters</b> to fix the ❌ rows.</p>`),
+        });
+      });
+    });
     render_calculator(frm);
   },
   carpenter_rate: (frm) => render_calculator(frm),
