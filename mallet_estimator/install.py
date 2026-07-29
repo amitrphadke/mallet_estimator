@@ -30,10 +30,12 @@ def after_install():
 
 
 def after_migrate():
-    # Keep masters, rooms, print format and workspace in sync — never break migrate.
+    # Keep only the LIGHT, fast masters in sync on every migrate. The heavier
+    # ones — inventory Item custom fields (a schema rebuild on the big Item table)
+    # and the warehouse tree — are created by after_install and the "Create /
+    # refresh manufacturing masters" button, NOT here, so a deploy's site-migration
+    # step never stalls on them.
     _safe(ensure_rooms)
-    _safe(ensure_inventory_masters)
-    _safe(ensure_warehouses)
     _safe(ensure_manufacturing_masters)
     _safe(ensure_print_format)
     _safe(ensure_workspace)

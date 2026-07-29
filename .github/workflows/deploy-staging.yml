@@ -114,6 +114,7 @@ jobs:
           # apps we deployed still report an update available (i.e. the running
           # bench actually carries the new commit).
           BUILT=0
+          STABLE=0
           for i in $(seq 1 165); do
             sleep 20
             info
@@ -136,9 +137,19 @@ jobs:
             fi
 
             [ "$STATUS" = "Success" ] && BUILT=1
-            if [ "$BUILT" = "1" ] && [ "$DIP" != "true" ] && [ "$BCU" != "true" ] && [ "$PIPE" != "true" ] && [ "$PENDING" = "0" ]; then
-              echo "✅ LIVE on Frappe Cloud — build ${DNAME} built and the bench now carries the new commit."
-              exit 0
+            # Live when the build is done, no deploy is actively in progress, the
+            # bench isn't being (re)created, and our app no longer reports an
+            # update — held for two consecutive checks. `has_running_release_pipeline`
+            # is intentionally NOT required: FC can leave that flag set on a
+            # lingering pipeline record long after the site is actually updated.
+            if [ "$BUILT" = "1" ] && [ "$DIP" != "true" ] && [ "$BCU" != "true" ] && [ "$PENDING" = "0" ]; then
+              STABLE=$((STABLE + 1))
+              if [ "$STABLE" -ge 2 ]; then
+                echo "✅ LIVE on Frappe Cloud — build ${DNAME}; the bench carries the new commit (pipeline flag=${PIPE}, informational)."
+                exit 0
+              fi
+            else
+              STABLE=0
             fi
           done
           echo "::error::Deploy not fully live after 55 min (build=${STATUS}, pending our apps=${PENDING}). The image may have built but the bench/site update did not complete — check Frappe Cloud."
