@@ -196,6 +196,18 @@ class EstimateSKU(Document):
         ):
             self.set(k, r[k])
 
+    @frappe.whitelist()
+    def recompute(self):
+        """Re-price every step at the CURRENT Workstation Net Hour Rates and save
+        only if the total actually moved. Called on form load so Phase Cost never
+        shows a value that pre-dates a workstation-rate change."""
+        before = self.client_total or 0
+        self.compute_costs()
+        if abs((self.client_total or 0) - before) > 0.005:
+            self.save(ignore_permissions=True)
+            return {"changed": True, "client_total": self.client_total}
+        return {"changed": False, "client_total": self.client_total}
+
     # --- ERPNext Item ------------------------------------------------------
     def sync_item(self):
         code = self.sku_code or self.name

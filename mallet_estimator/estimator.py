@@ -153,7 +153,9 @@ def live_workstation_rates(settings):
     computed = {w["name"]: w for w in workstation_rates(settings)}
     rates = {}
     for name in frappe.get_all("Workstation", pluck="name"):
-        doc = frappe.get_cached_doc("Workstation", name)
+        # Read fresh (not cached) so an edit to the workstation's operating costs
+        # is picked up immediately.
+        doc = frappe.get_doc("Workstation", name)
         rows = getattr(doc, "workstation_costs", None) or []
         if not rows:
             if name in computed:
@@ -165,7 +167,14 @@ def live_workstation_rates(settings):
         machine_hr = comp.get("Machinery", 0)
         elec_hr = comp.get("Electricity", 0)
         consumable_hr = comp.get("Consumables", 0)
-        net_hr = _num(getattr(doc, "hour_rate", 0)) or sum(comp.values())
+        # Net Hour Rate = the sum of ALL component rows (never trust a possibly
+        # stale stored hour_rate). This includes any component we don't name
+        # explicitly, so nothing is dropped.
+        named = rent_hr + wages_hr + machine_hr + elec_hr + consumable_hr
+        total_rows = sum(comp.values())
+        # fold any extra/unrecognised components into consumables for the split
+        consumable_hr += (total_rows - named)
+        net_hr = total_rows
         rates[name] = {
             "rent_hr": rent_hr, "wages_hr": wages_hr, "machine_hr": machine_hr,
             "elec_hr": elec_hr, "consumable_hr": consumable_hr, "net_hr": net_hr,

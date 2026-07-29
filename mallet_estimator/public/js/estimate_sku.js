@@ -6,7 +6,18 @@
 const LOCKED_PHASES = ["Sheet Lamination", "Sheet Tape Removal", "Sheet Cutting", "Edge Banding"];
 
 frappe.ui.form.on("Estimate SKU", {
-  refresh: (frm) => setTimeout(() => lock_qty(frm), 300),
+  refresh(frm) {
+    setTimeout(() => lock_qty(frm), 300);
+    // Re-price Phase Costs at the current Workstation rates when the SKU is
+    // opened, so changing a workstation's operating costs is reflected without a
+    // manual re-save. Only when the form has no unsaved edits; reloads once if
+    // anything changed (then stabilises — no loop).
+    if (!frm.is_new() && !frm.is_dirty()) {
+      frm.call("recompute").then((r) => {
+        if (r && r.message && r.message.changed) frm.reload_doc();
+      });
+    }
+  },
 });
 
 frappe.ui.form.on("Estimate Labor", {
