@@ -64,7 +64,13 @@ the estimator reads that live rate. A step's cost = **Net Hour Rate × (Qty × M
      **Save**.
 8. On Save, the app automatically:
    - reads the **accurate sheet/hardware quantities** from the Estimate PDF,
-   - creates/links an ERPNext **Item** per material (your rate card — set the prices once),
+   - makes sure every material exists as a proper ERPNext **stock Item** (created once,
+     never duplicated — keyed on its OpenCutList code + thickness, e.g. `SG_PLY_V0_a_a_16mm`),
+     grouped under **Mallet Materials** (Sheet Goods / Laminate / Edge Banding / Hardware /
+     Solid Wood), with the right UOM (Sheet / Meter / Nos) and the 1220×2440 sheet size,
+   - pulls each material's **cost from ERPNext** — valuation → last purchase → buying price →
+     standard rate (never from the PDF; the PDF only says *which* material and *how many*).
+     Anything **not priced yet** is flagged on the SKU so you know to set a rate,
    - fills the **17 process steps** with quantities derived from the design (sheets, minifix,
      hinges, drawer rails, etc.) and each step's **Workstation** and **Phase Cost**,
    - stores the **parts list** (with the QR part numbers from your labels) for the shop floor,
@@ -117,8 +123,9 @@ So the rule is: **approved = frozen; a scope change = a new amended version**, n
 
 | You do | ERPNext gets |
 |---|---|
-| Fill Estimate Settings → Create masters | **Workstations**, **Operations**, **Routing**, **Rooms**, print format |
-| Save an Estimate SKU with the PDF | one **Item** per material (rate card) + one **Item** for the article |
+| Fill Estimate Settings → Create masters | **Workstations**, **Operations**, **Routing**, **Rooms**, **Item Groups** (Mallet Materials), **UOMs**, print format |
+| Save an Estimate SKU with the PDF | one **stock Item** per material (grouped, priced from ERPNext) + one **Item** for the article |
+| Set material prices | a **Purchase Receipt** (valuation), a **buying Item Price**, or the Item's standard rate — see the **Mallet Materials** report |
 | Create an Estimate + Create Quotation | a **Quotation** for the customer, linked to the Project |
 | Build BOMs | a **BOM** per article |
 | Sales Order → Create Work Order | **Work Orders** + **Job Cards** |

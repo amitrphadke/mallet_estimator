@@ -4,7 +4,7 @@ import frappe
 from frappe import _
 from frappe.model.document import Document
 
-from mallet_estimator import opencutlist, estimate_pdf
+from mallet_estimator import opencutlist, estimate_pdf, inventory
 from mallet_estimator.estimator import (
     STEP_TEMPLATE, OPERATION_STANDARDS, OPERATION_WORKSTATION, calc_sku, sku_code,
     customer_initials, op_phase, live_workstation_rates,
@@ -24,26 +24,6 @@ def get_default_item_group():
         or frappe.db.get_value("Item Group", {"is_group": 0}, "name")
         or "All Item Groups"
     )
-
-
-def ensure_material_item(code, uom="Nos"):
-    """Return the best available inventory/rate-card price for a material Item,
-    creating it (rate 0) if new. Prefers valuation rate, then last purchase, then
-    the standard buying rate."""
-    if frappe.db.exists("Item", code):
-        v = frappe.db.get_value(
-            "Item", code, ["valuation_rate", "last_purchase_rate", "standard_rate"], as_dict=True
-        ) or {}
-        return v.get("valuation_rate") or v.get("last_purchase_rate") or v.get("standard_rate") or 0
-    item = frappe.new_doc("Item")
-    item.item_code = code
-    item.item_name = code[:140]
-    item.item_group = get_default_item_group()
-    item.stock_uom = uom or "Nos"
-    item.is_stock_item = 0
-    item.standard_rate = 0
-    item.insert(ignore_permissions=True)
-    return 0
 
 
 class EstimateSKU(Document):
@@ -81,14 +61,30 @@ class EstimateSKU(Document):
             part_count = len(parts)
 
         self.set("materials", [])
+        unpriced = []
         for m in materials:
-            code = _pdf_item_code(m)
-            rate = ensure_material_item(code, "Nos")
+            # Ensure the material exists as a proper ERPNext stock Item (once) and
+            # pull its cost from ERPNext — valuation / last purchase / price list /
+            # standard rate. The PDF only says WHICH material and HOW MANY.
+            code, rate, source = inventory.ensure_material_item(
+                m["name"], kind=m.get("kind"), thickness=m.get("thickness") or 0
+            )
             qty = m["qty"] or 0
             self.append("materials", {
                 "item": code, "material": m["name"], "description": _pdf_desc(m)[:140],
                 "qty": qty, "unit_cost": rate, "line_cost": qty * (rate or 0),
+                "thickness": m.get("thickness") or 0,
             })
+            if source == "unset":
+                unpriced.append(code)
+        self.unpriced_materials = ", ".join(unpriced)
+        if unpriced:
+            frappe.msgprint(
+                _("These materials have no price in ERPNext yet — set a Purchase/valuation "
+                  "or standard rate on the Item so the estimate can cost them:<br><b>{0}</b>")
+                .format(", ".join(unpriced)),
+                title=_("Materials need a price"), indicator="orange",
+            )
 
         opq = estimate_pdf.operation_quantities(materials, part_count)
         for row in self.labor:
@@ -242,12 +238,6 @@ def _file_content(file_url):
     if not name:
         frappe.throw(_("Uploaded file not found: {0}").format(file_url))
     return frappe.get_doc("File", name).get_content()
-
-
-def _pdf_item_code(m):
-    if m["kind"] == "sheet" and m.get("thickness"):
-        return f"{m['name']}_{m['thickness']:g}mm"
-    return m["name"]
 
 
 def _pdf_desc(m):

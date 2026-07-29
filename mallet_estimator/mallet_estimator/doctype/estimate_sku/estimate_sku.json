@@ -28,6 +28,7 @@
   "estimate_pdf",
   "parts_csv",
   "materials",
+  "unpriced_materials",
   "material_cost",
   "import_drivers",
   "parts_section",
@@ -52,49 +53,263 @@
   "client_total"
  ],
  "fields": [
-  {"fieldname": "identity_section", "fieldtype": "Section Break", "label": "Identity"},
-  {"fieldname": "article_name", "fieldtype": "Data", "label": "Article Name", "reqd": 1, "in_list_view": 1},
-  {"fieldname": "room", "fieldtype": "Link", "options": "Estimate Room", "label": "Room", "reqd": 1, "in_list_view": 1},
-  {"fieldname": "sku_code", "fieldtype": "Data", "label": "SKU Code", "read_only": 1, "in_list_view": 1, "description": "Auto: ClientInitials_Room_Article"},
-  {"fieldname": "auto_name", "fieldtype": "Check", "label": "Auto-generate SKU code", "default": "1"},
-  {"fieldname": "column_break_identity", "fieldtype": "Column Break"},
-  {"fieldname": "project", "fieldtype": "Link", "label": "Project", "options": "Project", "reqd": 1},
-  {"fieldname": "customer", "fieldtype": "Link", "label": "Customer", "options": "Customer", "fetch_from": "project.customer"},
-  {"fieldname": "item", "fieldtype": "Link", "label": "ERPNext Item", "options": "Item", "read_only": 1},
-  {"fieldname": "create_item", "fieldtype": "Check", "label": "Create / update Item on save", "default": "1"},
-  {"fieldname": "include_misc", "fieldtype": "Check", "label": "Include miscellaneous / extra step (17)", "default": "1"},
-  {"fieldname": "spec_section", "fieldtype": "Section Break", "label": "Specification"},
-  {"fieldname": "outer_w", "fieldtype": "Float", "label": "Outer Width (mm)"},
-  {"fieldname": "outer_d", "fieldtype": "Float", "label": "Outer Depth (mm)"},
-  {"fieldname": "outer_h", "fieldtype": "Float", "label": "Outer Height (mm)"},
-  {"fieldname": "description", "fieldtype": "Small Text", "label": "Description (shown on client estimate)"},
-  {"fieldname": "article_image", "fieldtype": "Attach Image", "label": "Article Image (SketchUp — shown on client estimate)"},
-  {"fieldname": "material_section", "fieldtype": "Section Break", "label": "Material"},
-  {"fieldname": "estimate_pdf", "fieldtype": "Attach", "label": "OpenCutList Estimate PDF"},
-  {"fieldname": "parts_csv", "fieldtype": "Attach", "label": "OpenCutList Parts CSV"},
-  {"fieldname": "materials", "fieldtype": "Table", "label": "Material Lines", "options": "Estimate Material"},
-  {"fieldname": "material_cost", "fieldtype": "Currency", "label": "Material Cost", "read_only": 1},
-  {"fieldname": "import_drivers", "fieldtype": "Code", "label": "Import Drivers (JSON)", "hidden": 1, "read_only": 1},
-  {"fieldname": "parts_section", "fieldtype": "Section Break", "label": "Parts (from CSV — for job cards / QR)", "collapsible": 1},
-  {"fieldname": "parts", "fieldtype": "Table", "label": "Parts", "options": "Estimate Part"},
-  {"fieldname": "labor_section", "fieldtype": "Section Break", "label": "Labor"},
-  {"fieldname": "labor", "fieldtype": "Table", "label": "Process Steps", "options": "Estimate Labor"},
-  {"fieldname": "carp_min_total", "fieldtype": "Float", "label": "Carpenter Minutes", "read_only": 1},
-  {"fieldname": "helper_min_total", "fieldtype": "Float", "label": "Helper Minutes", "read_only": 1},
-  {"fieldname": "labor_cost", "fieldtype": "Currency", "label": "Labor Cost", "read_only": 1},
-  {"fieldname": "design_section", "fieldtype": "Section Break", "label": "Design"},
-  {"fieldname": "design_hours", "fieldtype": "Float", "label": "Design Hours"},
-  {"fieldname": "design_flat", "fieldtype": "Currency", "label": "Flat Design Charge"},
-  {"fieldname": "design_cost", "fieldtype": "Currency", "label": "Design Cost", "read_only": 1},
-  {"fieldname": "cost_section", "fieldtype": "Section Break", "label": "Cost Summary"},
-  {"fieldname": "machine_cost", "fieldtype": "Currency", "label": "Machine (depreciation)", "read_only": 1},
-  {"fieldname": "rent_cost", "fieldtype": "Currency", "label": "Factory Rent", "read_only": 1},
-  {"fieldname": "overhead_cost", "fieldtype": "Currency", "label": "Overhead (machine + rent)", "read_only": 1},
-  {"fieldname": "internal_cost", "fieldtype": "Currency", "label": "Internal Cost", "read_only": 1, "bold": 1},
-  {"fieldname": "column_break_cost", "fieldtype": "Column Break"},
-  {"fieldname": "client_material", "fieldtype": "Currency", "label": "Client: Material", "read_only": 1},
-  {"fieldname": "client_design_exec", "fieldtype": "Currency", "label": "Client: Design & Execution", "read_only": 1},
-  {"fieldname": "client_total", "fieldtype": "Currency", "label": "Client: SKU Total", "read_only": 1, "bold": 1}
+  {
+   "fieldname": "identity_section",
+   "fieldtype": "Section Break",
+   "label": "Identity"
+  },
+  {
+   "fieldname": "article_name",
+   "fieldtype": "Data",
+   "label": "Article Name",
+   "reqd": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "room",
+   "fieldtype": "Link",
+   "options": "Estimate Room",
+   "label": "Room",
+   "reqd": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "sku_code",
+   "fieldtype": "Data",
+   "label": "SKU Code",
+   "read_only": 1,
+   "in_list_view": 1,
+   "description": "Auto: ClientInitials_Room_Article"
+  },
+  {
+   "fieldname": "auto_name",
+   "fieldtype": "Check",
+   "label": "Auto-generate SKU code",
+   "default": "1"
+  },
+  {
+   "fieldname": "column_break_identity",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "project",
+   "fieldtype": "Link",
+   "label": "Project",
+   "options": "Project",
+   "reqd": 1
+  },
+  {
+   "fieldname": "customer",
+   "fieldtype": "Link",
+   "label": "Customer",
+   "options": "Customer",
+   "fetch_from": "project.customer"
+  },
+  {
+   "fieldname": "item",
+   "fieldtype": "Link",
+   "label": "ERPNext Item",
+   "options": "Item",
+   "read_only": 1
+  },
+  {
+   "fieldname": "create_item",
+   "fieldtype": "Check",
+   "label": "Create / update Item on save",
+   "default": "1"
+  },
+  {
+   "fieldname": "include_misc",
+   "fieldtype": "Check",
+   "label": "Include miscellaneous / extra step (17)",
+   "default": "1"
+  },
+  {
+   "fieldname": "spec_section",
+   "fieldtype": "Section Break",
+   "label": "Specification"
+  },
+  {
+   "fieldname": "outer_w",
+   "fieldtype": "Float",
+   "label": "Outer Width (mm)"
+  },
+  {
+   "fieldname": "outer_d",
+   "fieldtype": "Float",
+   "label": "Outer Depth (mm)"
+  },
+  {
+   "fieldname": "outer_h",
+   "fieldtype": "Float",
+   "label": "Outer Height (mm)"
+  },
+  {
+   "fieldname": "description",
+   "fieldtype": "Small Text",
+   "label": "Description (shown on client estimate)"
+  },
+  {
+   "fieldname": "article_image",
+   "fieldtype": "Attach Image",
+   "label": "Article Image (SketchUp \u2014 shown on client estimate)"
+  },
+  {
+   "fieldname": "material_section",
+   "fieldtype": "Section Break",
+   "label": "Material"
+  },
+  {
+   "fieldname": "estimate_pdf",
+   "fieldtype": "Attach",
+   "label": "OpenCutList Estimate PDF"
+  },
+  {
+   "fieldname": "parts_csv",
+   "fieldtype": "Attach",
+   "label": "OpenCutList Parts CSV"
+  },
+  {
+   "fieldname": "materials",
+   "fieldtype": "Table",
+   "label": "Material Lines",
+   "options": "Estimate Material"
+  },
+  {
+   "fieldname": "unpriced_materials",
+   "fieldtype": "Small Text",
+   "label": "Materials Needing a Price",
+   "read_only": 1,
+   "description": "Materials with no ERPNext price yet \u2014 set a rate on the Item so the estimate can cost them."
+  },
+  {
+   "fieldname": "material_cost",
+   "fieldtype": "Currency",
+   "label": "Material Cost",
+   "read_only": 1
+  },
+  {
+   "fieldname": "import_drivers",
+   "fieldtype": "Code",
+   "label": "Import Drivers (JSON)",
+   "hidden": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "parts_section",
+   "fieldtype": "Section Break",
+   "label": "Parts (from CSV \u2014 for job cards / QR)",
+   "collapsible": 1
+  },
+  {
+   "fieldname": "parts",
+   "fieldtype": "Table",
+   "label": "Parts",
+   "options": "Estimate Part"
+  },
+  {
+   "fieldname": "labor_section",
+   "fieldtype": "Section Break",
+   "label": "Labor"
+  },
+  {
+   "fieldname": "labor",
+   "fieldtype": "Table",
+   "label": "Process Steps",
+   "options": "Estimate Labor"
+  },
+  {
+   "fieldname": "carp_min_total",
+   "fieldtype": "Float",
+   "label": "Carpenter Minutes",
+   "read_only": 1
+  },
+  {
+   "fieldname": "helper_min_total",
+   "fieldtype": "Float",
+   "label": "Helper Minutes",
+   "read_only": 1
+  },
+  {
+   "fieldname": "labor_cost",
+   "fieldtype": "Currency",
+   "label": "Labor Cost",
+   "read_only": 1
+  },
+  {
+   "fieldname": "design_section",
+   "fieldtype": "Section Break",
+   "label": "Design"
+  },
+  {
+   "fieldname": "design_hours",
+   "fieldtype": "Float",
+   "label": "Design Hours"
+  },
+  {
+   "fieldname": "design_flat",
+   "fieldtype": "Currency",
+   "label": "Flat Design Charge"
+  },
+  {
+   "fieldname": "design_cost",
+   "fieldtype": "Currency",
+   "label": "Design Cost",
+   "read_only": 1
+  },
+  {
+   "fieldname": "cost_section",
+   "fieldtype": "Section Break",
+   "label": "Cost Summary"
+  },
+  {
+   "fieldname": "machine_cost",
+   "fieldtype": "Currency",
+   "label": "Machine (depreciation)",
+   "read_only": 1
+  },
+  {
+   "fieldname": "rent_cost",
+   "fieldtype": "Currency",
+   "label": "Factory Rent",
+   "read_only": 1
+  },
+  {
+   "fieldname": "overhead_cost",
+   "fieldtype": "Currency",
+   "label": "Overhead (machine + rent)",
+   "read_only": 1
+  },
+  {
+   "fieldname": "internal_cost",
+   "fieldtype": "Currency",
+   "label": "Internal Cost",
+   "read_only": 1,
+   "bold": 1
+  },
+  {
+   "fieldname": "column_break_cost",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "client_material",
+   "fieldtype": "Currency",
+   "label": "Client: Material",
+   "read_only": 1
+  },
+  {
+   "fieldname": "client_design_exec",
+   "fieldtype": "Currency",
+   "label": "Client: Design & Execution",
+   "read_only": 1
+  },
+  {
+   "fieldname": "client_total",
+   "fieldtype": "Currency",
+   "label": "Client: SKU Total",
+   "read_only": 1,
+   "bold": 1
+  }
  ],
  "links": [],
  "modified": "2026-07-24 00:00:00.000000",
@@ -103,9 +318,38 @@
  "name": "Estimate SKU",
  "owner": "Administrator",
  "permissions": [
-  {"create": 1, "delete": 1, "email": 1, "export": 1, "print": 1, "read": 1, "report": 1, "role": "System Manager", "share": 1, "write": 1},
-  {"create": 1, "delete": 1, "email": 1, "export": 1, "print": 1, "read": 1, "report": 1, "role": "Manufacturing Manager", "share": 1, "write": 1},
-  {"create": 1, "print": 1, "read": 1, "report": 1, "role": "Manufacturing User", "write": 1}
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Manufacturing Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Manufacturing User",
+   "write": 1
+  }
  ],
  "sort_field": "modified",
  "sort_order": "DESC"
