@@ -198,7 +198,21 @@ def ensure_inventory_masters():
             except Exception as exc:
                 result["errors"].append(f"UOM {uom}: {exc}")
 
-    root = frappe.db.get_value("Item Group", {"is_group": 1}, "name") or "All Item Groups"
+    # Parent the tree under the site's root Item Group; create the root if the
+    # site has none (bare ERPNext installs lack the wizard-seeded Item Group tree).
+    root = frappe.db.get_value("Item Group", {"is_group": 1, "parent_item_group": ["in", ["", None]]}, "name") \
+        or frappe.db.get_value("Item Group", {"is_group": 1}, "name")
+    if not root:
+        try:
+            r = frappe.new_doc("Item Group")
+            r.item_group_name = "All Item Groups"
+            r.is_group = 1
+            r.insert(ignore_permissions=True)
+            root = r.name
+            result["item_groups"] += 1
+        except Exception as exc:
+            result["errors"].append(f"root Item Group: {exc}")
+            root = "All Item Groups"
 
     # Raw-material tree: Mallet Materials -> the 6 material groups
     _ensure_group(PARENT_GROUP, root, is_group=1, result=result)
