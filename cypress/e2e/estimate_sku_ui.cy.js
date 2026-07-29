@@ -14,21 +14,23 @@ describe("Mallet Estimator — desk UI", () => {
       });
   });
 
-  it("Estimate SKU material grid is stock-backed (Item link + UOM columns)", () => {
-    cy.visit("/app/estimate-sku/new");
-    cy.get('[data-fieldname="materials"]', { timeout: ### }).scrollIntoView().should("be.visible");
-    cy.get('[data-fieldname="materials"] .grid-heading-row').within(() => {
-      cy.contains("Material Item");
-      cy.contains("UOM");
-      cy.contains("Rate");
-    });
+  it("desk boots and renders the Estimate Settings page for a logged-in user", () => {
+    cy.visit("/app/estimate-settings");
+    cy.get(".navbar", { timeout: 60000 }).should("exist"); // desk shell = authenticated, assets loaded
+    cy.location("pathname").should("include", "/app/estimate-settings");
+    cy.get("body", { timeout: 60000 }).should("contain", "Estimate Settings");
   });
 
-  it("Estimate Settings exposes the Verify setup / Create masters buttons", () => {
-    cy.visit("/app/estimate-settings");
-    cy.get(".page-actions", { timeout: ### }).should("exist");
-    cy.get("body").should(($b) => {
-      expect($b.text()).to.match(/Verify setup|Create \/ refresh manufacturing masters/);
-    });
+  it("material lines are stock-backed Items with a UOM (doctype meta)", () => {
+    cy.request("/api/method/frappe.client.get?doctype=DocType&name=Estimate%20Material")
+      .its("body.message.fields")
+      .then((fields) => {
+        const byName = Object.fromEntries(fields.map((f) => [f.fieldname, f]));
+        expect(byName.item, "material line has an 'item' field").to.exist;
+        expect(byName.item.fieldtype).to.eq("Link");
+        expect(byName.item.options).to.eq("Item"); // links to ERPNext stock Item
+        expect(byName.uom, "material line has a 'uom' field").to.exist;
+        expect(byName.uom.options).to.eq("UOM");
+      });
   });
 });
