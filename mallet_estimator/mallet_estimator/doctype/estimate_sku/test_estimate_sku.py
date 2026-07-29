@@ -17,6 +17,10 @@ class TestEstimateSKU(MalletTestCase):
         install.ensure_rooms()
         inventory.ensure_inventory_masters()
         install.ensure_manufacturing_masters()
+        cls.company = frappe.db.get_value("Company", {}, "name") or frappe.get_doc({
+            "doctype": "Company", "company_name": "Mallet Test Co", "abbr": "MTC",
+            "default_currency": "INR", "country": "India",
+        }).insert(ignore_permissions=True).name
         if not frappe.db.exists("Customer", "Test Customer"):
             frappe.get_doc({
                 "doctype": "Customer", "customer_name": "Test Customer",
@@ -25,7 +29,7 @@ class TestEstimateSKU(MalletTestCase):
         if not frappe.db.exists("Project", {"project_name": "Mallet Test Project"}):
             cls.project = frappe.get_doc({
                 "doctype": "Project", "project_name": "Mallet Test Project",
-                "customer": "Test Customer",
+                "customer": "Test Customer", "company": cls.company,
             }).insert(ignore_permissions=True).name
         else:
             cls.project = frappe.db.get_value("Project", {"project_name": "Mallet Test Project"}, "name")

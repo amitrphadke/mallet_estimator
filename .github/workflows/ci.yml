@@ -105,9 +105,6 @@ jobs:
         if: failure()
         working-directory: frappe-bench
         run: |
-          echo "===== bench.log ====="; tail -n 100 logs/*.log 2>/dev/null || true
-          echo "===== site errors ====="; bench --site test_site console <<'PY' 2>/dev/null || true
-          import frappe
-          for e in frappe.get_all("Error Log", fields=["method","error"], limit=5, order_by="creation desc"):
-              print(e.method); print(e.error[:2000]); print("----")
-          PY
+          echo "===== recent Error Log ====="
+          bench --site test_site execute frappe.client.get_list \
+            --kwargs '{"doctype": "Error Log", "fields": ["method"], "limit_page_length": 5, "order_by": "creation desc"}' 2>/dev/null || true
