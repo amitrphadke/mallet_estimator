@@ -1,9 +1,9 @@
 // Self-contained Cypress config — runs against a live bench (bench start) without
 // depending on Frappe's own cypress harness. Invoked in CI as:
-//   cd apps/mallet_estimator && <frappe>/node_modules/.bin/cypress run --browser chrome
-const { defineConfig } = require("cypress");
-
-module.exports = defineConfig({
+//   cd apps/mallet_estimator && npx cypress run
+// Exported as a plain object (no require("cypress")) so it resolves even when the
+// app dir has no local cypress module (cypress is run via npx).
+module.exports = {
   e2e: {
     baseUrl: "http://localhost:8000",
     specPattern: "cypress/e2e/**/*.cy.js",
@@ -12,6 +12,5 @@ module.exports = defineConfig({
     pageLoadTimeout: 60000,
     video: false,
     screenshotOnRunFailure: false,
-    setupNodeEvents() {},
   },
-});
+};
