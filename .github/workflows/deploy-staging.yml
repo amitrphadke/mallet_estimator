@@ -22,6 +22,22 @@ name: Deploy to Frappe Cloud (staging)
 on:
   push:
     branches: [main]
+    # Only deploy when RUNTIME code changes. Commits that only touch CI, tests,
+    # cypress, or docs must never trigger a Frappe Cloud deploy (that churn jammed
+    # the FC deploy queue). A commit that also touches app code still deploys.
+    paths-ignore:
+      - '.github/**'
+      - 'cypress/**'
+      - 'cypress.config.js'
+      - 'mallet_estimator/tests/**'
+      - '**/test_*.py'
+      - '**.md'
+  workflow_dispatch:   # manual "deploy now" button
+
+# One deploy at a time; a newer push cancels the older run so they don't pile up.
+concurrency:
+  group: deploy-staging
+  cancel-in-progress: true
 
 jobs:
   deploy:

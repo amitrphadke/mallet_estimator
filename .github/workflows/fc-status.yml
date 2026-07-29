@@ -1,0 +1,32 @@
+name: FC status (read-only)
+
+# Manual, read-only probe of the Frappe Cloud deploy state — does NOT trigger a
+# deploy. Use it to see whether a deploy is in progress / a pipeline is stuck and
+# what commit the bench currently carries.
+on:
+  workflow_dispatch:
+
+jobs:
+  status:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Query Frappe Cloud deploy_information
+        env:
+          FC_HOST: ${{ vars.FC_HOST != '' && vars.FC_HOST || 'cloud.frappe.io' }}
+          FC_BENCH: ${{ vars.FC_BENCH != '' && vars.FC_BENCH || 'bench-44687' }}
+          FC_KEY: ${{ secrets.FRAPPE_CLOUD_API_KEY }}
+          FC_SECRET: ${{ secrets.FRAPPE_CLOUD_API_SECRET }}
+        run: |
+          set -euo pipefail
+          resp=$(curl -sSL -X POST "https://$FC_HOST/api/method/press.api.bench.deploy_information" \
+            -H "Authorization: token $FC_KEY:$FC_SECRET" -H "Content-Type: application/json" \
+            -d "{\"name\":\"$FC_BENCH\"}")
+          echo "$resp" | jq '{
+            deploy_in_progress: .message.deploy_in_progress,
+            bench_creation_underway: .message.bench_creation_underway,
+            has_running_release_pipeline: .message.has_running_release_pipeline,
+            update_available: .message.update_available,
+            last_deploy: .message.last_deploy,
+            mallet_estimator: (.message.apps[]? | select(.app=="mallet_estimator")
+              | {current_hash, current_tag, next_release, update_available})
+          }'
