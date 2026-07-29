@@ -1,0 +1,98 @@
+name: UI Tests (Cypress)
+
+# End-to-end UI tests: boots Frappe v16 + ERPNext + the app WITH built assets,
+# runs the desk server, and drives it with Cypress (bench run-ui-tests). Heavier
+# than the server CI, so it's a separate workflow and is NOT a required check.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ui-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ui:
+    name: Cypress (Frappe v16 + ERPNext)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    services:
+      mariadb:
+        image: mariadb:10.6
+        env:
+          MARIADB_ROOT_PASSWORD: root
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="healthcheck.sh --connect --innodb_initialized"
+          --health-interval=5s --health-timeout=5s --health-retries=15
+    steps:
+      - name: Clone app
+        uses: actions/checkout@v4
+        with:
+          path: mallet_estimator
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libcups2-dev redis-server mariadb-client \
+            libgtk2.0-0 libgtk-3-0 libgbm-dev libnotify-dev libnss3 libxss1 \
+            libasound2t64 libxtst6 xauth xvfb
+          sudo npm install -g yarn
+
+      - name: Configure MariaDB for Frappe (utf8mb4)
+        run: |
+          mysql -h 127.0.0.1 -u root -proot -e "SET GLOBAL character_set_server = 'utf8mb4';"
+          mysql -h 127.0.0.1 -u root -proot -e "SET GLOBAL collation_server = 'utf8mb4_unicode_ci';"
+
+      - name: Install bench
+        run: pip install frappe-bench
+
+      - name: Init bench + get apps (with assets)
+        run: |
+          bench init --frappe-branch version-16 --python "$(which python)" frappe-bench
+          cd frappe-bench
+          bench get-app erpnext --branch version-16 --resolve-deps
+          bench get-app payments --branch version-16 || bench get-app payments
+          bench get-app mallet_estimator "${GITHUB_WORKSPACE}/mallet_estimator"
+
+      - name: Create site + install apps + seed config
+        working-directory: frappe-bench
+        run: |
+          bench set-config -g db_host 127.0.0.1
+          bench new-site test_site \
+            --db-root-password root --admin-password admin \
+            --no-mariadb-socket --verbose
+          bench --site test_site install-app erpnext
+          bench --site test_site install-app payments || true
+          bench --site test_site install-app mallet_estimator
+          # a Company so warehouses exist, then create every master
+          bench --site test_site execute mallet_estimator.install.ensure_demo_company
+          bench --site test_site execute mallet_estimator.install.setup
+          bench --site test_site set-config allow_tests true
+          bench build --app frappe --app mallet_estimator
+
+      - name: Run Cypress UI tests
+        working-directory: frappe-bench
+        run: |
+          # start the desk server in the background and wait for it
+          nohup bench start > ~/bench_start.log 2>&1 &
+          echo "waiting for the site to come up ..."
+          for i in $(seq 1 60); do
+            if curl -sf http://localhost:8000/api/method/ping >/dev/null; then echo "up"; break; fi
+            sleep 5
+          done
+          bench --site test_site run-ui-tests mallet_estimator --headless --browser chrome
+
+      - name: Server log on failure
+        if: failure()
+        run: tail -n 120 ~/bench_start.log 2>/dev/null || true

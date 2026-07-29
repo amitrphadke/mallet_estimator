@@ -206,6 +206,18 @@ WAREHOUSE_LEAVES = [
 ITEM_CUSTOM_FIELDS = ["mallet_oc_code", "mallet_thickness_mm", "mallet_sheet_length_mm", "mallet_sheet_width_mm"]
 
 
+def ensure_demo_company():
+    """Create a demo Company if the site has none — used by CI (so warehouses can
+    be created) and for a quick local demo. No-op when a company already exists."""
+    if frappe.db.get_value("Company", {}, "name"):
+        return
+    frappe.get_doc({
+        "doctype": "Company", "company_name": "Mallet Demo", "abbr": "MD",
+        "default_currency": "INR", "country": "India",
+    }).insert(ignore_permissions=True)
+    frappe.db.commit()
+
+
 @frappe.whitelist()
 def verify_setup():
     """Config health-check — assert every master this app needs exists and is
