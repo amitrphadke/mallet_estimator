@@ -76,27 +76,42 @@ jobs:
             exit 1
           fi
           BUILD=$(printf '%s' "$BODY" | jq -r '.message // empty')
-          echo "Deploy triggered. Build candidate: ${BUILD:-<unknown>}. Waiting for Frappe Cloud to build ..."
+          APP_NAMES=$(printf '%s' "$APPS" | jq -c '[.[].app]')
+          echo "Deploy triggered. Build candidate: ${BUILD:-<unknown>}. Waiting for the app to go LIVE on the bench ..."
 
-          # --- 3. wait for the build to finish (Success / Failure) --------------
-          for i in $(seq 1 60); do
+          # --- 3. wait until the build AND the bench/site update finish ---------
+          # A green build is only phase 1 (the Docker image). Frappe Cloud then
+          # creates the new bench and migrates the sites (phase 2). We are done
+          # only when: build = Success, nothing is in progress, and none of the
+          # apps we deployed still report an update available (i.e. the running
+          # bench actually carries the new commit).
+          BUILT=0
+          for i in $(seq 1 90); do
             sleep 20
             info
             STATUS=$(printf '%s' "$BODY" | jq -r '.message.last_deploy.status // "unknown"')
-            DNAME=$(printf '%s' "$BODY" | jq -r '.message.last_deploy.name // ""')
-            echo "[$((i*20))s] build ${DNAME} status=${STATUS}"
-            case "$STATUS" in
-              Success)
-                echo "✅ Deployed to Frappe Cloud (build ${DNAME})."
-                exit 0 ;;
-              Failure)
-                echo "::error::Frappe Cloud build FAILED (build ${DNAME})."
-                echo "--- failing build steps ---"
-                call "${CLIENT_BASE}.get" "$(jq -nc --arg d 'Deploy Candidate Build' --arg n "$DNAME" '{doctype:$d, name:$n}')"
-                printf '%s' "$BODY" | jq -r '.message.build_steps[]? | select(.status=="Failure") | "STEP: \(.stage_slug // .stage) / \(.step_slug // .step)\n\(.output // .command_output // "")"' 2>/dev/null | tail -80 || true
-                printf '%s' "$BODY" | jq -r '.message.build_output // empty' 2>/dev/null | tail -40 || true
-                exit 1 ;;
-            esac
+            DNAME=$(printf '%s'  "$BODY" | jq -r '.message.last_deploy.name // ""')
+            DIP=$(printf '%s'    "$BODY" | jq -r '.message.deploy_in_progress // false')
+            BCU=$(printf '%s'    "$BODY" | jq -r '.message.bench_creation_underway // false')
+            PIPE=$(printf '%s'   "$BODY" | jq -r '.message.has_running_release_pipeline // false')
+            PENDING=$(printf '%s' "$BODY" | jq -r --argjson names "$APP_NAMES" \
+              '[.message.apps[]? | select(.update_available==true) | select(.app as $a | $names | index($a))] | length')
+            echo "[$((i*20))s] build=${STATUS} deploy_in_progress=${DIP} bench_creating=${BCU} pipeline=${PIPE} our_apps_pending=${PENDING}"
+
+            if [ "$STATUS" = "Failure" ]; then
+              echo "::error::Frappe Cloud build FAILED (build ${DNAME})."
+              echo "--- failing build steps ---"
+              call "${CLIENT_BASE}.get" "$(jq -nc --arg d 'Deploy Candidate Build' --arg n "$DNAME" '{doctype:$d, name:$n}')"
+              printf '%s' "$BODY" | jq -r '.message.build_steps[]? | select(.status=="Failure") | "STEP: \(.stage_slug // .stage) / \(.step_slug // .step)\n\(.output // .command_output // "")"' 2>/dev/null | tail -80 || true
+              printf '%s' "$BODY" | jq -r '.message.build_output // empty' 2>/dev/null | tail -40 || true
+              exit 1
+            fi
+
+            [ "$STATUS" = "Success" ] && BUILT=1
+            if [ "$BUILT" = "1" ] && [ "$DIP" != "true" ] && [ "$BCU" != "true" ] && [ "$PIPE" != "true" ] && [ "$PENDING" = "0" ]; then
+              echo "✅ LIVE on Frappe Cloud — build ${DNAME} built and the bench now carries the new commit."
+              exit 0
+            fi
           done
-          echo "::error::Build ${BUILD} still not finished after 20 min — check Frappe Cloud."
+          echo "::error::Deploy not fully live after 30 min (build=${STATUS}, pending our apps=${PENDING}). The image may have built but the bench/site update did not complete — check Frappe Cloud."
           exit 1
