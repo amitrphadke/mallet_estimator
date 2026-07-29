@@ -73,7 +73,7 @@ jobs:
 
       - name: Init bench + get apps
         run: |
-          bench init --skip-redis-config-generation --frappe-branch version-16 --python "$(which python)" frappe-bench
+          bench init --skip-redis-config-generation --skip-assets --frappe-branch version-16 --python "$(which python)" frappe-bench
           cd frappe-bench
           bench get-app erpnext --branch version-16 --resolve-deps
           bench get-app mallet_estimator "${GITHUB_WORKSPACE}/mallet_estimator"
