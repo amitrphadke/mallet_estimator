@@ -1,14 +1,19 @@
 name: Deploy to Frappe Cloud (staging)
 
-# Push to main -> trigger a Frappe Cloud deploy of the staging bench AND wait for
-# the FC image build to finish. The job is green ONLY when the build actually
-# deploys (status = Success); a failed FC build now fails this job and prints the
-# failing build step, instead of reporting success the moment the deploy is queued.
+# Push to main -> build the new bench AND update the staging site (the dashboard
+# "Update Now" path), scoped to mallet_estimator only. The job is green ONLY when
+# the running bench actually carries the new commit.
 #
-# Flow (matches the FC dashboard "Deploy" button):
-#   1. deploy_information -> apps with an update (retried, to absorb webhook lag).
-#   2. deploy {name, apps}  -> returns the Deploy Candidate Build name.
-#   3. Poll deploy_information.last_deploy.status until Success / Failure.
+# Why deploy_and_update (not deploy): press.api.bench.deploy only BUILDS an image
+# ("Update Available"); it does NOT move the site onto it. deploy_and_update builds
+# AND migrates the sites — exactly what clicking "Update Now" does.
+#
+# Flow:
+#   1. deploy_information -> our app's pending release + hash + the bench's sites
+#      (retried, to absorb the push->FC webhook ingestion lag).
+#   2. deploy_and_update {name, apps:[{app,source,release,hash}], sites:[...]}.
+#   3. Poll until build=Success AND nothing in progress AND our app no longer has
+#      an update available (the bench now runs the new commit).
 #
 # ONE-TIME SETUP (GitHub repo -> Settings -> Secrets and variables -> Actions):
 #   Secrets: FRAPPE_CLOUD_API_KEY, FRAPPE_CLOUD_API_SECRET  (FC account -> API Access)
@@ -47,37 +52,60 @@ jobs:
           }
           info() { call "${BENCH_BASE}.deploy_information" "$(jq -nc --arg n "$FC_BENCH" '{name:$n}')"; }
 
-          # --- 1. find apps to deploy (retry to absorb push->FC webhook lag) -----
+          # Only deploy THIS app — never drag ERPNext/CRM/etc. into a dev deploy.
+          APP="mallet_estimator"
+
+          # --- 1. find our app's pending update (retry for webhook ingestion) ----
           APPS="[]"
-          for attempt in 1 2 3 4 5 6; do
+          for attempt in 1 2 3 4 5 6 7 8; do
             info
             if [ "${CODE:0:1}" != "2" ]; then
               echo "$BODY"
               echo "::error::deploy_information failed (HTTP ${CODE:-none}). Check FC_BENCH / API key team."
               exit 1
             fi
-            APPS=$(printf '%s' "$BODY" | jq -c '[.message.apps[]? | select(.update_available == true) | {app: .app, source: .source, release: .next_release}]')
+            # Build {app, source, release, hash} — hash of next_release (needed by
+            # deploy_and_update / validate_app_hashes), matched from the releases list.
+            APPS=$(printf '%s' "$BODY" | jq -c --arg app "$APP" '
+              [ .message.apps[]?
+                | select(.app == $app) | select(.update_available == true)
+                | . as $a
+                | { app: $a.app, source: $a.source, release: $a.next_release,
+                    hash: ( ($a.releases // [])
+                            | ( (map(select(.name == $a.next_release)) | .[0].hash)
+                                // (last | .hash) // "" ) ) } ]')
             [ "$APPS" != "[]" ] && break
-            echo "No update visible yet (attempt $attempt) — Frappe Cloud may not have ingested the push. Waiting 20s ..."
+            echo "No update for ${APP} visible yet (attempt $attempt) — Frappe Cloud may not have ingested the push. Waiting 20s ..."
             sleep 20
           done
-          echo "Apps with an update available: $APPS"
+          echo "App to update: $APPS"
           if [ "$APPS" = "[]" ] || [ -z "$APPS" ]; then
-            echo "Nothing to deploy after retries — Frappe Cloud already has this commit."
+            echo "Nothing to update — Frappe Cloud already has this commit for ${APP}."
             exit 0
           fi
+          if printf '%s' "$APPS" | jq -e '.[0].hash == "" or .[0].hash == null' >/dev/null; then
+            echo "::error::Could not resolve the release hash for ${APP}. deploy_information.apps[].releases had no matching hash."
+            printf '%s' "$BODY" | jq '.message.apps[] | select(.app=="'"$APP"'") | {next_release, releases: (.releases|map({name,hash}))}'
+            exit 1
+          fi
 
-          # --- 2. trigger the deploy --------------------------------------------
-          echo "Triggering deploy ..."
-          call "${BENCH_BASE}.deploy" "$(jq -nc --arg n "$FC_BENCH" --argjson a "$APPS" '{name:$n, apps:$a}')"
+          # Sites on this bench to migrate onto the new build (mirrors the dashboard).
+          SITES=$(printf '%s' "$BODY" | jq -c '[ .message.sites[]? | {name, server, bench, skip_failing_patches: false, skip_backups: false} ]')
+          echo "Sites to update: $SITES"
+
+          # --- 2. deploy AND update the sites (the dashboard "Update Now" path) --
+          echo "Building the new bench and updating the site(s) ..."
+          call "${BENCH_BASE}.deploy_and_update" \
+            "$(jq -nc --arg n "$FC_BENCH" --argjson a "$APPS" --argjson s "$SITES" \
+               '{name:$n, apps:$a, sites:$s, run_will_fail_check:false, trigger_patch_deploy:false}')"
           echo "HTTP $CODE"; echo "$BODY"
           if [ "${CODE:0:1}" != "2" ]; then
-            echo "::error::Deploy trigger did NOT succeed (HTTP ${CODE:-none}). Response above."
+            echo "::error::deploy_and_update did NOT succeed (HTTP ${CODE:-none}). Response above."
             exit 1
           fi
           BUILD=$(printf '%s' "$BODY" | jq -r '.message // empty')
           APP_NAMES=$(printf '%s' "$APPS" | jq -c '[.[].app]')
-          echo "Deploy triggered. Build candidate: ${BUILD:-<unknown>}. Waiting for the app to go LIVE on the bench ..."
+          echo "Update triggered (${BUILD:-<unknown>}). Waiting for ${APP} to go LIVE on the bench ..."
 
           # --- 3. wait until the build AND the bench/site update finish ---------
           # A green build is only phase 1 (the Docker image). Frappe Cloud then
