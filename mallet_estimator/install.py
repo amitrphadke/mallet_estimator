@@ -208,9 +208,20 @@ ITEM_CUSTOM_FIELDS = ["mallet_oc_code", "mallet_thickness_mm", "mallet_sheet_len
 
 def ensure_demo_company():
     """Create a demo Company if the site has none — used by CI (so warehouses can
-    be created) and for a quick local demo. No-op when a company already exists."""
+    be created) and for a quick local demo. No-op when a company already exists.
+    Seeds the 'Transit' Warehouse Type first: ERPNext's default company warehouses
+    need it, and it is normally created by the setup wizard (absent on a bare
+    install-app erpnext)."""
     if frappe.db.get_value("Company", {}, "name"):
         return
+    if frappe.db.exists("DocType", "Warehouse Type") and not frappe.db.exists("Warehouse Type", "Transit"):
+        try:
+            wt = frappe.new_doc("Warehouse Type")
+            if wt.meta.has_field("warehouse_type_name"):
+                wt.warehouse_type_name = "Transit"
+            wt.insert(ignore_permissions=True, set_name="Transit")
+        except Exception:
+            frappe.log_error(frappe.get_traceback(), "mallet_estimator seed Warehouse Type")
     frappe.get_doc({
         "doctype": "Company", "company_name": "Mallet Demo", "abbr": "MD",
         "default_currency": "INR", "country": "India",
