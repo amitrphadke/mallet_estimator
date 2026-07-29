@@ -114,7 +114,7 @@ jobs:
           # apps we deployed still report an update available (i.e. the running
           # bench actually carries the new commit).
           BUILT=0
-          for i in $(seq 1 90); do
+          for i in $(seq 1 165); do
             sleep 20
             info
             STATUS=$(printf '%s' "$BODY" | jq -r '.message.last_deploy.status // "unknown"')
@@ -141,5 +141,5 @@ jobs:
               exit 0
             fi
           done
-          echo "::error::Deploy not fully live after 30 min (build=${STATUS}, pending our apps=${PENDING}). The image may have built but the bench/site update did not complete — check Frappe Cloud."
+          echo "::error::Deploy not fully live after 55 min (build=${STATUS}, pending our apps=${PENDING}). The image may have built but the bench/site update did not complete — check Frappe Cloud."
           exit 1
