@@ -4,3 +4,4 @@ mallet_estimator.patches.rename_execution_estimate_2
 mallet_estimator.patches.reset_sku_grid_columns
 mallet_estimator.patches.reset_sku_grid_columns_2
 mallet_estimator.patches.drop_estimate_machine
+mallet_estimator.patches.make_items_stockable

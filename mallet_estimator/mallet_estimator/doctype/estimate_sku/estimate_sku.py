@@ -114,14 +114,14 @@ class EstimateSKU(Document):
                 })
 
     def _add_material_line(self, name, kind, thickness, qty, desc, unpriced):
-        """Create/link the ERPNext stock Item and append a costed material row."""
+        """Create/link the ERPNext stock Item and append a costed material row.
+        Length/width/thickness are fetched from the Item (fetch_from) — single
+        source of truth, not stored redundantly on the line."""
         code, rate, source = inventory.ensure_material_item(name, kind=kind, thickness=thickness)
-        length, width, th = inventory.sheet_dims(kind, thickness)
         self.append("materials", {
             "item": code, "material": name, "description": (desc or name)[:140],
             "qty": qty, "uom": inventory.stock_uom_for(kind),
             "unit_cost": rate, "line_cost": qty * (rate or 0),
-            "length": length, "width": width, "thickness": th,
         })
         if source == "unset":
             unpriced.append(code)
@@ -253,7 +253,8 @@ class EstimateSKU(Document):
                 else get_default_item_group()
             )
             item.stock_uom = "Nos"
-            item.is_stock_item = 1
+            item.is_stock_item = 1   # finished good: produced -> stocked -> delivered
+            item.is_sales_item = 1   # sold on the Quotation
             item.description = self.description or self.article_name
             item.standard_rate = self.client_total
             item.insert(ignore_permissions=True)

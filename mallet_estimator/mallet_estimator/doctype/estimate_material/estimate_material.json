@@ -86,17 +86,26 @@
   {
    "fieldname": "length",
    "fieldtype": "Float",
-   "label": "Length"
+   "label": "Length",
+   "fetch_from": "item.mallet_sheet_length_mm",
+   "fetch_if_empty": 1,
+   "read_only": 1
   },
   {
    "fieldname": "width",
    "fieldtype": "Float",
-   "label": "Width"
+   "label": "Width",
+   "fetch_from": "item.mallet_sheet_width_mm",
+   "fetch_if_empty": 1,
+   "read_only": 1
   },
   {
    "fieldname": "thickness",
    "fieldtype": "Float",
-   "label": "Thickness"
+   "label": "Thickness",
+   "fetch_from": "item.mallet_thickness_mm",
+   "fetch_if_empty": 1,
+   "read_only": 1
   }
  ],
  "istable": 1,
