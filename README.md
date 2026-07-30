@@ -203,9 +203,20 @@ warehouses under Board & Sheet Store — the app won't clash with them.)
     added **as extra Job Cards / operations on the Work Order** when a job needs them — the 16
     phases are the standard path, not a limit.
 
-> **Per-part tracking:** native Job Cards track each *operation at its station*, not individual
-> cut parts moving between stations. If you need physical part-by-part traceability, that's a
-> custom QR-scan layer over the part numbers already captured in the **Parts** table — ask to add it.
+### Job Card part list (what to cut / band / laminate)
+Each Job Card prints with the article's **cut-part list** via the **Mallet Job Card** print format
+(Job Card → Print → *Mallet Job Card*). It lists every panel — **Part No. (matches the QR label
+OpenCutList prints on the physical part)**, designation, material, and L × W × T — with **Cut /
+Edge / Lam** ticks. When the operation is edge banding, lamination or cutting, the rows for *that*
+station are highlighted, so the operator sees only the parts they must work. The flags are derived
+from the **Parts CSV** on the Estimate SKU (edge columns → Edge, Frontside/Backside → Lam), so
+importing that CSV is what populates the list.
+
+> **Per-part scan tracking:** native Job Cards track each *operation at its station*, not individual
+> cut parts moving between stations. The printed part list above closes most of that gap with zero
+> shop-floor friction. Full physical part-by-part scan tracking would be a custom QR-scan layer over
+> the part numbers already captured in the **Parts** table — deferred until concurrent-job part
+> mixing is a real, recurring pain; ask to add it then.
 
 ---
 

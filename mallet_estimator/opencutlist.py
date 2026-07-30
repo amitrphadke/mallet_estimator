@@ -74,6 +74,13 @@ def parts_list(rows):
         name = (r.get("Material name") or "").strip()
         if not name.upper().startswith("SG"):
             continue
+        # Which stations this part passes through, derived from the CSV so the
+        # Job Card print can show each operator only the parts they must work.
+        edged = any(
+            _material_from(r.get(c))
+            for c in ("Edge Length 1", "Edge Length 2", "Edge Width 1", "Edge Width 2")
+        )
+        laminated = any(_material_from(r.get(c)) for c in ("Frontside", "Backside"))
         out.append({
             "part_no": (r.get("No.") or "").strip(),
             "designation": (r.get("Designation") or r.get("Instance") or "").strip(),
@@ -82,6 +89,9 @@ def parts_list(rows):
             "width": _num(r.get("Width") or r.get("Width - raw")),
             "thickness": _num(r.get("Thickness") or r.get("Thickness - raw")),
             "tag": (r.get("Tag") or "").strip(),
+            "cut": 1,                       # every sheet part is cut on the saw
+            "edge_banded": 1 if edged else 0,
+            "laminated": 1 if laminated else 0,
         })
     return out
 

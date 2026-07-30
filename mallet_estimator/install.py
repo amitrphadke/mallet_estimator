@@ -11,6 +11,7 @@ from mallet_estimator import inventory
 from mallet_estimator.inventory import ensure_inventory_masters, ensure_warehouses
 
 PRINT_FORMAT_NAME = "Mallet Client Estimate"
+JOB_CARD_PRINT_FORMAT_NAME = "Mallet Job Card"
 WORKSPACE_NAME = "Mallet Estimator"
 
 
@@ -270,6 +271,7 @@ def verify_setup():
     chk("Operations", n_ops >= len(STEP_TEMPLATE), f"{n_ops} operations")
     chk("Routing", frappe.db.exists("Routing", ROUTING_NAME), ROUTING_NAME)
     chk("Print format", frappe.db.exists("Print Format", PRINT_FORMAT_NAME), PRINT_FORMAT_NAME)
+    chk("Job Card print", frappe.db.exists("Print Format", JOB_CARD_PRINT_FORMAT_NAME), JOB_CARD_PRINT_FORMAT_NAME)
     chk("Workspace", frappe.db.exists("Workspace", WORKSPACE_NAME), WORKSPACE_NAME)
 
     n_unpriced = frappe.db.count("Item", {
@@ -320,21 +322,20 @@ def seed_settings():
     frappe.db.commit()
 
 
-def ensure_print_format():
+def _upsert_print_format(name, doc_type, template_file):
     path = os.path.join(
-        frappe.get_app_path("mallet_estimator"),
-        "templates", "print", "mallet_client_estimate.html",
+        frappe.get_app_path("mallet_estimator"), "templates", "print", template_file,
     )
     with open(path, "r", encoding="utf-8") as f:
         html = f.read()
 
-    if frappe.db.exists("Print Format", PRINT_FORMAT_NAME):
-        pf = frappe.get_doc("Print Format", PRINT_FORMAT_NAME)
+    if frappe.db.exists("Print Format", name):
+        pf = frappe.get_doc("Print Format", name)
     else:
         pf = frappe.new_doc("Print Format")
-        pf.name = PRINT_FORMAT_NAME
+        pf.name = name
 
-    pf.doc_type = "Estimate"
+    pf.doc_type = doc_type
     pf.module = "Mallet Estimator"
     pf.print_format_type = "Jinja"
     pf.custom_format = 1
@@ -343,4 +344,9 @@ def ensure_print_format():
     pf.html = html
     pf.flags.ignore_permissions = True
     pf.save()
+
+
+def ensure_print_format():
+    _upsert_print_format(PRINT_FORMAT_NAME, "Estimate", "mallet_client_estimate.html")
+    _upsert_print_format(JOB_CARD_PRINT_FORMAT_NAME, "Job Card", "mallet_job_card.html")
     frappe.db.commit()

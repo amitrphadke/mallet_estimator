@@ -31,6 +31,13 @@ class TestPartsList(unittest.TestCase):
         self.assertEqual(parts[0]["part_no"], "1")
         self.assertEqual(parts[0]["thickness"], 16)
 
+    def test_station_flags(self):
+        # Part 1 is edge-banded (not laminated); part 2 is laminated (not edged);
+        # every sheet part is cut. These drive the Job Card part list per station.
+        parts = OCL.parts_list(OCL.parse_opencutlist_csv(CSV))
+        self.assertEqual((parts[0]["cut"], parts[0]["edge_banded"], parts[0]["laminated"]), (1, 1, 0))
+        self.assertEqual((parts[1]["cut"], parts[1]["edge_banded"], parts[1]["laminated"]), (1, 0, 1))
+
 
 class TestAggregate(unittest.TestCase):
     def setUp(self):

@@ -111,6 +111,8 @@ class EstimateSKU(Document):
                 self.append("parts", {
                     "part_no": p["part_no"], "designation": p["designation"], "material": p["material"],
                     "tag": p["tag"], "length": p["length"], "width": p["width"], "thickness": p["thickness"],
+                    "cut": p.get("cut", 1), "edge_banded": p.get("edge_banded", 0),
+                    "laminated": p.get("laminated", 0),
                 })
 
     def _add_material_line(self, name, kind, thickness, qty, desc, unpriced):

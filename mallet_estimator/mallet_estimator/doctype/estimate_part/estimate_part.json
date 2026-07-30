@@ -14,6 +14,7 @@
   "thickness",
   "cut",
   "edge_banded",
+  "laminated",
   "drilled"
  ],
  "fields": [
@@ -26,6 +27,7 @@
   {"fieldname": "thickness", "fieldtype": "Float", "label": "Thickness"},
   {"fieldname": "cut", "fieldtype": "Check", "label": "Cut"},
   {"fieldname": "edge_banded", "fieldtype": "Check", "label": "Edge-banded"},
+  {"fieldname": "laminated", "fieldtype": "Check", "label": "Laminated"},
   {"fieldname": "drilled", "fieldtype": "Check", "label": "Drilled"}
  ],
  "istable": 1,

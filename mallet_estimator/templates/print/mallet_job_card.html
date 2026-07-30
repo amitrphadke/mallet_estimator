@@ -1,0 +1,89 @@
+{#- Mallet Job Card — the standard Job Card header plus the article's cut-part
+    list, so the operator at each station knows exactly which parts to work.
+    The part list is looked up from the Estimate SKU whose finished Item equals
+    this Job Card's production item; the part numbers match the physical QR
+    labels OpenCutList prints on each panel. -#}
+{%- set skus = frappe.get_all("Estimate SKU", filters={"item": doc.production_item},
+        fields=["name"], order_by="modified desc", limit_page_length=1) -%}
+{%- set sku = frappe.get_doc("Estimate SKU", skus[0].name) if skus else None -%}
+{%- set op = (doc.operation or "") | lower -%}
+{%- set focus_edge = "edge" in op -%}
+{%- set focus_lam = ("lamin" in op) or ("press" in op) -%}
+{%- set focus_cut = ("cut" in op) or ("saw" in op) or ("panel" in op) or ("nest" in op) -%}
+{%- set focused = focus_edge or focus_lam or focus_cut -%}
+
+<style>
+  .mjc-h { width: 100%; border-collapse: collapse; margin-bottom: 10px; }
+  .mjc-h td { padding: 3px 8px; font-size: 12px; vertical-align: top; }
+  .mjc-h .k { color: #666; width: 90px; }
+  .mjc-h .v { font-weight: 600; }
+  .mjc-title { font-size: 18px; font-weight: 700; margin-bottom: 2px; }
+  .mjc-sub { color: #666; font-size: 12px; margin-bottom: 10px; }
+  table.mjc { width: 100%; border-collapse: collapse; font-size: 11px; }
+  table.mjc th, table.mjc td { border: 1px solid #bbb; padding: 4px 6px; text-align: left; }
+  table.mjc th { background: #f2f2f2; }
+  table.mjc td.n { text-align: right; }
+  table.mjc td.c { text-align: center; }
+  table.mjc tr.focus td { background: #fff6d6; }
+  .mjc-chk { font-weight: 700; }
+  .mjc-note { color: #999; font-size: 11px; margin-top: 8px; }
+</style>
+
+<div class="mjc-title">{{ doc.item_name or doc.production_item }}</div>
+<div class="mjc-sub">Job Card {{ doc.name }}{% if doc.operation %} · {{ doc.operation }}{% endif %}</div>
+
+<table class="mjc-h">
+  <tr>
+    <td class="k">Operation</td><td class="v">{{ doc.operation or "—" }}</td>
+    <td class="k">Workstation</td><td class="v">{{ doc.workstation or "—" }}</td>
+  </tr>
+  <tr>
+    <td class="k">Work Order</td><td class="v">{{ doc.work_order or "—" }}</td>
+    <td class="k">Quantity</td><td class="v">{{ doc.for_quantity or doc.total_completed_qty or "" }} {{ doc.stock_uom or "" }}</td>
+  </tr>
+  {%- if doc.project or (sku and sku.project) %}
+  <tr>
+    <td class="k">Project</td><td class="v">{{ doc.project or sku.project }}</td>
+    <td class="k">Article</td><td class="v">{{ sku.sku_code if sku else doc.production_item }}</td>
+  </tr>
+  {%- endif %}
+</table>
+
+{%- if sku and sku.parts %}
+<table class="mjc">
+  <thead>
+    <tr>
+      <th>#</th>
+      <th>Part No. (QR)</th>
+      <th>Designation</th>
+      <th>Material</th>
+      <th>L × W × T (mm)</th>
+      <th class="c">Cut</th>
+      <th class="c">Edge</th>
+      <th class="c">Lam</th>
+    </tr>
+  </thead>
+  <tbody>
+    {%- for p in sku.parts %}
+    {%- set is_focus = focused and ((focus_edge and p.edge_banded) or (focus_lam and p.laminated) or (focus_cut and p.cut)) -%}
+    <tr class="{{ 'focus' if is_focus else '' }}">
+      <td class="n">{{ loop.index }}</td>
+      <td>{{ p.part_no or "" }}</td>
+      <td>{{ p.designation or "" }}</td>
+      <td>{{ p.material or "" }}</td>
+      <td class="n">{{ "%g × %g × %g" | format(p.length or 0, p.width or 0, p.thickness or 0) }}</td>
+      <td class="c mjc-chk">{{ "✓" if p.cut else "" }}</td>
+      <td class="c mjc-chk">{{ "✓" if p.edge_banded else "" }}</td>
+      <td class="c mjc-chk">{{ "✓" if p.laminated else "" }}</td>
+    </tr>
+    {%- endfor %}
+  </tbody>
+</table>
+{%- if focused %}
+<div class="mjc-note">Highlighted rows are the parts this operation works. Match each Part No. against the QR label on the physical panel.</div>
+{%- else %}
+<div class="mjc-note">Match each Part No. against the QR label on the physical panel.</div>
+{%- endif %}
+{%- else %}
+<div class="mjc-note">No cut-part list on file for this article. Import the OpenCutList <b>Parts CSV</b> on the Estimate SKU to populate it.</div>
+{%- endif %}
