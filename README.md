@@ -103,10 +103,18 @@ material line — it stays tracked but is **excluded from the client price**. In
 it with a **Material Receipt / Purchase Receipt (rate 0)** into the **Customer Provided** warehouse
 (or mark the Item *Customer Provided* with the customer), so it never inflates your valuation.
 
+### Traceability (Batch & Serial)
+- **Laminate is batch-tracked** (dye-lot): each laminate Item has *Batch No* enabled, so on
+  receipt you record the supplier lot and a whole project can be matched to one batch — no visible
+  shade mismatch. (Plywood, edge banding and hardware are not batch-tracked.)
+- **Finished articles are serial-tracked**: each produced piece gets a **Serial No**
+  (`YS_MB_WAR-001`), so you can trace a delivered unit back to its Work Order → BOM → the exact
+  materials/lot used, and hang warranty & repair history off it.
+
 ### Finished articles
 The article you estimate (e.g. `YS_MB_WAR`) becomes an Item in its own **Client SKU** group — so
 client pieces never mix with regular products and the whole group can be **archived when the
-project closes**.
+project closes**. It's a **serialized stock item** (see Traceability above).
 
 ---
 

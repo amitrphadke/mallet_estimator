@@ -255,6 +255,13 @@ class EstimateSKU(Document):
             item.stock_uom = "Nos"
             item.is_stock_item = 1   # finished good: produced -> stocked -> delivered
             item.is_sales_item = 1   # sold on the Quotation
+            # Each finished article is a unique, high-value one-off — serialize it
+            # for per-unit warranty / repair traceability (this piece -> its Work
+            # Order -> BOM -> the exact materials used).
+            if item.meta.has_field("has_serial_no"):
+                item.has_serial_no = 1
+            if item.meta.has_field("serial_no_series"):
+                item.serial_no_series = f"{code}-.###"
             item.description = self.description or self.article_name
             item.standard_rate = self.client_total
             item.insert(ignore_permissions=True)

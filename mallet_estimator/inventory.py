@@ -131,6 +131,12 @@ def ensure_material_item(name, kind=None, thickness=0, dims=None):
         item.is_purchase_item = 1
         if meta.has_field("include_item_in_manufacturing"):
             item.include_item_in_manufacturing = 1
+        # Laminates carry a dye-lot: batch-track so a project can be matched to one
+        # lot and avoid visible shade mismatch.
+        if kind == "laminate":
+            _set(item, meta, "has_batch_no", 1)
+            _set(item, meta, "create_new_batch", 1)
+            _set(item, meta, "batch_number_series", f"{code}-.####")
         # buy in a different unit (e.g. Roll of 50 m) with a conversion
         pu = spec.get("purchase_uom")
         if pu and pu != spec["stock_uom"] and frappe.db.exists("UOM", pu) and meta.has_field("purchase_uom"):
