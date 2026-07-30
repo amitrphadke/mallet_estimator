@@ -11,6 +11,20 @@ def _has_sle(code):
     return bool(frappe.db.exists("Stock Ledger Entry", {"item_code": code}))
 
 
+def _ensure_uoms():
+    """The stock/purchase/area UOMs the re-homed materials need. Cheap + idempotent
+    (no schema rebuild) — unlike ensure_inventory_masters which also touches custom
+    fields, kept out of migrate to avoid deploy stalls."""
+    for uom in ("Sheet", "Meter", "Roll", "Square Meter"):
+        if not frappe.db.exists("UOM", uom):
+            try:
+                d = frappe.new_doc("UOM")
+                d.uom_name = uom
+                d.insert(ignore_permissions=True)
+            except Exception:
+                frappe.log_error(frappe.get_traceback(), f"fix_material_items UOM {uom}")
+
+
 def execute():
     """Repair Items that an older build created in the default group ('Products')
     as non-stock:
@@ -21,6 +35,7 @@ def execute():
     UOM / batch / serial once stock has moved, so anything with a Stock Ledger
     Entry keeps those untouched (only its group is corrected). Idempotent."""
     meta = frappe.get_meta("Item")
+    _ensure_uoms()
 
     if frappe.db.exists("DocType", "Manufacturer"):
         for mfr in MANUFACTURERS:
