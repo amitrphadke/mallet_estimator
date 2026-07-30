@@ -6,3 +6,4 @@ mallet_estimator.patches.reset_sku_grid_columns_2
 mallet_estimator.patches.drop_estimate_machine
 mallet_estimator.patches.make_items_stockable
 mallet_estimator.patches.enable_traceability
+mallet_estimator.patches.fix_material_items

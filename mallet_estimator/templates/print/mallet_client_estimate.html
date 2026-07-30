@@ -80,21 +80,9 @@
         </div>
         {% if s.description %}<div class="desc">{{ s.description }}</div>{% endif %}
         {% if s.article_image %}<div style="margin:6px 0;"><img src="{{ s.article_image }}" style="max-width:220px;max-height:180px;border:1px solid #e2e6eb;border-radius:6px;"></div>{% endif %}
-        {% if s.materials %}
-        <table>
-          <thead><tr><th>Material</th><th>Item</th><th class="r">Qty</th><th class="r">Amount</th></tr></thead>
-          <tbody>
-          {% for m in s.materials %}
-            <tr>
-              <td>{{ m.material or "—" }}</td>
-              <td>{{ m.description or "—" }}</td>
-              <td class="r">{{ "%g"|format(m.qty or 0) }}</td>
-              <td class="r">{{ money(m.line_cost) }}</td>
-            </tr>
-          {% endfor %}
-          </tbody>
-        </table>
-        {% endif %}
+        {# Internal per-material cost breakdown intentionally omitted — the client
+           sees only the payable values below. Curated client-facing allowances
+           (handles/hinges/rails) come from the Provisional Allowance table (F6). #}
         <table class="lines">
           <tr><td>Material</td><td class="r">{{ money(s.client_material) }}</td></tr>
           <tr><td>Design &amp; execution</td><td class="r">{{ money(s.client_design_exec) }}</td></tr>
@@ -137,31 +125,5 @@
     <div class="row final"><span>Total estimate</span><span>{{ money(sku_docs | sum(attribute="client_total")) }}</span></div>
   </div>
 
-  {%- set rate_rows = [] -%}
-  {%- set seen = [] -%}
-  {%- for s in sku_docs -%}
-    {%- for m in s.materials -%}
-      {%- if m.unit_cost -%}
-        {%- set key = (m.material or "") ~ "|" ~ (m.description or "") ~ "|" ~ (m.unit_cost|string) -%}
-        {%- if key not in seen -%}
-          {%- set _ = seen.append(key) -%}
-          {%- set _ = rate_rows.append(m) -%}
-        {%- endif -%}
-      {%- endif -%}
-    {%- endfor -%}
-  {%- endfor -%}
-
-  {% if rate_rows %}
-    <div class="roomtitle">Assumed unit prices</div>
-    <table>
-      <thead><tr><th>Material</th><th>Item</th><th class="r">Unit rate</th></tr></thead>
-      <tbody>
-      {% for m in rate_rows %}
-        <tr><td>{{ m.material or "—" }}</td><td>{{ m.description or "—" }}</td><td class="r">{{ money(m.unit_cost) }}</td></tr>
-      {% endfor %}
-      </tbody>
-    </table>
-  {% endif %}
-
-  <div class="foot">Material amounts are computed from the assumed unit prices listed above. Inclusive of material, design &amp; execution. Taxes as applicable. Valid for 30 days.</div>
+  <div class="foot">Inclusive of material, design &amp; execution. Taxes as applicable. Valid for 30 days.</div>
 </div>

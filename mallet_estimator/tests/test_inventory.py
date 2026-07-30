@@ -22,6 +22,45 @@ class TestClassification(MalletTestCase):
         self.assertEqual(inventory.item_code_for("SG_PLY_V0_a_a", 16, "sheet"), "SG_PLY_V0_a_a_16mm")
         self.assertEqual(inventory.item_code_for("HWD_Hinge", 0, "hardware"), "HWD_Hinge")
 
+    def test_is_material_code(self):
+        # material families are recognised; a finished article / real Product is not
+        for c in ("SG_PLY_V0_a_a", "SG_LAM_V1_16mm_a_b", "EB_PVC_IN_a", "HWD_Hinge", "SW_Teak"):
+            self.assertTrue(inventory.is_material_code(c), c)
+        for c in ("YS_MB_WAR", "Products", "Some Random Product"):
+            self.assertFalse(inventory.is_material_code(c), c)
+
+
+class TestFixMaterialItems(MalletTestCase):
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        inventory.ensure_inventory_masters()
+
+    def test_rehomes_and_stocks_a_misfiled_material(self):
+        from mallet_estimator.patches import fix_material_items
+        # simulate an old-build item: a plywood sheet stuck in the default group,
+        # non-stock, measured in Nos with no conversions.
+        code = "SG_PLY_FIXME_16mm"
+        if frappe.db.exists("Item", code):
+            frappe.delete_doc("Item", code, force=True, ignore_permissions=True)
+        it = frappe.new_doc("Item")
+        it.item_code = code
+        it.item_group = "Products" if frappe.db.exists("Item Group", "Products") else inventory._fallback_group()
+        it.stock_uom = "Nos"
+        it.is_stock_item = 0
+        it.insert(ignore_permissions=True)
+
+        fix_material_items.execute()
+
+        it.reload()
+        self.assertEqual(it.item_group, "Sheet Goods")
+        self.assertEqual(it.stock_uom, "Sheet")
+        self.assertEqual(it.is_stock_item, 1)
+        self.assertEqual(it.is_purchase_item, 1)
+        self.assertIn("Square Meter", {r.uom for r in it.uoms})
+        # manufacturers seeded
+        self.assertTrue(frappe.db.exists("Manufacturer", "Hafele"))
+
 
 class TestMaterialItem(MalletTestCase):
     @classmethod

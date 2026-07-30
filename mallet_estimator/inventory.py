@@ -35,6 +35,16 @@ KIND_SPEC = {
 }
 ITEM_GROUPS = [spec["group"] for spec in KIND_SPEC.values()]
 
+# Raw-material code families. Used to tell a genuine material apart from a
+# finished article or a real Product, so re-homing never misfiles a non-material.
+MATERIAL_PREFIXES = ("SG_LAM", "LAM_", "DL_", "SG_", "EB_", "HWD_", "SW_", "DIM_", "DM_")
+
+
+def is_material_code(code):
+    up = str(code or "").upper()
+    return any(up.startswith(p) for p in MATERIAL_PREFIXES)
+
+
 # OpenCutList code prefixes -> kind. NOTE: laminate ships as SG_LAM_* (a sub-type
 # of the SG_ sheet family), so LAM is checked before the plain SG_ = sheet.
 def kind_for_code(code):

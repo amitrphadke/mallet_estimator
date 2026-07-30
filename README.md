@@ -103,6 +103,17 @@ material line — it stays tracked but is **excluded from the client price**. In
 it with a **Material Receipt / Purchase Receipt (rate 0)** into the **Customer Provided** warehouse
 (or mark the Item *Customer Provided* with the customer), so it never inflates your valuation.
 
+### Manufacturers & vendors (native)
+Each material stays **one technical Item** regardless of who makes or sells it. Set the Item's
+**Manufacturer** (`Hafele`, `Ebco`, `Merino`, `Royal Touch` are seeded ready) + **Brand**, list every
+vendor under **Item Supplier**, and hold each vendor's price as an **Item Price** on a *Buying* price
+list — so the same auto-hinge can carry several vendor prices. Buy at the chosen/cheapest supplier
+(RFQ → Supplier Quotation). The estimate uses one assumed rate; procurement uses the real vendor price.
+
+> Items auto-created from an estimate are already stockable and filed under their **Mallet Materials**
+> group (Sheet Goods / Laminate / Edge Banding / Hardware). A repair patch re-homes any older Items
+> that were created before this and makes them stockable with the right UOMs.
+
 ### Traceability (Batch & Serial)
 - **Laminate is batch-tracked** (dye-lot): each laminate Item has *Batch No* enabled, so on
   receipt you record the supplier lot and a whole project can be matched to one batch — no visible
@@ -160,8 +171,10 @@ warehouses under Board & Sheet Store — the app won't clash with them.)
    and totals them (add a SKU later → pulled in automatically; **Refresh SKUs** re-pulls).
 10. **Submit = approve & freeze** the baseline (only submitted estimates are quoted).
 11. **Create Quotation** → a native **Quotation** for the customer, one line per article.
-12. **Print** with **"Mallet Client Estimate"** → room-grouped PDF with images (overhead folded
-    into "Design & execution"; the client never sees your factory costs).
+12. **Print** with **"Mallet Client Estimate"** → room-grouped PDF with images. The client sees
+    **only what they pay** — Material, Design & execution, and totals per SKU/room. **No internal
+    cost is ever printed** (no per-material unit rates, no line costs). Curated client-facing
+    allowances (handles/hinges/rails) will come from the Provisional Allowance table.
 13. Client accepts → **Quotation → Sales Order** (standard button). The Sales Order is the
     confirmed job.
 
