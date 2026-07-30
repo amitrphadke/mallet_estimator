@@ -4,7 +4,7 @@ import os
 import frappe
 
 from mallet_estimator.estimator import (
-    DEFAULT_MACHINES, STEP_TEMPLATE, WORKSTATIONS, OPERATION_WORKSTATION,
+    STEP_TEMPLATE, WORKSTATIONS, OPERATION_WORKSTATION,
     ROUTING_NAME, WS_COMPONENTS, workstation_rates,
 )
 from mallet_estimator import inventory

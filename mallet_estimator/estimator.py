@@ -37,14 +37,6 @@ STEP_TEMPLATE = [
     {"phase": "Miscellaneous / extra", "machine": None,         "in_factory": 1, "is_misc": 1},
 ]
 
-DEFAULT_MACHINES = [
-    {"machine_key": "panel_saw",   "machine_name": "Panel saw + dust collector", "capital_cost": ###, "life_years": 10},
-    {"machine_key": "edge_bander", "machine_name": "Edge bander",                "capital_cost": ###, "life_years": 10},
-    {"machine_key": "drill_press", "machine_name": "Drill press",                "capital_cost": ###,  "life_years": 10},
-    {"machine_key": "assembly",    "machine_name": "Assembly station",           "capital_cost": ###,  "life_years": 10},
-    {"machine_key": "packing",     "machine_name": "Packing area",               "capital_cost": 15000,  "life_years": 10},
-]
-
 # --- ERPNext Manufacturing masters -----------------------------------------
 # Workstations with their factory footprint (sq ft) and machine capital for
 # depreciation. Space-based rent is recovered in full across the billable
@@ -195,13 +187,6 @@ def _num(v):
 
 def working_hours_per_month(settings):
     return _num(settings.working_days_per_month) * _num(settings.working_hours_per_day)
-
-
-def machine_hour_rate(capital_cost, life_years, settings):
-    hours_per_year = working_hours_per_month(settings) * 12
-    if hours_per_year <= 0 or _num(life_years) <= 0:
-        return 0.0
-    return _num(capital_cost) / (_num(life_years) * hours_per_year)
 
 
 def rent_per_hour(settings):
