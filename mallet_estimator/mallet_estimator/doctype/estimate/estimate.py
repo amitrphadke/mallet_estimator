@@ -96,6 +96,56 @@ class Estimate(Document):
                 errors.append(f"{row.estimate_sku}: {exc}")
         return {"boms": made, "errors": errors}
 
+    @frappe.whitelist()
+    def create_work_orders(self):
+        """Create a draft native Work Order per SKU from its BOM, linked to this
+        Project (so material + labour actuals roll up to the Project Margin report).
+        Submitting each Work Order — native ERPNext — generates the Job Cards, one
+        per phase at its workstation. Per-SKU errors are collected, not fatal."""
+        company = _default_company()
+        abbr = frappe.db.get_value("Company", company, "abbr")
+
+        def leaf_wh(name):
+            full = f"{name} - {abbr}"
+            return full if frappe.db.exists("Warehouse", full) else None
+
+        wip = leaf_wh("Assembly Area")          # in-process stock
+        fg = leaf_wh("Packed / Dispatch")       # finished good
+        # Sales Order created from our Quotation (native), if any — links the WO to it.
+        so = frappe.db.get_value("Sales Order Item", {"prevdoc_docname": self.quotation}, "parent") \
+            if self.quotation else None
+
+        made, errors = [], []
+        for row in self.skus:
+            try:
+                s = frappe.get_doc("Estimate SKU", row.estimate_sku)
+                if not s.item:
+                    errors.append(f"{s.name}: no linked Item")
+                    continue
+                bom = frappe.db.get_value("BOM", {"item": s.item, "is_active": 1, "is_default": 1}, "name") \
+                    or frappe.db.get_value("BOM", {"item": s.item, "is_active": 1}, "name")
+                if not bom:
+                    errors.append(f"{s.name}: no active BOM — click Build BOMs first")
+                    continue
+                wo = frappe.new_doc("Work Order")
+                wo.production_item = s.item
+                wo.bom_no = bom
+                wo.qty = 1
+                wo.company = company
+                if self.project:
+                    wo.project = self.project      # <- carries actuals to Project Margin
+                if so:
+                    wo.sales_order = so
+                if wip:
+                    wo.wip_warehouse = wip
+                if fg:
+                    wo.fg_warehouse = fg
+                wo.insert(ignore_permissions=True)  # draft — user reviews + submits
+                made.append(wo.name)
+            except Exception as exc:
+                errors.append(f"{row.estimate_sku}: {exc}")
+        return {"work_orders": made, "errors": errors}
+
 
 def _default_company():
     c = frappe.defaults.get_user_default("Company") or frappe.db.get_default("company")
@@ -142,4 +192,6 @@ def _build_sku_bom(s, company):
             bom.append("operations", {"operation": op_name, "workstation": op.workstation, "time_in_mins": crew_min})
     bom.insert(ignore_permissions=True)
     bom.submit()
+    # make it the article's default BOM so native Work-Order creation finds it
+    frappe.db.set_value("Item", s.item, "default_bom", bom.name, update_modified=False)
     return bom.name

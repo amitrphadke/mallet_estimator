@@ -177,18 +177,27 @@ warehouses under Board & Sheet Store — the app won't clash with them.)
 ## 7. Manufacture (Make-to-Order)
 
 18. On the **Estimate**, click **Build BOMs** → a native **BOM** per article (materials from stock
-    + the 16 operations).
-19. **Sales Order → Create → Work Order** (one per article). Set the **WIP warehouse** to *Work In
-    Progress* and the **FG warehouse** to *Finished Goods*.
-20. The Work Order generates a **Job Card per operation** (the 16 phases). The shop floor works /
-    scans each job card — Panel Saw → Edge Bander → Drill → … → Assembly → Disassembly → Pack.
-    Cut parts sit in **Cut Parts - Table 1/2**; assembly in **Assembly Area / Project Room**.
-21. **Job Card time** posts the actual labour; **material consumption** (Stock Entry:
-    Manufacture) issues the plywood/hardware from the stores and lands the **finished good** in
-    **Finished Goods**.
+    + the 16 operations), set as the article's **default BOM**.
+19. On the **Estimate**, click **Create Work Orders** → one **draft Work Order** per article, from
+    its BOM, **linked to the Project** (this is what makes actuals roll up to Project Margin).
+    Warehouses are pre-filled (WIP = *Assembly Area*, FG = *Packed / Dispatch*); adjust if needed.
+    (Or use the fully-native path: **Sales Order → Create → Work Order**, or a **Production Plan**
+    for several articles at once.)
+20. **Submit each Work Order** → ERPNext generates a **Job Card per operation** (the 16 phases),
+    each at its **workstation**. The shop floor works / scans each job card in routing order —
+    Panel Saw → Edge Bander → Drill → … → Assembly → Disassembly → Pack. Cut parts sit in
+    **Cut Parts - Table 1/2**; assembly in **Assembly Area / Project Room**.
+21. **Labour actuals:** record time on each **Job Card** (start/finish) → post it as a **Timesheet**
+    against the **Project** so the actual wage cost reaches *Project Margin*. **Material actuals:**
+    a **Stock Entry (Manufacture)** issues the plywood/hardware from the stores and lands the
+    **finished good** in **Finished Goods** — keep the **Project** on these entries.
 22. **Ad-hoc operations** (joining oversized panels, cutting a hole for a glass door, etc.) are
     added **as extra Job Cards / operations on the Work Order** when a job needs them — the 16
     phases are the standard path, not a limit.
+
+> **Per-part tracking:** native Job Cards track each *operation at its station*, not individual
+> cut parts moving between stations. If you need physical part-by-part traceability, that's a
+> custom QR-scan layer over the part numbers already captured in the **Parts** table — ask to add it.
 
 ---
 

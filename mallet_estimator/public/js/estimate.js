@@ -56,6 +56,21 @@ frappe.ui.form.on("Estimate", {
           });
         });
       }, __("Manufacture"));
+
+      frm.add_custom_button(__("Create Work Orders"), () => {
+        frappe.confirm(
+          __("Create a draft Work Order per article (from its BOM), linked to this Project?"),
+          () => {
+            frm.call("create_work_orders").then((r) => {
+              const m = (r && r.message) || {};
+              let body = __("Work Orders created: {0}", [(m.work_orders || []).length]);
+              if (m.errors && m.errors.length) body += "<br><b>" + __("Errors") + ":</b><br>" + m.errors.join("<br>");
+              body += "<br><br>" + __("Open each Work Order and <b>Submit</b> it to generate its Job Cards — one per phase, at its workstation.");
+              frappe.msgprint({ title: __("Create Work Orders"), message: body, indicator: (m.errors && m.errors.length) ? "orange" : "green" });
+            });
+          }
+        );
+      }, __("Manufacture"));
     }
   },
 });
