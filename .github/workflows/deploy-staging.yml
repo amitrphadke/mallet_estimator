@@ -153,12 +153,13 @@ jobs:
             fi
 
             [ "$STATUS" = "Success" ] && BUILT=1
-            # Live when the build is done, no deploy is actively in progress, the
-            # bench isn't being (re)created, and our app no longer reports an
-            # update — held for two consecutive checks. `has_running_release_pipeline`
-            # is intentionally NOT required: FC can leave that flag set on a
-            # lingering pipeline record long after the site is actually updated.
-            if [ "$BUILT" = "1" ] && [ "$DIP" != "true" ] && [ "$BCU" != "true" ] && [ "$PENDING" = "0" ]; then
+            # Live when the build is done, no deploy of OUR app is in progress, and
+            # our app no longer reports an update available (the active bench carries
+            # the new commit) — held for two consecutive checks. The group flags
+            # bench_creation_underway and has_running_release_pipeline are NOT
+            # required: FC leaves them set for unrelated/stale benches long after our
+            # app is live, which false-failed the job.
+            if [ "$BUILT" = "1" ] && [ "$DIP" != "true" ] && [ "$PENDING" = "0" ]; then
               STABLE=$((STABLE + 1))
               if [ "$STABLE" -ge 2 ]; then
                 echo "✅ LIVE on Frappe Cloud — build ${DNAME}; the bench carries the new commit (pipeline flag=${PIPE}, informational)."
