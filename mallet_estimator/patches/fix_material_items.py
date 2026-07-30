@@ -76,6 +76,9 @@ def _fix_material(code, kind, meta):
     item = frappe.get_doc("Item", code)
     sle = _has_sle(code)
 
+    # --- pass 1: group, flags, stock UOM, batch. Changing stock_uom makes ERPNext
+    # reset the uoms table to just the new stock UOM, so the extra conversions are
+    # added in pass 2 (below), once stock_uom is settled. ---
     if frappe.db.exists("Item Group", spec["group"]):
         item.item_group = spec["group"]
     item.is_purchase_item = 1
@@ -84,23 +87,30 @@ def _fix_material(code, kind, meta):
         want = spec["stock_uom"]
         if want and frappe.db.exists("UOM", want) and item.stock_uom != want:
             item.stock_uom = want
-            item.set("uoms", [])  # rebuild the conversion table for the new stock UOM
-
-    inventory._add_uom(item, item.stock_uom, 1)
-    pu = spec.get("purchase_uom")
-    if pu and pu != item.stock_uom and frappe.db.exists("UOM", pu):
-        inventory._add_uom(item, pu, spec["conv"])
-        if meta.has_field("purchase_uom"):
-            item.purchase_uom = pu
-    if kind in ("sheet", "laminate") and frappe.db.exists("UOM", "Square Meter"):
-        inventory._add_uom(item, "Square Meter", inventory.SHEET_AREA_SQM)
-
     if kind == "laminate" and not sle:
         inventory._set(item, meta, "has_batch_no", 1)
         inventory._set(item, meta, "create_new_batch", 1)
         inventory._set(item, meta, "batch_number_series", f"{code}-.####")
-
     item.save(ignore_permissions=True)
+
+    # --- pass 2: purchase-unit + area conversions (stock_uom is now stable, so
+    # ERPNext keeps them) ---
+    item.reload()
+    changed = False
+    pu = spec.get("purchase_uom")
+    if pu and pu != item.stock_uom and frappe.db.exists("UOM", pu):
+        if not any(r.uom == pu for r in item.uoms):
+            item.append("uoms", {"uom": pu, "conversion_factor": spec["conv"]})
+            changed = True
+        if meta.has_field("purchase_uom") and not item.purchase_uom:
+            item.purchase_uom = pu
+            changed = True
+    if kind in ("sheet", "laminate") and frappe.db.exists("UOM", "Square Meter"):
+        if not any(r.uom == "Square Meter" for r in item.uoms):
+            item.append("uoms", {"uom": "Square Meter", "conversion_factor": inventory.SHEET_AREA_SQM})
+            changed = True
+    if changed:
+        item.save(ignore_permissions=True)
 
 
 def _fix_article(code, meta):
