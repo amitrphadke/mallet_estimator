@@ -17,6 +17,25 @@ frappe.ui.form.on("Estimate SKU", {
         if (r && r.message && r.message.changed) frm.reload_doc();
       });
     }
+    // Rebuild the material lines from the attached OpenCutList PDF + Parts CSV at
+    // the current import logic — no need to detach/re-attach the files.
+    if (!frm.is_new() && frm.doc.estimate_pdf) {
+      frm.add_custom_button(__("Re-import from files"), () => {
+        frappe.confirm(
+          __("Rebuild material &amp; hardware lines from the attached PDF/CSV? This replaces the current material lines."),
+          () =>
+            frm.call("reimport").then((r) => {
+              if (r && r.message) {
+                frappe.show_alert(
+                  { message: __("Re-imported: {0} materials", [r.message.materials]), indicator: "green" },
+                  5
+                );
+              }
+              frm.reload_doc();
+            })
+        );
+      });
+    }
   },
 });
 

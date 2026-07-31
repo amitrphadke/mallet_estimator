@@ -231,6 +231,20 @@ class EstimateSKU(Document):
             self.set(k, r[k])
 
     @frappe.whitelist()
+    def reimport(self):
+        """Force a re-import from the attached OpenCutList PDF + Parts CSV,
+        bypassing the change-detection guard — rebuilds the material lines at the
+        CURRENT import logic (e.g. designation-level hardware). Returns a summary."""
+        if not self.estimate_pdf:
+            frappe.throw(_("Attach an OpenCutList Estimate PDF first."))
+        self.do_import()
+        self.save(ignore_permissions=True)
+        return {
+            "materials": len(self.materials or []),
+            "parts": len(self.parts or []),
+        }
+
+    @frappe.whitelist()
     def recompute(self):
         """Re-price every step at the CURRENT Workstation Net Hour Rates and save
         only if the total actually moved. Called on form load so Phase Cost never
