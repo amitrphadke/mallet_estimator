@@ -158,7 +158,8 @@ def _default_company():
 
 
 def _ensure_operation(op_row):
-    name = "Miscellaneous - extra" if getattr(op_row, "is_misc", 0) else (op_row.phase or "")
+    name = "Miscellaneous - extra" if getattr(op_row, "is_misc", 0) else (
+        getattr(op_row, "operation", None) or getattr(op_row, "phase", None) or "")
     name = name.replace(" / ", " - ").replace("/", "-").strip()
     if name and not frappe.db.exists("Operation", name):
         o = frappe.new_doc("Operation")

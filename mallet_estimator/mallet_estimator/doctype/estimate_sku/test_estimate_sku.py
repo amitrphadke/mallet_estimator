@@ -43,7 +43,7 @@ class TestEstimateSKU(MalletTestCase):
             "room": "Master Bedroom",
             "article_name": "Wardrobe",
             "auto_name": 1,
-            "labor": [{"phase": "Sheet Cutting", "workstation": "Panel Saw", "qty": 2, "carp_min": 20}],
+            "labor": [{"operation": "Sheet Cutting", "workstation": "Panel Saw", "qty": 2, "carp_min": 20}],
             "materials": [{"item": code, "material": "SG_PLY_SKUTEST", "qty": 1, "unit_cost": 100}],
         })
         doc.update(over)

@@ -5,31 +5,36 @@
  "editable_grid": 1,
  "engine": "InnoDB",
  "field_order": [
-  "phase",
+  "operation",
   "workstation",
   "qty",
   "carp_min",
   "carp_total",
   "op_cost",
   "remark",
+  "phase",
   "in_factory",
   "is_misc",
   "is_custom"
  ],
  "fields": [
   {
-   "fieldname": "phase",
-   "fieldtype": "Data",
+   "fieldname": "operation",
+   "fieldtype": "Link",
+   "options": "Operation",
    "in_list_view": 1,
-   "label": "Phase of Execution",
-   "reqd": 1
+   "label": "Operation",
+   "reqd": 1,
+   "description": "The Manufacturing Operation. Its Total Operation Time (min/unit) and Default Workstation fill in below."
   },
   {
    "fieldname": "workstation",
    "fieldtype": "Link",
    "options": "Workstation",
    "in_list_view": 1,
-   "label": "Workstation"
+   "label": "Workstation",
+   "fetch_from": "operation.workstation",
+   "fetch_if_empty": 1
   },
   {
    "fieldname": "qty",
@@ -37,14 +42,16 @@
    "in_list_view": 1,
    "label": "Qty",
    "default": "1",
-   "read_only_depends_on": "eval:['Sheet Lamination','Sheet Tape Removal','Sheet Cutting','Edge Banding'].includes(doc.phase)"
+   "read_only_depends_on": "eval:['Sheet Lamination','Sheet Tape Removal','Sheet Cutting','Edge Banding'].includes(doc.operation)"
   },
   {
    "fieldname": "carp_min",
    "fieldtype": "Float",
    "in_list_view": 1,
    "label": "Min / Unit",
-   "description": "Minutes the workstation is occupied per unit. The crew wage is already in the workstation rate."
+   "fetch_from": "operation.total_operation_time",
+   "fetch_if_empty": 1,
+   "description": "Minutes the workstation is occupied per unit (from the Operation's Total Operation Time; override per SKU if needed). The crew wage is already in the workstation rate."
   },
   {
    "fieldname": "carp_total",
@@ -64,6 +71,12 @@
    "fieldname": "remark",
    "fieldtype": "Data",
    "label": "Remark"
+  },
+  {
+   "fieldname": "phase",
+   "fieldtype": "Data",
+   "label": "Phase of Execution (legacy)",
+   "hidden": 1
   },
   {
    "fieldname": "in_factory",
@@ -87,7 +100,7 @@
  ],
  "istable": 1,
  "links": [],
- "modified": "2026-07-29 00:00:00.000000",
+ "modified": "2026-07-31 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "Mallet Estimator",
  "name": "Estimate Labor",

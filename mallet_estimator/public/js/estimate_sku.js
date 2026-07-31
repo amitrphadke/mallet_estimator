@@ -8,6 +8,13 @@ const LOCKED_PHASES = ["Sheet Lamination", "Sheet Tape Removal", "Sheet Cutting"
 frappe.ui.form.on("Estimate SKU", {
   refresh(frm) {
     setTimeout(() => lock_qty(frm), 300);
+    // I1: cache the live Workstation Net Hour Rates so Phase Cost updates instantly
+    // as you edit Qty / Min / Operation — no save needed.
+    if (!frm.is_new()) {
+      frm.call("workstation_net_rates").then((r) => {
+        frm._ws_net = (r && r.message) || {};
+      });
+    }
     // Re-price Phase Costs at the current Workstation rates when the SKU is
     // opened, so changing a workstation's operating costs is reflected without a
     // manual re-save. Only when the form has no unsaved edits; reloads once if
@@ -40,18 +47,29 @@ frappe.ui.form.on("Estimate SKU", {
 });
 
 frappe.ui.form.on("Estimate Labor", {
-  phase: (frm) => lock_qty(frm),
+  operation: (frm, cdt, cdn) => {
+    lock_qty(frm);
+    recompute_total(frm, cdt, cdn);
+  },
+  workstation: (frm, cdt, cdn) => recompute_total(frm, cdt, cdn),
   labor_add: (frm) => lock_qty(frm),
   qty: (frm, cdt, cdn) => recompute_total(frm, cdt, cdn),
   carp_min: (frm, cdt, cdn) => recompute_total(frm, cdt, cdn),
 });
 
-// Live Total Min = Qty x Min/Unit as you type (Phase Cost is priced on Save from
-// the live Workstation rate).
+// Live Total Min = Qty x Min/Unit, and live Phase Cost = crew-hours x the
+// Workstation Net Hour Rate — both update as you type, no save (I1). The save
+// still recomputes authoritative values server-side.
 function recompute_total(frm, cdt, cdn) {
   const row = locals[cdt][cdn];
   if (!row) return;
-  frappe.model.set_value(cdt, cdn, "carp_total", (row.qty || 0) * (row.carp_min || 0));
+  const total = (row.qty || 0) * (row.carp_min || 0);
+  frappe.model.set_value(cdt, cdn, "carp_total", total);
+  const rates = frm._ws_net || {};
+  const net = row.workstation && rates[row.workstation] != null ? rates[row.workstation] : rates.__default__;
+  if (net != null) {
+    frappe.model.set_value(cdt, cdn, "op_cost", (total / 60) * net);
+  }
 }
 
 function lock_qty(frm) {
@@ -59,6 +77,6 @@ function lock_qty(frm) {
   if (!grid || !grid.grid_rows_by_docname) return;
   (frm.doc.labor || []).forEach((row) => {
     const gr = grid.grid_rows_by_docname[row.name];
-    if (gr && gr.toggle_editable) gr.toggle_editable("qty", !LOCKED_PHASES.includes(row.phase));
+    if (gr && gr.toggle_editable) gr.toggle_editable("qty", !LOCKED_PHASES.includes(row.operation));
   });
 }

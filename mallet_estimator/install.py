@@ -4,7 +4,7 @@ import os
 import frappe
 
 from mallet_estimator.estimator import (
-    STEP_TEMPLATE, WORKSTATIONS, OPERATION_WORKSTATION,
+    STEP_TEMPLATE, WORKSTATIONS, OPERATION_WORKSTATION, OPERATION_STANDARDS,
     ROUTING_NAME, WS_COMPONENTS, workstation_rates,
 )
 from mallet_estimator import inventory
@@ -137,12 +137,30 @@ def ensure_manufacturing_masters():
 
     for t in STEP_TEMPLATE:
         op_name = _op_name(t["phase"])
+        mins = OPERATION_STANDARDS.get(t["phase"], {}).get("min_per_unit", 0)
+        ws = OPERATION_WORKSTATION.get(t["phase"])
         try:
             if frappe.db.exists("Operation", op_name):
+                # Backfill the standard time (min/unit) + default workstation on an
+                # existing Operation only where unset — never clobber a hand-tuned value.
+                op = frappe.get_doc("Operation", op_name)
+                changed = False
+                if mins and not (op.total_operation_time or 0):
+                    op.total_operation_time = mins
+                    changed = True
+                if ws and not op.workstation and frappe.db.exists("Workstation", ws):
+                    op.workstation = ws
+                    changed = True
+                if changed:
+                    op.save(ignore_permissions=True)
+                    result["operations"] += 1
                 continue
             op = frappe.new_doc("Operation")
             op.name = op_name
-            op.workstation = OPERATION_WORKSTATION.get(t["phase"])
+            if ws and frappe.db.exists("Workstation", ws):
+                op.workstation = ws
+            if mins:
+                op.total_operation_time = mins
             op.insert(ignore_permissions=True, set_name=op_name)
             result["operations"] += 1
         except Exception as exc:

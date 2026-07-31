@@ -111,7 +111,7 @@ def operation_quantities(materials, part_count):
         "Assembly": assembly,
         "Install Hardware": hw["hinges"] + hw["rails"] + hw["handles"] + hw["tower"] + hw["shelf"],
         "Disassembly": assembly,
-        "Miscellaneous / extra": 0,
+        "Miscellaneous - extra": 0,
     }
     q["Packing"] = q["Disassembly"]
     q["Loading"] = q["Packing"]

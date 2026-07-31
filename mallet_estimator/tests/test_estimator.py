@@ -71,6 +71,21 @@ class TestCalcSku(unittest.TestCase):
         self.assertAlmostEqual(out["client_material"], 1000 * 1.15, 2)  # 15% markup
 
 
+class TestOpPhase(unittest.TestCase):
+    def test_prefers_operation_link_over_legacy_phase(self):
+        row = types.SimpleNamespace(operation="Drilling", phase="Sheet Cutting", is_misc=0)
+        self.assertEqual(E.op_phase(row), "Drilling")
+
+    def test_falls_back_to_legacy_phase(self):
+        row = types.SimpleNamespace(operation=None, phase="Grooving", is_misc=0)
+        self.assertEqual(E.op_phase(row), "Grooving")
+
+    def test_misc_row_uses_sanitized_operation_name(self):
+        row = types.SimpleNamespace(operation=None, phase=None, is_misc=1)
+        self.assertEqual(E.op_phase(row), "Miscellaneous - extra")
+        self.assertEqual(E.op_phase(row), E.MISC_OPERATION)
+
+
 class TestCodes(unittest.TestCase):
     def test_customer_initials(self):
         self.assertEqual(E.customer_initials("Yogesh Sahasrabudhe"), "YS")

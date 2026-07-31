@@ -34,7 +34,7 @@ STEP_TEMPLATE = [
     {"phase": "Unloading",            "machine": None,          "in_factory": 0},
     {"phase": "Assembly (on-site)",   "machine": None,          "in_factory": 0},
     {"phase": "Installation",         "machine": None,          "in_factory": 0},
-    {"phase": "Miscellaneous / extra", "machine": None,         "in_factory": 1, "is_misc": 1},
+    {"phase": "Miscellaneous - extra", "machine": None,         "in_factory": 1, "is_misc": 1},
 ]
 
 # --- ERPNext Manufacturing masters -----------------------------------------
@@ -83,7 +83,7 @@ OPERATION_WORKSTATION = {
     "Unloading": "On-Site",
     "Assembly (on-site)": "On-Site",
     "Installation": "On-Site",
-    "Miscellaneous / extra": "Assembly Station",
+    "Miscellaneous - extra": "Assembly Station",
 }
 
 ROUTING_NAME = "Mallet Standard Build"
@@ -236,15 +236,19 @@ OPERATION_STANDARDS = {
     "Unloading":              {"qty_source": "manual",          "min_per_unit": 30},
     "Assembly (on-site)":     {"qty_source": "manual",          "min_per_unit": 45},
     "Installation":           {"qty_source": "manual",          "min_per_unit": 60},
-    "Miscellaneous / extra":  {"qty_source": "manual",          "min_per_unit": 0},
+    "Miscellaneous - extra":  {"qty_source": "manual",          "min_per_unit": 0},
 }
 
 
+MISC_OPERATION = "Miscellaneous - extra"
+
+
 def op_phase(row):
-    """Canonical operation name for a labor row (the misc/custom row is generic)."""
+    """Canonical Operation name for a labor row (the misc/custom row is generic).
+    Prefers the native `operation` link; falls back to the legacy `phase` text."""
     if getattr(row, "is_misc", 0):
-        return "Miscellaneous / extra"
-    return row.phase
+        return MISC_OPERATION
+    return getattr(row, "operation", None) or getattr(row, "phase", None)
 
 
 def calc_sku(sku, settings, ws_rates=None):

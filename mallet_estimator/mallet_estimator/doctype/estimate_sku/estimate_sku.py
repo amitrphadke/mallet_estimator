@@ -17,6 +17,21 @@ def default_workstation(row):
     return OPERATION_WORKSTATION.get(op_phase(row), DEFAULT_WORKSTATION)
 
 
+def operation_defaults(op_name):
+    """(min_per_unit, workstation) for an Operation — read from the Operation
+    master (single source of truth: Total Operation Time + Default Workstation),
+    falling back to the code standards when the master has none."""
+    mins, ws = 0, None
+    if op_name and frappe.db.exists("Operation", op_name):
+        mins = frappe.db.get_value("Operation", op_name, "total_operation_time") or 0
+        ws = frappe.db.get_value("Operation", op_name, "workstation")
+    if not mins:
+        mins = OPERATION_STANDARDS.get(op_name, {}).get("min_per_unit", 0)
+    if not ws:
+        ws = OPERATION_WORKSTATION.get(op_name)
+    return mins, ws
+
+
 def get_default_item_group():
     return (
         frappe.db.get_single_value("Stock Settings", "item_group")
@@ -150,8 +165,9 @@ class EstimateSKU(Document):
         except Exception:
             return
         for row in self.labor:
-            if row.phase in estimate_pdf.LOCKED_OPERATIONS and row.phase in q:
-                row.qty = q[row.phase]
+            op = op_phase(row)
+            if op in estimate_pdf.LOCKED_OPERATIONS and op in q:
+                row.qty = q[op]
 
     def on_update(self):
         if self.create_item:
@@ -177,15 +193,21 @@ class EstimateSKU(Document):
     # --- steps -------------------------------------------------------------
     def ensure_steps(self):
         if self.labor:
-            # Backfill workstation on any row that is missing it.
+            # Backfill operation (from legacy phase) + workstation on older rows.
             for row in self.labor:
+                if not getattr(row, "operation", None):
+                    row.operation = op_phase(row)
                 if not row.workstation:
                     row.workstation = default_workstation(row)
             return
         for t in STEP_TEMPLATE:
+            op_name = t["phase"]  # STEP_TEMPLATE phase == the Operation name
+            mins, ws = operation_defaults(op_name)
             self.append("labor", {
-                "phase": t["phase"],
-                "workstation": OPERATION_WORKSTATION.get(t["phase"], DEFAULT_WORKSTATION),
+                "operation": op_name,
+                "phase": op_name,  # keep the legacy field in sync during transition
+                "workstation": ws or DEFAULT_WORKSTATION,
+                "carp_min": mins,
                 "in_factory": t.get("in_factory", 0),
                 "is_misc": t.get("is_misc", 0),
                 "qty": 1,
@@ -229,6 +251,16 @@ class EstimateSKU(Document):
             "client_total", "carp_min_total", "helper_min_total",
         ):
             self.set(k, r[k])
+
+    @frappe.whitelist()
+    def workstation_net_rates(self):
+        """{workstation_name: Net Hour Rate} (+ __default__) so the form can price
+        Phase Cost live as you edit Qty / Min / Operation — no save needed (I1)."""
+        settings = frappe.get_single("Estimate Settings")
+        rates = live_workstation_rates(settings)
+        out = {name: (r.get("net_hr") or 0) for name, r in rates.items()}
+        out["__default__"] = out.get(DEFAULT_WORKSTATION, 0)
+        return out
 
     @frappe.whitelist()
     def reimport(self):

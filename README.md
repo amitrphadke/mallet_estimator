@@ -65,7 +65,16 @@ Components Cost* table (Manufacturing → Workstation → Operating Costs). Four
 \* The installer preserves any workstation you configured by hand and seeds the rest. **Wages =
 the 2-person crew (carpenter ₹157 + helper ₹107), folded in** — a step has only **Qty** and
 **Min/Unit**; there are no carpenter/helper inputs. Edit a component on the Workstation and the
-Net Hour Rate re-sums. **Step cost = Net Hour Rate × (Qty × Min/Unit ÷ 60).**
+Net Hour Rate re-sums. **Step cost = Net Hour Rate × (Qty × Min/Unit ÷ 60)** — and it updates
+**live as you type**, before you save.
+
+### Process Steps are native Operations
+Each Process Step's **Operation** is a native ERPNext **Manufacturing → Operation**. Its **Total
+Operation Time** (min/unit) and **Default Workstation** live on the Operation master — pick an
+Operation and both fill in automatically, so there's **no separate step configuration to maintain**.
+Change a time on the Operation and new estimates use it. **Any new operation you need is added as a
+Manufacturing Operation** (with its time + workstation), then selected on the step — not typed
+ad-hoc.
 
 ---
 
