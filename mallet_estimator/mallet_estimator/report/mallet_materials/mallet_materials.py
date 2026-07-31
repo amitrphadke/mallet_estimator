@@ -35,7 +35,10 @@ def execute(filters=None):
     rows = []
     for it in items:
         rate, source = material_rate(it["item_code"])
-        stock = frappe.db.get_value("Bin", {"item_code": it["item_code"]}, "sum(actual_qty)") or 0
+        # Total on-hand across all warehouses. Summed in Python — newer Frappe
+        # forbids a SQL function ("sum(actual_qty)") as a string field.
+        bins = frappe.get_all("Bin", filters={"item_code": it["item_code"]}, fields=["actual_qty"])
+        stock = sum((b.actual_qty or 0) for b in bins)
         rows.append({
             "item_code": it["item_code"],
             "item_name": it.get("item_name"),
