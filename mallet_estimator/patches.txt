@@ -14,3 +14,4 @@ mallet_estimator.patches.hardware_designation_items
 # Needs the new Estimate Labor.operation column, which the model sync creates —
 # so this MUST run post-model-sync, not before.
 mallet_estimator.patches.link_operations
+mallet_estimator.patches.operation_std_time

@@ -49,9 +49,9 @@
    "fieldtype": "Float",
    "in_list_view": 1,
    "label": "Min / Unit",
-   "fetch_from": "operation.total_operation_time",
+   "fetch_from": "operation.mallet_min_per_unit",
    "fetch_if_empty": 1,
-   "description": "Minutes the workstation is occupied per unit (from the Operation's Total Operation Time; override per SKU if needed). The crew wage is already in the workstation rate."
+   "description": "Minutes the workstation is occupied per unit (from the Operation's Std Time; override per SKU if needed). The crew wage is already in the workstation rate."
   },
   {
    "fieldname": "carp_total",

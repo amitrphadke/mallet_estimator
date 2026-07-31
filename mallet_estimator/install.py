@@ -14,6 +14,17 @@ PRINT_FORMAT_NAME = "Mallet Client Estimate"
 JOB_CARD_PRINT_FORMAT_NAME = "Mallet Job Card"
 WORKSPACE_NAME = "Mallet Estimator"
 
+# ERPNext auto-computes Operation.total_operation_time from sub-operations (so a
+# value set directly is wiped). We keep the estimator's per-unit standard time in
+# our own field on the Operation master — the single source of truth for step time.
+OPERATION_CUSTOM_FIELDS = {
+    "Operation": [
+        {"fieldname": "mallet_min_per_unit", "fieldtype": "Float", "label": "Std Time (min/unit)",
+         "insert_after": "total_operation_time",
+         "description": "Standard minutes the workstation is occupied per unit — the estimator's per-step time."},
+    ]
+}
+
 
 DEFAULT_ROOMS = [
     "Master Bedroom", "Kids Bedroom", "Guest Bedroom", "Living Room", "Dining Room",
@@ -135,6 +146,14 @@ def ensure_manufacturing_masters():
         except Exception as exc:
             fail(f"Workstation {w['name']}", exc)
 
+    try:
+        from frappe.custom.doctype.custom_field.custom_field import create_custom_fields
+        create_custom_fields(OPERATION_CUSTOM_FIELDS, ignore_validate=True)
+    except Exception as exc:
+        fail("Operation custom field", exc)
+    op_meta = frappe.get_meta("Operation")
+    has_min = op_meta.has_field("mallet_min_per_unit")
+
     for t in STEP_TEMPLATE:
         op_name = _op_name(t["phase"])
         mins = OPERATION_STANDARDS.get(t["phase"], {}).get("min_per_unit", 0)
@@ -145,8 +164,8 @@ def ensure_manufacturing_masters():
                 # existing Operation only where unset — never clobber a hand-tuned value.
                 op = frappe.get_doc("Operation", op_name)
                 changed = False
-                if mins and not (op.total_operation_time or 0):
-                    op.total_operation_time = mins
+                if has_min and mins and not (op.get("mallet_min_per_unit") or 0):
+                    op.mallet_min_per_unit = mins
                     changed = True
                 if ws and not op.workstation and frappe.db.exists("Workstation", ws):
                     op.workstation = ws
@@ -159,8 +178,8 @@ def ensure_manufacturing_masters():
             op.name = op_name
             if ws and frappe.db.exists("Workstation", ws):
                 op.workstation = ws
-            if mins:
-                op.total_operation_time = mins
+            if has_min and mins:
+                op.mallet_min_per_unit = mins
             op.insert(ignore_permissions=True, set_name=op_name)
             result["operations"] += 1
         except Exception as exc:

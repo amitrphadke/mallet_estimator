@@ -23,7 +23,9 @@ def operation_defaults(op_name):
     falling back to the code standards when the master has none."""
     mins, ws = 0, None
     if op_name and frappe.db.exists("Operation", op_name):
-        mins = frappe.db.get_value("Operation", op_name, "total_operation_time") or 0
+        meta = frappe.get_meta("Operation")
+        if meta.has_field("mallet_min_per_unit"):
+            mins = frappe.db.get_value("Operation", op_name, "mallet_min_per_unit") or 0
         ws = frappe.db.get_value("Operation", op_name, "workstation")
     if not mins:
         mins = OPERATION_STANDARDS.get(op_name, {}).get("min_per_unit", 0)
