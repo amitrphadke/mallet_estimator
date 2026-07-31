@@ -67,6 +67,12 @@ jobs:
             BODY=$(printf '%s' "$resp" | sed '$d')
           }
           info() { call "${BENCH_BASE}.deploy_information" "$(jq -nc --arg n "$FC_BENCH" '{name:$n}')"; }
+          # True only when the last response body is well-formed JSON. Frappe Cloud
+          # occasionally returns an HTML 5xx/proxy page; parsing that with jq under
+          # `set -e` previously crashed the whole job (jq: parse error, exit 5).
+          is_json() { printf '%s' "${1:-}" | jq empty >/dev/null 2>&1; }
+          # 2xx AND a JSON body — safe to jq-parse.
+          info_ok() { [ "${CODE:0:1}" = "2" ] && is_json "$BODY"; }
 
           # Only deploy THIS app — never drag ERPNext/CRM/etc. into a dev deploy.
           APP="mallet_estimator"
@@ -109,6 +115,19 @@ jobs:
           SITES=$(printf '%s' "$BODY" | jq -c '[ .message.sites[]? | {name, server, bench, skip_failing_patches: false, skip_backups: false} ]')
           echo "Sites to update: $SITES"
 
+          # Don't stack a new build on top of one already running for this bench —
+          # rapid successive pushes jammed the FC deploy queue. Wait (bounded) for
+          # any in-progress deploy to settle first, then proceed regardless.
+          for w in $(seq 1 30); do
+            info
+            info_ok || { echo "settle-check: transient response, retrying"; sleep 20; continue; }
+            if [ "$(printf '%s' "$BODY" | jq -r '.message.deploy_in_progress // false')" != "true" ]; then
+              break
+            fi
+            echo "A deploy is already in progress for ${FC_BENCH} — waiting for it to settle ($((w*20))s) ..."
+            sleep 20
+          done
+
           # --- 2. deploy AND update the sites (the dashboard "Update Now" path) --
           echo "Building the new bench and updating the site(s) ..."
           call "${BENCH_BASE}.deploy_and_update" \
@@ -134,6 +153,12 @@ jobs:
           for i in $(seq 1 165); do
             sleep 20
             info
+            # A transient non-JSON / non-2xx poll must never crash the job — just
+            # skip this tick and try again on the next one.
+            if ! info_ok; then
+              echo "[$((i*20))s] transient poll response (HTTP ${CODE:-none}, non-JSON) — retrying"
+              continue
+            fi
             STATUS=$(printf '%s' "$BODY" | jq -r '.message.last_deploy.status // "unknown"')
             DNAME=$(printf '%s'  "$BODY" | jq -r '.message.last_deploy.name // ""')
             DIP=$(printf '%s'    "$BODY" | jq -r '.message.deploy_in_progress // false')
