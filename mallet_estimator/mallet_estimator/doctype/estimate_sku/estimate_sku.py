@@ -299,12 +299,15 @@ class EstimateSKU(Document):
 
     @frappe.whitelist()
     def recompute(self):
-        """Re-price every step at the CURRENT Workstation Net Hour Rates and save
-        only if the total actually moved. Called on form load so Phase Cost never
-        shows a value that pre-dates a workstation-rate change."""
+        """Re-price every step at the CURRENT Workstation Net Hour Rates (and
+        refresh each step's master Std Time) and save only if something actually
+        moved. Called on form load so Phase Cost / Std (master) never show a value
+        that pre-dates a workstation-rate or Operation-time change."""
         before = self.client_total or 0
+        before_std = [row.std_min for row in (self.labor or [])]
         self.compute_costs()
-        if abs((self.client_total or 0) - before) > 0.005:
+        after_std = [row.std_min for row in (self.labor or [])]
+        if abs((self.client_total or 0) - before) > 0.005 or before_std != after_std:
             self.save(ignore_permissions=True)
             return {"changed": True, "client_total": self.client_total}
         return {"changed": False, "client_total": self.client_total}
