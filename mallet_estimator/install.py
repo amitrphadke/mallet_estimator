@@ -359,6 +359,15 @@ def seed_settings():
     frappe.db.commit()
 
 
+def has_app_permission():
+    """Whether to show the Mallet Estimator tile on the /apps launcher — visible to
+    anyone who can read an Estimate SKU. Defensive: never break the apps screen."""
+    try:
+        return bool(frappe.has_permission("Estimate SKU", "read"))
+    except Exception:
+        return True
+
+
 def _upsert_print_format(name, doc_type, template_file):
     path = os.path.join(
         frappe.get_app_path("mallet_estimator"), "templates", "print", template_file,

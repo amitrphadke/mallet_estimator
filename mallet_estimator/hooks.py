@@ -8,6 +8,17 @@ app_license = "MIT"
 # Depends on ERPNext (Customer, Item, Quotation).
 required_apps = ["erpnext"]
 
+# Show a tile on the /apps launcher grid that opens the Mallet Estimator workspace.
+add_to_apps_screen = [
+    {
+        "name": "mallet_estimator",
+        "logo": "/assets/mallet_estimator/images/logo.svg",
+        "title": "Mallet Estimator",
+        "route": "/app/mallet-estimator",
+        "has_permission": "mallet_estimator.install.has_app_permission",
+    }
+]
+
 # Seed default Estimate Settings (rates + machines) and the client print format.
 after_install = "mallet_estimator.install.after_install"
 after_migrate = "mallet_estimator.install.after_migrate"
