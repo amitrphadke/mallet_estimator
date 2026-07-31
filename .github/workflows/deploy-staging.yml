@@ -33,6 +33,11 @@ on:
       - '**/test_*.py'
       - '**.md'
   workflow_dispatch:   # manual "deploy now" button
+    inputs:
+      force:
+        description: "Force re-issue the site update to the current release (use when a bench swap stalled and FC reports no update available)."
+        type: boolean
+        default: false
 
 # One deploy at a time; a newer push cancels the older run so they don't pile up.
 concurrency:
@@ -47,6 +52,7 @@ jobs:
         env:
           FC_HOST: ${{ vars.FC_HOST != '' && vars.FC_HOST || 'cloud.frappe.io' }}
           FC_BENCH: ${{ vars.FC_BENCH != '' && vars.FC_BENCH || 'bench-44687' }}
+          FORCE: ${{ github.event.inputs.force }}
           FC_KEY: ${{ secrets.FRAPPE_CLOUD_API_KEY }}
           FC_SECRET: ${{ secrets.FRAPPE_CLOUD_API_SECRET }}
         run: |
@@ -100,6 +106,20 @@ jobs:
             echo "No update for ${APP} visible yet (attempt $attempt) — Frappe Cloud may not have ingested the push. Waiting 20s ..."
             sleep 20
           done
+          # Force mode: the release is already BUILT (update_available=false) but a
+          # previous site migration stalled, so the site never moved onto the new
+          # bench. Re-issue deploy_and_update against the app's current/latest
+          # release to kick the stuck site update.
+          if { [ "$APPS" = "[]" ] || [ -z "$APPS" ]; } && [ "$FORCE" = "true" ]; then
+            echo "force: re-issuing the site update to the app's current release (stalled bench swap)."
+            APPS=$(printf '%s' "$BODY" | jq -c --arg app "$APP" '
+              [ .message.apps[]? | select(.app == $app) | . as $a
+                | { app: $a.app, source: $a.source,
+                    release: ( $a.next_release // ( ($a.releases // []) | last | .name ) ),
+                    hash:    ( ($a.releases // []) | last | .hash ) // "" } ]')
+            echo "force APPS: $APPS"
+          fi
+
           echo "App to update: $APPS"
           if [ "$APPS" = "[]" ] || [ -z "$APPS" ]; then
             echo "Nothing to update — Frappe Cloud already has this commit for ${APP}."
