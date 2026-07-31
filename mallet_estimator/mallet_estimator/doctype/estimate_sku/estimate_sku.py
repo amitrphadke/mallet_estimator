@@ -51,7 +51,7 @@ class EstimateSKU(Document):
         if not materials:
             frappe.throw(_("No materials found in the Estimate PDF. Is it an OpenCutList Estimate export?"))
 
-        part_count, parts, agg = 0, [], None
+        part_count, parts, agg, hardware = 0, [], None, []
         if self.parts_csv:
             content = _file_content(self.parts_csv)
             if isinstance(content, bytes):
@@ -59,6 +59,7 @@ class EstimateSKU(Document):
             rows = opencutlist.parse_opencutlist_csv(content)
             parts = opencutlist.parts_list(rows)
             part_count = len(parts)
+            hardware = opencutlist.hardware_list(rows)
             # The CSV gives ACCURATE edge-banding running metres (the PDF only
             # gives whole rolls). Use it so edge banding is stocked/costed per metre.
             agg = opencutlist.aggregate(
@@ -75,6 +76,8 @@ class EstimateSKU(Document):
         for m in materials:
             if m.get("kind") == "edge" and agg:
                 continue  # replaced by the CSV metre lines below
+            if m.get("kind") == "hardware" and hardware:
+                continue  # replaced by designation-level CSV hardware below
             self._add_material_line(
                 m["name"], m.get("kind"), m.get("thickness") or 0, m["qty"] or 0,
                 _pdf_desc(m), unpriced,
@@ -83,6 +86,15 @@ class EstimateSKU(Document):
             for ln in agg["lines"]:
                 if ln["kind"] == "edge":
                     self._add_material_line(ln["material"], "edge", 0, ln["qty"], ln["desc"], unpriced)
+        # Hardware from the CSV Designation — the real SKU (HWD_AH_SC_0 = Auto
+        # Hinge Soft Close 0°) with the part's physical dimensions. The PDF only
+        # knows the coarse Material name (HWD_Hinge), so the CSV wins when present.
+        for h in hardware:
+            cat = f" · {h['category']}" if h.get("category") and h["category"] != h["code"] else ""
+            self._add_material_line(
+                h["code"], "hardware", h.get("thickness") or 0, h["qty"],
+                f"{h['code']} — {h['qty']} nos{cat}", unpriced, dims=h,
+            )
 
         self.unpriced_materials = ", ".join(unpriced)
         if unpriced:
@@ -115,11 +127,11 @@ class EstimateSKU(Document):
                     "laminated": p.get("laminated", 0),
                 })
 
-    def _add_material_line(self, name, kind, thickness, qty, desc, unpriced):
+    def _add_material_line(self, name, kind, thickness, qty, desc, unpriced, dims=None):
         """Create/link the ERPNext stock Item and append a costed material row.
         Length/width/thickness are fetched from the Item (fetch_from) — single
         source of truth, not stored redundantly on the line."""
-        code, rate, source = inventory.ensure_material_item(name, kind=kind, thickness=thickness)
+        code, rate, source = inventory.ensure_material_item(name, kind=kind, thickness=thickness, dims=dims)
         self.append("materials", {
             "item": code, "material": name, "description": (desc or name)[:140],
             "qty": qty, "uom": inventory.stock_uom_for(kind),

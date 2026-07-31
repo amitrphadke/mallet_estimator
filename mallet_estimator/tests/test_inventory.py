@@ -88,6 +88,24 @@ class TestMaterialItem(MalletTestCase):
         uoms = {r.uom: r.conversion_factor for r in it.uoms}
         self.assertEqual(uoms["Roll"], 50)                # buy rolls, stock metres
 
+    def test_hardware_item_by_designation_with_dims(self):
+        # F7: the hardware Item is the designation, carrying the part's physical
+        # size in the generic Length/Width fields (no "sheet" size, no thickness
+        # suffix on the code).
+        code, _, _ = inventory.ensure_material_item(
+            "HWD_AH_SC_0_TEST", kind="hardware", thickness=42,
+            dims={"category": "HWD_Hinge", "length": 80, "width": 65, "thickness": 42},
+        )
+        it = frappe.get_doc("Item", code)
+        self.assertEqual(it.item_code, "HWD_AH_SC_0_TEST")
+        self.assertEqual(it.item_group, "Hardware")
+        self.assertEqual(it.stock_uom, "Nos")
+        self.assertEqual(it.is_stock_item, 1)
+        self.assertEqual(it.get("mallet_sheet_length_mm"), 80)
+        self.assertEqual(it.get("mallet_sheet_width_mm"), 65)
+        self.assertEqual(it.get("mallet_thickness_mm"), 42)
+        self.assertIn("HWD_Hinge", it.description or "")
+
     def test_idempotent_no_duplicate(self):
         inventory.ensure_material_item("SG_DUP_TEST", kind="sheet", thickness=18)
         n1 = frappe.db.count("Item", {"item_code": "SG_DUP_TEST_18mm"})

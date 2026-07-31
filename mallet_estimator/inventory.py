@@ -92,7 +92,7 @@ def _fallback_group():
     )
 
 
-def _describe(name, kind, thickness):
+def _describe(name, kind, thickness, category=None):
     if kind == "sheet":
         return f"{name} — {thickness:g}mm sheet good ({SHEET_LENGTH_MM:g}x{SHEET_WIDTH_MM:g}mm sheet)"
     if kind == "laminate":
@@ -101,6 +101,8 @@ def _describe(name, kind, thickness):
         return f"{name} — edge banding (stocked per metre; bought in {EDGE_ROLL_METERS:g} m rolls)"
     if kind == "solidwood":
         return f"{name} — solid wood"
+    if kind == "hardware" and category and category != name:
+        return f"{name} ({category})"
     return f"{name}"
 
 
@@ -157,10 +159,15 @@ def ensure_material_item(name, kind=None, thickness=0, dims=None):
             _add_uom(item, pu, spec["conv"])
         if kind in ("sheet", "laminate") and frappe.db.exists("UOM", "Square Meter"):
             _add_uom(item, "Square Meter", SHEET_AREA_SQM)  # 1 Sheet = ~2.98 m²
-        item.description = _describe(name, kind, thickness)
+        item.description = _describe(name, kind, thickness, category=(dims or {}).get("category"))
         if kind in ("sheet", "laminate"):
             _set(item, meta, "mallet_sheet_length_mm", (dims or {}).get("length") or SHEET_LENGTH_MM)
             _set(item, meta, "mallet_sheet_width_mm", (dims or {}).get("width") or SHEET_WIDTH_MM)
+        elif kind == "hardware" and dims:
+            # A hinge/handle/rail has a real physical size (from the part) — store
+            # it in the same generic Length/Width fields (these are not "sheet" sizes).
+            _set(item, meta, "mallet_sheet_length_mm", dims.get("length") or 0)
+            _set(item, meta, "mallet_sheet_width_mm", dims.get("width") or 0)
         if thickness:
             _set(item, meta, "mallet_thickness_mm", thickness)
         _set(item, meta, "mallet_oc_code", name)
@@ -184,16 +191,19 @@ def _set(doc, meta, field, value):
 CUSTOM_FIELDS = {
     "Item": [
         {"fieldname": "mallet_material_sb", "fieldtype": "Section Break",
-         "label": "Mallet Material", "insert_after": "stock_uom", "collapsible": 1},
+         "label": "Dimensions (mm)", "insert_after": "stock_uom", "collapsible": 1},
         {"fieldname": "mallet_oc_code", "fieldtype": "Data", "label": "OpenCutList Code",
          "insert_after": "mallet_material_sb", "read_only": 1},
         {"fieldname": "mallet_thickness_mm", "fieldtype": "Float", "label": "Thickness (mm)",
          "insert_after": "mallet_oc_code"},
         {"fieldname": "mallet_material_cb", "fieldtype": "Column Break",
          "insert_after": "mallet_thickness_mm"},
-        {"fieldname": "mallet_sheet_length_mm", "fieldtype": "Float", "label": "Sheet Length (mm)",
+        # Generic Length/Width (mm): sheet stock size on panels, piece size on
+        # hardware. (Fieldnames keep the historical 'sheet_' prefix to avoid a data
+        # migration; the labels are generic.)
+        {"fieldname": "mallet_sheet_length_mm", "fieldtype": "Float", "label": "Length (mm)",
          "insert_after": "mallet_material_cb"},
-        {"fieldname": "mallet_sheet_width_mm", "fieldtype": "Float", "label": "Sheet Width (mm)",
+        {"fieldname": "mallet_sheet_width_mm", "fieldtype": "Float", "label": "Width (mm)",
          "insert_after": "mallet_sheet_length_mm"},
     ]
 }

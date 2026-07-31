@@ -39,6 +39,40 @@ class TestPartsList(unittest.TestCase):
         self.assertEqual((parts[1]["cut"], parts[1]["edge_banded"], parts[1]["laminated"]), (1, 0, 1))
 
 
+# Hardware rows: Material name is the coarse category; Designation is the real
+# SKU; OpenCutList suffixes duplicate instances with #N. Two hinges (one #1) roll
+# up to one SKU qty 2; two handle designations under one category stay distinct.
+HW_CSV = """No.;Material name;Material type;Designation;Length;Width;Thickness
+1;HWD_Hinge;Hardware;HWD_AH_SC_0;80 mm;65 mm;42 mm
+2;HWD_Hinge;Hardware;HWD_AH_SC_0#1;80 mm;65 mm;42 mm
+3;HWD_Handle;Hardware;HWD_Handle_150mm;86 mm;32 mm;22 mm
+4;HWD_Handle;Hardware;HWD_HandleDrawer_150mm;152 mm;32 mm;22 mm
+5;SG_PLY_V0_a_a;Sheet Goods;panel;600;400;16
+"""
+
+
+class TestHardwareList(unittest.TestCase):
+    def test_canonical_strips_instance_suffix(self):
+        self.assertEqual(OCL.canonical_hw_code("HWD_AH_SC_0#3"), "HWD_AH_SC_0")
+        self.assertEqual(OCL.canonical_hw_code("HWD_AH_SC_0"), "HWD_AH_SC_0")
+
+    def test_hardware_by_designation_with_dims(self):
+        hw = OCL.hardware_list(OCL.parse_opencutlist_csv(HW_CSV))
+        by = {h["code"]: h for h in hw}
+        self.assertEqual(set(by), {"HWD_AH_SC_0", "HWD_Handle_150mm", "HWD_HandleDrawer_150mm"})
+        self.assertEqual(by["HWD_AH_SC_0"]["qty"], 2)          # #1 instance rolled up
+        self.assertEqual(by["HWD_AH_SC_0"]["category"], "HWD_Hinge")
+        self.assertEqual(
+            (by["HWD_AH_SC_0"]["length"], by["HWD_AH_SC_0"]["width"], by["HWD_AH_SC_0"]["thickness"]),
+            (80.0, 65.0, 42.0),
+        )
+        # one Material name (HWD_Handle) resolves to two distinct SKUs
+        self.assertEqual(by["HWD_Handle_150mm"]["qty"], 1)
+        self.assertEqual(by["HWD_HandleDrawer_150mm"]["qty"], 1)
+        # sheet-goods rows are ignored here
+        self.assertNotIn("panel", by)
+
+
 class TestAggregate(unittest.TestCase):
     def setUp(self):
         self.agg = OCL.aggregate(OCL.parse_opencutlist_csv(CSV))

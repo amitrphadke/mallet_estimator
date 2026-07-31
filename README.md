@@ -114,6 +114,14 @@ list — so the same auto-hinge can carry several vendor prices. Buy at the chos
 > group (Sheet Goods / Laminate / Edge Banding / Hardware). A repair patch re-homes any older Items
 > that were created before this and makes them stockable with the right UOMs.
 
+### Hardware — the SKU is the part Designation
+When a **Parts CSV** is imported, each hardware Item is the OpenCutList **Designation** (the real spec —
+`HWD_AH_SC_0` = Auto Hinge Soft Close 0°, degree 0/8/15 are separate SKUs), not the coarse Material name
+(`HWD_Hinge`, which can hide several SKUs). Duplicate instances (`…#1`, `…#3`) roll up to one SKU with the
+summed quantity, and the Item carries the part's real **Length/Width/Thickness** (mm) — hardware has no
+"sheet" size, so the dimension fields are generically labelled. Re-import an existing SKU's Parts CSV to
+regenerate its hardware as designations.
+
 ### Traceability (Batch & Serial)
 - **Laminate is batch-tracked** (dye-lot): each laminate Item has *Batch No* enabled, so on
   receipt you record the supplier lot and a whole project can be matched to one batch — no visible

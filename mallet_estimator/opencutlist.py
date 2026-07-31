@@ -96,6 +96,42 @@ def parts_list(rows):
     return out
 
 
+def canonical_hw_code(designation):
+    """OpenCutList suffixes duplicate instances of the same part with '#N'
+    (e.g. HWD_Handle_150mm#3). Strip it so every instance rolls up to one SKU."""
+    return re.sub(r"#\d+$", "", (designation or "").strip())
+
+
+def hardware_list(rows):
+    """Aggregate hardware into REAL SKUs from the parts CSV.
+
+    The actual hardware is the part **Designation** (HWD_AH_SC_0 = Auto Hinge
+    Soft Close 0°), not the coarse Material name (HWD_Hinge) — which can even
+    hide several distinct SKUs. Returns one entry per canonical designation:
+        {code, category, qty, length, width, thickness}
+    where dims are the part's physical size in mm and qty is the instance count.
+    """
+    out, order = {}, []
+    for r in rows:
+        if (r.get("Material type") or "").strip().lower() not in HARDWARE_TYPES:
+            continue
+        code = canonical_hw_code(r.get("Designation") or "") or (r.get("Material name") or "").strip()
+        if not code:
+            continue
+        if code not in out:
+            out[code] = {
+                "code": code,
+                "category": (r.get("Material name") or "").strip(),
+                "qty": 0,
+                "length": _num(r.get("Length") or r.get("Length - raw")),
+                "width": _num(r.get("Width") or r.get("Width - raw")),
+                "thickness": _num(r.get("Thickness") or r.get("Thickness - raw")),
+            }
+            order.append(code)
+        out[code]["qty"] += 1
+    return [out[c] for c in order]
+
+
 def classify_hardware(name):
     """Bucket a hardware material name into an operation-driver category."""
     n = (name or "").lower()
