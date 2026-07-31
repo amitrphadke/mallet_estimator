@@ -17,6 +17,12 @@ def execute():
     except Exception:
         frappe.log_error(frappe.get_traceback(), "link_operations: seed operations")
 
+    # Runs post-model-sync, so the 'operation' column exists; guard anyway so a
+    # mis-ordering can never hard-fail the whole migrate.
+    if not frappe.db.has_column("Estimate Labor", "operation"):
+        frappe.db.commit()
+        return
+
     for r in frappe.get_all("Estimate Labor", fields=["name", "phase", "operation", "is_misc"]):
         if r.operation:
             continue

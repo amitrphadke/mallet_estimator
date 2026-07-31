@@ -1,4 +1,5 @@
 # Patches are applied in order.
+[pre_model_sync]
 mallet_estimator.patches.rename_execution_estimate
 mallet_estimator.patches.rename_execution_estimate_2
 mallet_estimator.patches.reset_sku_grid_columns
@@ -8,4 +9,8 @@ mallet_estimator.patches.make_items_stockable
 mallet_estimator.patches.enable_traceability
 mallet_estimator.patches.fix_material_items
 mallet_estimator.patches.hardware_designation_items
+
+[post_model_sync]
+# Needs the new Estimate Labor.operation column, which the model sync creates —
+# so this MUST run post-model-sync, not before.
 mallet_estimator.patches.link_operations
