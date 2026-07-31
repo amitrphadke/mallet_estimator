@@ -106,6 +106,21 @@ class TestMaterialItem(MalletTestCase):
         self.assertEqual(it.get("mallet_thickness_mm"), 42)
         self.assertIn("HWD_Hinge", it.description or "")
 
+    def test_hardware_dims_backfilled_on_existing(self):
+        # F7a: an existing dimensionless hardware Item gets its dims backfilled on
+        # a later import that supplies them (without a new Item being created).
+        inventory.ensure_material_item("HWD_BACKFILL_TEST", kind="hardware")
+        it = frappe.get_doc("Item", "HWD_BACKFILL_TEST")
+        self.assertFalse(it.get("mallet_sheet_length_mm"))
+        inventory.ensure_material_item(
+            "HWD_BACKFILL_TEST", kind="hardware", thickness=14,
+            dims={"category": "HWD_BACKFILL_TEST", "length": 50, "width": 15, "thickness": 14},
+        )
+        it.reload()
+        self.assertEqual(it.get("mallet_sheet_length_mm"), 50)
+        self.assertEqual(it.get("mallet_sheet_width_mm"), 15)
+        self.assertEqual(it.get("mallet_thickness_mm"), 14)
+
     def test_idempotent_no_duplicate(self):
         inventory.ensure_material_item("SG_DUP_TEST", kind="sheet", thickness=18)
         n1 = frappe.db.count("Item", {"item_code": "SG_DUP_TEST_18mm"})

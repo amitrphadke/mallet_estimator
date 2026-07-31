@@ -172,9 +172,30 @@ def ensure_material_item(name, kind=None, thickness=0, dims=None):
             _set(item, meta, "mallet_thickness_mm", thickness)
         _set(item, meta, "mallet_oc_code", name)
         item.insert(ignore_permissions=True)
+    elif kind == "hardware" and dims:
+        # F7a: a hardware Item created earlier (its designation matched an old
+        # generic name, e.g. HWD_MiniFix) has no dimensions — backfill them from
+        # the part now, without clobbering any value already set.
+        _backfill_hardware_dims(code, dims)
 
     rate, source = material_rate(code)
     return code, rate, source
+
+
+def _backfill_hardware_dims(code, dims):
+    meta = frappe.get_meta("Item")
+    item = frappe.get_doc("Item", code)
+    changed = False
+    for fld, val in (
+        ("mallet_sheet_length_mm", (dims or {}).get("length")),
+        ("mallet_sheet_width_mm", (dims or {}).get("width")),
+        ("mallet_thickness_mm", (dims or {}).get("thickness")),
+    ):
+        if val and meta.has_field(fld) and not (item.get(fld) or 0):
+            item.set(fld, val)
+            changed = True
+    if changed:
+        item.save(ignore_permissions=True)
 
 
 def _add_uom(item, uom, factor):
