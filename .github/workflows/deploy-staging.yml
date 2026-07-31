@@ -131,6 +131,10 @@ jobs:
             exit 1
           fi
 
+          # The hash we are deploying — success requires the SITE to actually run it.
+          HASH=$(printf '%s' "$APPS" | jq -r '.[0].hash')
+          echo "Deploying ${APP} @ ${HASH:0:12}"
+
           # Sites on this bench to migrate onto the new build (mirrors the dashboard).
           SITES=$(printf '%s' "$BODY" | jq -c '[ .message.sites[]? | {name, server, bench, skip_failing_patches: false, skip_backups: false} ]')
           echo "Sites to update: $SITES"
@@ -186,7 +190,6 @@ jobs:
             PIPE=$(printf '%s'   "$BODY" | jq -r '.message.has_running_release_pipeline // false')
             PENDING=$(printf '%s' "$BODY" | jq -r --argjson names "$APP_NAMES" \
               '[.message.apps[]? | select(.update_available==true) | select(.app as $a | $names | index($a))] | length')
-            echo "[$((i*20))s] build=${STATUS} deploy_in_progress=${DIP} bench_creating=${BCU} pipeline=${PIPE} our_apps_pending=${PENDING}"
 
             if [ "$STATUS" = "Failure" ]; then
               echo "::error::Frappe Cloud build FAILED (build ${DNAME})."
@@ -198,21 +201,34 @@ jobs:
             fi
 
             [ "$STATUS" = "Success" ] && BUILT=1
-            # Live when the build is done, no deploy of OUR app is in progress, and
-            # our app no longer reports an update available (the active bench carries
-            # the new commit) — held for two consecutive checks. The group flags
-            # bench_creation_underway and has_running_release_pipeline are NOT
-            # required: FC leaves them set for unrelated/stale benches long after our
-            # app is live, which false-failed the job.
-            if [ "$BUILT" = "1" ] && [ "$DIP" != "true" ] && [ "$PENDING" = "0" ]; then
+
+            # The hash the SITE currently runs for OUR app. After a SUCCESSFUL site
+            # migrate this equals the hash we deployed; a FAILED migrate leaves the
+            # site on the old bench, so it never matches. (update_available flips to
+            # false once the image is BUILT — regardless of whether the site migrated
+            # — which is exactly how a broken migrate false-greened for hours.)
+            CURHASH=$(printf '%s' "$BODY" | jq -r --arg app "$APP" \
+              '.message.apps[]? | select(.app==$app) | (.current_hash // .hash // "")')
+            CURHASH=${CURHASH:0:12}
+            echo "[$((i*20))s] build=${STATUS} deploy_in_progress=${DIP} bench_creating=${BCU} pending=${PENDING} running=${CURHASH:-?} deployed=${HASH:0:12}"
+
+            # Done only when: build Success, nothing in progress, no pending update,
+            # the bench finished creating, AND the site runs the hash we deployed —
+            # held for two consecutive checks. If FC doesn't expose a running hash
+            # (CURHASH empty) we don't block on it, but bench_creation_underway must
+            # still have cleared, which is what a stuck/failed migrate never does.
+            HASH_OK=0
+            { [ -z "$CURHASH" ] || [ "$CURHASH" = "${HASH:0:12}" ]; } && HASH_OK=1
+            if [ "$BUILT" = "1" ] && [ "$DIP" != "true" ] && [ "$PENDING" = "0" ] \
+               && [ "$BCU" != "true" ] && [ "$HASH_OK" = "1" ]; then
               STABLE=$((STABLE + 1))
               if [ "$STABLE" -ge 2 ]; then
-                echo "✅ LIVE on Frappe Cloud — build ${DNAME}; the bench carries the new commit (pipeline flag=${PIPE}, informational)."
+                echo "✅ LIVE on Frappe Cloud — build ${DNAME}; site runs ${CURHASH:-$HASH} (build + migrate succeeded)."
                 exit 0
               fi
             else
               STABLE=0
             fi
           done
-          echo "::error::Deploy not fully live after 55 min (build=${STATUS}, pending our apps=${PENDING}). The image may have built but the bench/site update did not complete — check Frappe Cloud."
+          echo "::error::Deploy NOT confirmed live after 55 min (build=${STATUS}, pending=${PENDING}, bench_creating=${BCU}, site runs ${CURHASH:-?} vs deployed ${HASH:0:12}). The build likely succeeded but the SITE MIGRATION did not complete — a failed migrate leaves the site on the old bench. Check the Frappe Cloud dashboard job (site → Deploys/Insights) for the migrate traceback."
           exit 1
