@@ -242,6 +242,10 @@ class EstimateSKU(Document):
                 m.line_cost = 0
             else:
                 m.line_cost = (m.qty or 0) * (m.unit_cost or 0)
+        # Show each step's master Std Time (min/unit) next to its actual Min/Unit,
+        # so an override (Min/Unit != Std) is obvious at a glance.
+        for row in self.labor or []:
+            row.std_min = operation_defaults(op_phase(row))[0]
         # Each phase is priced at its Workstation's live Net Hour Rate from the
         # ERPNext Manufacturing master (Rent + Wages + Machinery + Electricity +
         # Consumables). Wages are folded in — no per-row carpenter/helper charge.
@@ -253,6 +257,21 @@ class EstimateSKU(Document):
             "client_total", "carp_min_total", "helper_min_total",
         ):
             self.set(k, r[k])
+
+    @frappe.whitelist()
+    def reset_step_times(self):
+        """Pull every step's Min/Unit + Workstation from its Operation master
+        (Std Time + Default Workstation), overwriting any per-SKU overrides, then
+        re-price. Use after changing an Operation's Std Time on the master."""
+        n = 0
+        for row in self.labor or []:
+            mins, ws = operation_defaults(op_phase(row))
+            row.carp_min = mins
+            if ws:
+                row.workstation = ws
+            n += 1
+        self.save(ignore_permissions=True)
+        return {"steps": n}
 
     @frappe.whitelist()
     def workstation_net_rates(self):

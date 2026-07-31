@@ -9,6 +9,7 @@
   "workstation",
   "qty",
   "carp_min",
+  "std_min",
   "carp_total",
   "op_cost",
   "remark",
@@ -52,6 +53,14 @@
    "fetch_from": "operation.mallet_min_per_unit",
    "fetch_if_empty": 1,
    "description": "Minutes the workstation is occupied per unit (from the Operation's Std Time; override per SKU if needed). The crew wage is already in the workstation rate."
+  },
+  {
+   "fieldname": "std_min",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Std (master)",
+   "read_only": 1,
+   "description": "The Operation master's Std Time (min/unit). If Min/Unit differs from this, the step is overridden for this SKU."
   },
   {
    "fieldname": "carp_total",

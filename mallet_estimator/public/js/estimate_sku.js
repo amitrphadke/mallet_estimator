@@ -24,6 +24,25 @@ frappe.ui.form.on("Estimate SKU", {
         if (r && r.message && r.message.changed) frm.reload_doc();
       });
     }
+    // Pull every step's Min/Unit + Workstation from its Operation master (after you
+    // change an Operation's Std Time). Overwrites per-SKU overrides.
+    if (!frm.is_new()) {
+      frm.add_custom_button(__("Reset times from Operations"), () => {
+        frappe.confirm(
+          __("Reset each step's Min/Unit &amp; Workstation to its Operation master values? This overwrites any per-SKU overrides."),
+          () =>
+            frm.call("reset_step_times").then((r) => {
+              if (r && r.message) {
+                frappe.show_alert(
+                  { message: __("Reset {0} steps from Operation masters", [r.message.steps]), indicator: "green" },
+                  5
+                );
+              }
+              frm.reload_doc();
+            })
+        );
+      });
+    }
     // Rebuild the material lines from the attached OpenCutList PDF + Parts CSV at
     // the current import logic — no need to detach/re-attach the files.
     if (!frm.is_new() && frm.doc.estimate_pdf) {
