@@ -30,6 +30,8 @@
   "article_image",
   "material_section",
   "estimate_pdf",
+  "partlist_pdf",
+  "views_pdf",
   "materials",
   "unpriced_materials",
   "material_cost",
@@ -191,7 +193,19 @@
    "fieldname": "estimate_pdf",
    "fieldtype": "Attach",
    "label": "Material Estimate PDF (estimation source)",
-   "description": "OpenCutList Material Estimate export — the ONLY material input needed to estimate."
+   "description": "OpenCutList Material Estimate export — sheets, laminate, edge banding and hardware totals."
+  },
+  {
+   "fieldname": "partlist_pdf",
+   "fieldtype": "Attach",
+   "label": "Part List PDF (hardware identification)",
+   "description": "OpenCutList Parts List export — identifies hardware correctly: the real stock item designation (HWD_AH_SC_0), not just its group (HWD_Hinge)."
+  },
+  {
+   "fieldname": "views_pdf",
+   "fieldtype": "Attach",
+   "label": "7 Views PDF (ISO shown to client)",
+   "description": "SketchUp 7-views export. The page headed 'IsoView' is extracted automatically as the isometric render on the client estimate."
   },
   {
    "fieldname": "materials",

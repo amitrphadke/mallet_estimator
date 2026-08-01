@@ -4,7 +4,7 @@ import frappe
 from frappe import _
 from frappe.model.document import Document
 
-from mallet_estimator import opencutlist, estimate_pdf, inventory
+from mallet_estimator import opencutlist, estimate_pdf, inventory, views_pdf
 from mallet_estimator.estimator import (
     STEP_TEMPLATE, OPERATION_STANDARDS, OPERATION_WORKSTATION, calc_sku, sku_code,
     customer_initials, op_phase, live_workstation_rates,
@@ -52,15 +52,35 @@ class EstimateSKU(Document):
         self.compute_costs()
 
     def maybe_import(self):
-        """When an OpenCutList Estimate PDF is attached (or changed), import the
+        """When an estimation input PDF is attached (or changed), import the
         material quantities + operation quantities automatically on save — no
         button. The Parts CSV, if attached, gives the edge-banding part count and
         the QR part list."""
+        self.maybe_extract_iso()
         if not self.estimate_pdf:
             return
-        if self.materials and not self.has_value_changed("estimate_pdf") and not self.has_value_changed("parts_csv"):
+        if self.materials and not self.has_value_changed("estimate_pdf") \
+                and not self.has_value_changed("partlist_pdf") and not self.has_value_changed("parts_csv"):
             return
         self.do_import()
+
+    def maybe_extract_iso(self):
+        """When the 7 Views PDF is attached (or changed), pull the render off its
+        'IsoView' page into Article Image — the isometric shown to the client."""
+        if not self.views_pdf or self.is_new():
+            return
+        if self.article_image and not self.has_value_changed("views_pdf"):
+            return
+        try:
+            url = views_pdf.attach_iso_image(self, _file_content(self.views_pdf))
+            if url:
+                self.article_image = url
+            else:
+                frappe.msgprint(_("No 'IsoView' page found in the 7 Views PDF — attach an Article Image manually."),
+                                indicator="orange")
+        except Exception:
+            frappe.log_error(frappe.get_traceback(), f"iso extract {self.name}")
+            frappe.msgprint(_("Could not extract the IsoView render from the 7 Views PDF."), indicator="orange")
 
     def do_import(self):
         settings = frappe.get_single("Estimate Settings")
@@ -68,12 +88,11 @@ class EstimateSKU(Document):
         if not materials:
             frappe.throw(_("No materials found in the Estimate PDF. Is it an OpenCutList Estimate export?"))
 
-        # S7 — ESTIMATION reads material + cost from the Material Estimate PDF ONLY
-        # (generic hardware like HWD_Hinge, conservative). The Parts CSV is an
-        # EXECUTION input: if attached it only fills the parts table + the part
-        # count that drives operation quantities — it never changes the estimated
-        # material lines. The real, client-chosen hardware/laminate is picked later
-        # (execution design) and its variance vs this estimate is tracked in Wave B.
+        # ESTIMATION inputs: the Material Estimate PDF gives sheets/laminate/edge
+        # quantities; the PART LIST PDF identifies hardware CORRECTLY — the real
+        # stock item designation (HWD_AH_SC_0), where the estimate PDF only knows
+        # the group (HWD_Hinge). The Parts CSV stays an EXECUTION input: it only
+        # fills the parts table + part count driving operation quantities.
         part_count, parts = 0, []
         if self.parts_csv:
             content = _file_content(self.parts_csv)
@@ -83,15 +102,33 @@ class EstimateSKU(Document):
             parts = opencutlist.parts_list(rows)
             part_count = len(parts)
 
+        hardware = []
+        if self.partlist_pdf:
+            try:
+                hardware = views_pdf.parse_partlist_hardware(_file_content(self.partlist_pdf))
+            except Exception:
+                frappe.log_error(frappe.get_traceback(), f"partlist parse {self.name}")
+                frappe.msgprint(_("Could not parse hardware from the Part List PDF — using the estimate PDF's generic hardware."),
+                                indicator="orange")
+
         self.set("materials", [])
         unpriced = []
-        # Every material line (sheet, laminate, edge, generic hardware) comes from
-        # the PDF — its nesting is authoritative and its rates are the conservative
-        # estimation ceiling.
+        # Sheets, laminate and edge banding come from the estimate PDF (its nesting
+        # is authoritative); hardware comes from the part list designations when
+        # attached (falling back to the PDF's generic groups).
         for m in materials:
+            if m.get("kind") == "hardware" and hardware:
+                continue  # replaced by designation-level part-list hardware below
             self._add_material_line(
                 m["name"], m.get("kind"), m.get("thickness") or 0, m["qty"] or 0,
                 _pdf_desc(m), unpriced,
+            )
+        for h in hardware:
+            cat = f" · {h['category']}" if h.get("category") and h["category"] != h["code"] else ""
+            self._add_material_line(
+                h["code"], "hardware", 0, h["qty"],
+                f"{h['code']} — {h['qty']} nos{cat}", unpriced,
+                dims={"category": h.get("category")},
             )
 
         self.unpriced_materials = ", ".join(unpriced)

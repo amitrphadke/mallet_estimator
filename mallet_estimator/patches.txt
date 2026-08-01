@@ -20,3 +20,5 @@ mallet_estimator.patches.operation_std_time
 mallet_estimator.patches.structured_material_coding
 # Wave A (S1/S2/S3): fix vendor model, real suppliers, Paint, mfr part no, scope.
 mallet_estimator.patches.stock_vendor_model
+# Seed the shop's material rate card (.numbers snapshot): items + assumed rates.
+mallet_estimator.patches.seed_material_rates

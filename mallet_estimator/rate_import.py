@@ -12,7 +12,6 @@
 
 import csv
 import io
-import re
 
 import frappe
 
@@ -77,53 +76,11 @@ def parse_rate_csv(text):
 
 
 # V4 — PDF rate sheets (Sun Tradelink / Bizanalyst layout). Each item is one
-# logical line ending in "<qty> PR <rate> PR <disc>% <amount>", with a part code
-# like H-311.01.357 earlier in the line; descriptions can wrap across lines.
-_PART_RE = re.compile(r"([A-Za-z]-[\d.]+)")
-_TAIL_RE = re.compile(r"(\d+)\s+PR\s+([\d,]+(?:\.\d+)?)\s+PR\s+([\d.]+)\s*%\s+([\d,]+(?:\.\d+)?)\s*$")
-
-
-def _pdf_text(content):
-    if isinstance(content, str):
-        content = content.encode("utf-8", "ignore")
-    # pypdf is a declared app dependency (pyproject.toml), so it's always present.
-    try:
-        from pypdf import PdfReader
-        reader = PdfReader(io.BytesIO(content))
-        return "\n".join((page.extract_text() or "") for page in reader.pages)
-    except ImportError:
-        pass
-    try:
-        from pdfminer.high_level import extract_text
-        return extract_text(io.BytesIO(content)) or ""
-    except ImportError:
-        frappe.throw(
-            "PDF parsing needs pypdf (or pdfminer.six) on the bench. Export the "
-            "rate sheet to CSV, or ask to add the dependency."
-        )
-
-
-def parse_rate_pdf(content):
-    """Parse a Sun Tradelink-style rate PDF into rows [{part_no, description, rate,
-    discount, uom}]. `rate` is the MRP (the pre-discount column). Accumulates
-    wrapped lines until the per-item tail is seen."""
-    rows, buf = [], ""
-    for line in _pdf_text(content).splitlines():
-        line = line.strip()
-        if not line:
-            continue
-        buf = f"{buf} {line}".strip() if buf else line
-        mt = _TAIL_RE.search(buf)
-        mp = _PART_RE.search(buf)
-        if mt and mp:
-            qty, rate, disc, amt = mt.groups()
-            rows.append({
-                "part_no": mp.group(1),
-                "description": buf[mp.end():mt.start()].strip(" -–"),
-                "rate": _num(rate), "discount": _num(disc), "uom": "PR",
-            })
-            buf = ""
-    return rows
+# NOTE (2026-08-01): the supplier-PDF import path was REMOVED at the user's
+# request — every supplier formats their rate sheet differently, and hardware
+# items follow the shop's OWN naming convention (HWD_AH_SC_0), not the vendor
+# catalogue's. Rate sheets are imported as CSV in our own column layout; matching
+# a purchase order to a supplier's format comes later.
 
 
 def _import_rows(supplier, rows, manufacturer=None, item_group=None, kind="hardware"):
@@ -160,8 +117,3 @@ def _import_rows(supplier, rows, manufacturer=None, item_group=None, kind="hardw
 def import_supplier_rates(supplier, csv_text, manufacturer=None, item_group=None, kind="hardware"):
     """Import a supplier rate list from CSV text."""
     return _import_rows(supplier, parse_rate_csv(csv_text), manufacturer, item_group, kind)
-
-
-def import_supplier_rates_pdf(supplier, pdf_content, manufacturer=None, item_group=None, kind="hardware"):
-    """Import a supplier rate list from PDF bytes (Sun Tradelink / Bizanalyst)."""
-    return _import_rows(supplier, parse_rate_pdf(pdf_content), manufacturer, item_group, kind)
