@@ -334,6 +334,11 @@ def ensure_workspace():
     ws.public = 1
     ws.module = "Mallet Estimator"
     ws.icon = "project"
+    # Match ERPNext's public top-level workspaces so it tiles in the app switcher:
+    # empty (not NULL) parent_page/for_user and a non-zero sequence.
+    ws.parent_page = ""
+    ws.for_user = ""
+    ws.sequence_id = 20
     ws.content = json.dumps([{"id": "mest_card", "type": "card", "data": {"card_name": "Estimating", "col": 4}}])
     for typ, label, dt in [
         ("Card Break", "Estimating", None),
