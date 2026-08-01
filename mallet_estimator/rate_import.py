@@ -12,6 +12,7 @@
 
 import csv
 import io
+import re
 
 import frappe
 
@@ -75,17 +76,63 @@ def parse_rate_csv(text):
     return rows
 
 
-@frappe.whitelist()
-def import_supplier_rates(supplier, csv_text, manufacturer=None, item_group=None, kind="hardware"):
-    """Create/enrich catalogue Items from a supplier rate CSV and record each row's
-    MRP as this supplier's buying price (which refreshes the estimation ceiling).
-    Returns a summary + a per-row log. Errors are collected, not fatal."""
+# V4 — PDF rate sheets (Sun Tradelink / Bizanalyst layout). Each item is one
+# logical line ending in "<qty> PR <rate> PR <disc>% <amount>", with a part code
+# like H-311.01.357 earlier in the line; descriptions can wrap across lines.
+_PART_RE = re.compile(r"([A-Za-z]-[\d.]+)")
+_TAIL_RE = re.compile(r"(\d+)\s+PR\s+([\d,]+(?:\.\d+)?)\s+PR\s+([\d.]+)\s*%\s+([\d,]+(?:\.\d+)?)\s*$")
+
+
+def _pdf_text(content):
+    if isinstance(content, str):
+        content = content.encode("utf-8", "ignore")
+    try:
+        from pdfminer.high_level import extract_text
+        return extract_text(io.BytesIO(content)) or ""
+    except ImportError:
+        pass
+    try:
+        import pdfplumber
+        with pdfplumber.open(io.BytesIO(content)) as pdf:
+            return "\n".join((p.extract_text() or "") for p in pdf.pages)
+    except ImportError:
+        frappe.throw(
+            "PDF parsing needs pdfminer.six (or pdfplumber) on the bench. Export the "
+            "rate sheet to CSV, or ask to add the dependency."
+        )
+
+
+def parse_rate_pdf(content):
+    """Parse a Sun Tradelink-style rate PDF into rows [{part_no, description, rate,
+    discount, uom}]. `rate` is the MRP (the pre-discount column). Accumulates
+    wrapped lines until the per-item tail is seen."""
+    rows, buf = [], ""
+    for line in _pdf_text(content).splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        buf = f"{buf} {line}".strip() if buf else line
+        mt = _TAIL_RE.search(buf)
+        mp = _PART_RE.search(buf)
+        if mt and mp:
+            qty, rate, disc, amt = mt.groups()
+            rows.append({
+                "part_no": mp.group(1),
+                "description": buf[mp.end():mt.start()].strip(" -–"),
+                "rate": _num(rate), "discount": _num(disc), "uom": "PR",
+            })
+            buf = ""
+    return rows
+
+
+def _import_rows(supplier, rows, manufacturer=None, item_group=None, kind="hardware"):
+    """Core: turn parsed rate rows into catalogue Items + per-supplier MRP prices."""
     if not frappe.has_permission("Item", "create"):
         frappe.throw("Not permitted")
-    if not supplier or not frappe.db.exists("Supplier", supplier):
+    sup = inventory.supplier_docname(supplier) or supplier
+    if not sup or not frappe.db.exists("Supplier", sup):
         frappe.throw(f"Unknown Supplier: {supplier}")
 
-    rows = parse_rate_csv(csv_text)
     items, priced, log, errors = 0, 0, [], []
     for row in rows:
         try:
@@ -96,8 +143,8 @@ def import_supplier_rates(supplier, csv_text, manufacturer=None, item_group=None
             if not code:
                 continue
             items += 1
-            inventory._ensure_item_supplier(code, supplier, part_no=row["part_no"])
-            inventory.set_vendor_price(code, supplier, row["rate"])  # + ceiling refresh
+            inventory._ensure_item_supplier(code, sup, part_no=row["part_no"])
+            inventory.set_vendor_price(code, sup, row["rate"])  # + ceiling refresh
             priced += 1
             disc = f" (disc {row['discount']:g}%)" if row.get("discount") else ""
             log.append(f"{code}: {supplier} MRP {row['rate']:g}{disc}")
@@ -106,3 +153,14 @@ def import_supplier_rates(supplier, csv_text, manufacturer=None, item_group=None
             frappe.log_error(frappe.get_traceback(), f"rate import {row.get('part_no')}")
     frappe.db.commit()
     return {"rows": len(rows), "items": items, "priced": priced, "log": log, "errors": errors}
+
+
+@frappe.whitelist()
+def import_supplier_rates(supplier, csv_text, manufacturer=None, item_group=None, kind="hardware"):
+    """Import a supplier rate list from CSV text."""
+    return _import_rows(supplier, parse_rate_csv(csv_text), manufacturer, item_group, kind)
+
+
+def import_supplier_rates_pdf(supplier, pdf_content, manufacturer=None, item_group=None, kind="hardware"):
+    """Import a supplier rate list from PDF bytes (Sun Tradelink / Bizanalyst)."""
+    return _import_rows(supplier, parse_rate_pdf(pdf_content), manufacturer, item_group, kind)

@@ -22,8 +22,8 @@
   {"fieldname": "column_break_1", "fieldtype": "Column Break"},
   {"fieldname": "item_group", "fieldtype": "Link", "options": "Item Group", "label": "Item Group", "default": "Hardware"},
   {"fieldname": "kind", "fieldtype": "Select", "options": "hardware\nlaminate\nedge\nsheet\npaint", "label": "Material Kind", "default": "hardware"},
-  {"fieldname": "source_section", "fieldtype": "Section Break", "label": "Rate list (CSV)"},
-  {"fieldname": "rate_file", "fieldtype": "Attach", "label": "Rate CSV file", "description": "Columns: part_no / code, description, rate / mrp (without tax). discount, uom optional."},
+  {"fieldname": "source_section", "fieldtype": "Section Break", "label": "Rate list (CSV or PDF)"},
+  {"fieldname": "rate_file", "fieldtype": "Attach", "label": "Rate file (CSV or PDF)", "description": "CSV columns: part_no / code, description, rate / mrp (no tax). Or a Sun Tradelink-style PDF (part no + rate parsed automatically)."},
   {"fieldname": "rate_csv", "fieldtype": "Code", "label": "or paste CSV here", "options": "Text"},
   {"fieldname": "results_section", "fieldtype": "Section Break", "label": "Results"},
   {"fieldname": "results", "fieldtype": "Long Text", "label": "Import Log", "read_only": 1}

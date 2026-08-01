@@ -186,10 +186,18 @@ def _build_sku_bom(s, company):
     bom.quantity = 1
     bom.with_operations = 1
     bom.rm_cost_as_per = "Valuation Rate"
-    for m in s.materials:
-        if not m.item:
-            continue
-        bom.append("items", {"item_code": m.item, "qty": m.qty or 1, "rate": m.unit_cost or 0})
+    # V3 — once an execution design exists, build the BOM from the CHOSEN actual
+    # items (so Work Orders consume the real materials and Project margin reflects
+    # actual cost). Before that, fall back to the estimate's generic materials.
+    exec_rows = [r for r in (s.get("execution_materials") or []) if r.chosen_item]
+    if exec_rows:
+        for r in exec_rows:
+            bom.append("items", {"item_code": r.chosen_item, "qty": r.actual_qty or 1, "rate": r.actual_rate or 0})
+    else:
+        for m in s.materials:
+            if not m.item:
+                continue
+            bom.append("items", {"item_code": m.item, "qty": m.qty or 1, "rate": m.unit_cost or 0})
     if not bom.items:
         frappe.throw(_("SKU {0} has no priced material Items to put in a BOM.").format(s.name))
     for op in s.labor:

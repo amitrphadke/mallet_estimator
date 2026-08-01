@@ -34,6 +34,10 @@
   "unpriced_materials",
   "material_cost",
   "import_drivers",
+  "execution_section",
+  "execution_materials",
+  "execution_material_cost",
+  "execution_variance",
   "parts_section",
   "parts_csv",
   "parts",
@@ -214,6 +218,32 @@
    "label": "Import Drivers (JSON)",
    "hidden": 1,
    "read_only": 1
+  },
+  {
+   "fieldname": "execution_section",
+   "fieldtype": "Section Break",
+   "label": "Execution Design — actual materials (after approval)",
+   "collapsible": 1,
+   "description": "After the estimate is approved, choose the real client-selected item for each generic estimate line. Variance vs the estimate is tracked so invoicing has no surprises. Use the 'Build execution design' button to seed this from the estimate."
+  },
+  {
+   "fieldname": "execution_materials",
+   "fieldtype": "Table",
+   "label": "Execution Materials",
+   "options": "Execution Material"
+  },
+  {
+   "fieldname": "execution_material_cost",
+   "fieldtype": "Currency",
+   "label": "Execution Material Cost",
+   "read_only": 1
+  },
+  {
+   "fieldname": "execution_variance",
+   "fieldtype": "Currency",
+   "label": "Material Variance (execution − estimate)",
+   "read_only": 1,
+   "bold": 1
   },
   {
    "fieldname": "parts_section",

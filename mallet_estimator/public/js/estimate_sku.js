@@ -62,6 +62,20 @@ frappe.ui.form.on("Estimate SKU", {
         );
       });
     }
+    // V1: seed the execution design (actual materials) from the estimate lines.
+    if (!frm.is_new() && (frm.doc.materials || []).length) {
+      frm.add_custom_button(__("Build execution design"), () => {
+        frappe.confirm(
+          __("Seed the execution materials from the estimate (one row per line)? You then swap in the real client-chosen items; variance is tracked."),
+          () =>
+            frm.call("build_execution_design").then((r) => {
+              const m = (r && r.message) || {};
+              frappe.show_alert({ message: __("Execution design: {0} line(s)", [m.rows || 0]), indicator: "green" }, 5);
+              frm.reload_doc();
+            })
+        );
+      }, __("Execution"));
+    }
   },
 });
 

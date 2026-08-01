@@ -238,6 +238,42 @@ class EstimateSKU(Document):
             "client_total", "carp_min_total", "helper_min_total",
         ):
             self.set(k, r[k])
+        self.compute_execution()
+
+    def compute_execution(self):
+        """V1/V2 — cost the chosen actual materials and the variance vs the estimate.
+        Actual amount = actual_qty × actual_rate; variance = actual − estimated.
+        Falls back to the chosen item's ceiling rate when a rate isn't keyed yet."""
+        exec_total = 0
+        for row in self.execution_materials or []:
+            if row.chosen_item and not (row.actual_rate or 0):
+                row.actual_rate = inventory.material_rate(row.chosen_item)[0]
+            row.actual_amount = (row.actual_qty or 0) * (row.actual_rate or 0)
+            row.variance = row.actual_amount - (row.est_amount or 0)
+            exec_total += row.actual_amount
+        self.execution_material_cost = exec_total
+        # Only meaningful once a design exists; else 0 (no variance).
+        self.execution_variance = (exec_total - (self.material_cost or 0)) if self.execution_materials else 0
+
+    @frappe.whitelist()
+    def build_execution_design(self):
+        """V1 — seed the execution material table from the estimate's generic lines,
+        one row each, defaulting the chosen item to the generic. The designer then
+        swaps in the real client-selected item + actual rate/vendor; variance is
+        tracked automatically. Re-running reseeds from the current estimate."""
+        self.set("execution_materials", [])
+        for m in self.materials or []:
+            if getattr(m, "customer_supplied", 0):
+                continue  # client-supplied — not costed either side
+            est_amt = (m.qty or 0) * (m.unit_cost or 0)
+            self.append("execution_materials", {
+                "est_material": m.material or m.item,
+                "est_qty": m.qty, "est_rate": m.unit_cost, "est_amount": est_amt,
+                "chosen_item": m.item, "actual_qty": m.qty, "actual_rate": m.unit_cost,
+                "actual_amount": est_amt, "variance": 0,
+            })
+        self.save(ignore_permissions=True)
+        return {"rows": len(self.execution_materials)}
 
     @frappe.whitelist()
     def reset_step_times(self):
