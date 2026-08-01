@@ -114,9 +114,10 @@ jobs:
             echo "force: re-issuing the site update to the app's current release (stalled bench swap)."
             APPS=$(printf '%s' "$BODY" | jq -c --arg app "$APP" '
               [ .message.apps[]? | select(.app == $app) | . as $a
+                | ( ($a.releases // []) | last ) as $rel
                 | { app: $a.app, source: $a.source,
-                    release: ( $a.next_release // ( ($a.releases // []) | last | .name ) ),
-                    hash:    ( ($a.releases // []) | last | .hash ) // "" } ]')
+                    release: ( $a.next_release // ($rel.name // "") ),
+                    hash:    ( $rel.hash // "" ) } ]')
             echo "force APPS: $APPS"
           fi
 
