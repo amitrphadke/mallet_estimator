@@ -52,6 +52,9 @@ def after_migrate():
     _safe(ensure_manufacturing_masters)
     _safe(ensure_print_format)
     _safe(ensure_workspace)
+    # Regenerate the bootinfo/module-app cache so the app tile + workspace grouping
+    # (module -> app) reflect the current state on the app switcher.
+    _safe(frappe.clear_cache)
 
 
 def ensure_rooms():
@@ -333,6 +336,7 @@ def ensure_workspace():
     ws.title = WORKSPACE_NAME
     ws.public = 1
     ws.module = "Mallet Estimator"
+    ws.app = "mallet_estimator"  # groups it under our app on the switcher (module->app)
     ws.icon = "project"
     # Match ERPNext's public top-level workspaces so it tiles in the app switcher:
     # empty (not NULL) parent_page/for_user and a non-zero sequence.
