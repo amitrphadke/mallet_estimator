@@ -123,6 +123,21 @@ def _ensure_operating_components():
                 frappe.log_error(frappe.get_traceback(), f"mallet_estimator operating component: {c}")
 
 
+def _strip_invalid_costs(ws):
+    """B1 — drop any workstation_costs row whose operating_component isn't one of
+    the current valid components. An old seed left a 'Machinery' row (folded into
+    Consumables when the component was removed); its dangling link fails validation
+    on every workstation re-save. Returns True if a row was removed."""
+    if not ws.meta.has_field("workstation_costs"):
+        return False
+    rows = ws.get("workstation_costs") or []
+    valid = [r for r in rows if r.operating_component in WS_COMPONENTS]
+    if len(valid) != len(rows):
+        ws.set("workstation_costs", valid)
+        return True
+    return False
+
+
 def _set_workstation_costs(ws, rate):
     """Populate a Workstation's native `workstation_costs` child table from the
     computed component rates. Only used when the table is empty (never clobbers
@@ -163,8 +178,13 @@ def ensure_manufacturing_masters():
             if frappe.db.exists("Workstation", w["name"]):
                 # Backfill operating costs only if this workstation has none yet,
                 # so a manually configured station (your Panel Saw) is preserved.
+                # First strip any stale/invalid cost row (B1) so the re-save below
+                # doesn't fail link validation on a removed component.
                 ws = frappe.get_doc("Workstation", w["name"])
+                changed = _strip_invalid_costs(ws)
                 if _set_workstation_costs(ws, r):
+                    changed = True
+                if changed:
                     ws.save(ignore_permissions=True)
                     result["workstations_costed"] += 1
                 continue

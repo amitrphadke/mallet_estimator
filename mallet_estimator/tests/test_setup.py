@@ -61,3 +61,16 @@ class TestMasters(MalletTestCase):
         before = frappe.db.count("Warehouse")
         inventory.ensure_warehouses(_ensure_company())
         self.assertEqual(frappe.db.count("Warehouse"), before)
+
+    def test_strip_invalid_workstation_costs(self):
+        # B1: a stale 'Machinery' cost row (component removed) is dropped so the
+        # workstation re-save no longer fails link validation.
+        ws = frappe.new_doc("Workstation")
+        ws.workstation_name = "ZZ Strip Test"
+        ws.append("workstation_costs", {"operating_component": "Rent", "operating_cost": 10})
+        ws.append("workstation_costs", {"operating_component": "Machinery", "operating_cost": 5})
+        self.assertTrue(install._strip_invalid_costs(ws))
+        comps = {r.operating_component for r in ws.workstation_costs}
+        self.assertNotIn("Machinery", comps)
+        self.assertIn("Rent", comps)
+        self.assertFalse(install._strip_invalid_costs(ws))  # idempotent — nothing left to strip
