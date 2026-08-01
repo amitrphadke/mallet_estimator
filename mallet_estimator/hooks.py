@@ -24,8 +24,9 @@ after_install = "mallet_estimator.install.after_install"
 after_migrate = "mallet_estimator.install.after_migrate"
 
 # Loaded on every desk page — corrects the boot data so the workspace tiles on the
-# app switcher (Frappe leaves .app null for a custom desk app's workspace).
-app_include_js = ["/assets/mallet_estimator/js/app_switcher_fix.js"]
+# app switcher (Frappe leaves .app null for a custom desk app's workspace). Must be
+# a bundle name (built by esbuild), not a raw asset path.
+app_include_js = ["mallet_estimator.bundle.js"]
 
 # Client scripts loaded on the respective form.
 doctype_js = {
