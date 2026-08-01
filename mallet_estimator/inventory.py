@@ -298,13 +298,26 @@ def _ensure_item_supplier(item_code, supplier, part_no=None):
 # --- F2: makers, brands, vendors + many prices per item -------------------
 def _default_supplier_group():
     """A leaf Supplier Group for seeded vendors — an existing non-group leaf, else
-    create 'Local' under the root, else the root itself."""
+    create 'Local' under the root. Creates the root Supplier Group too if the site
+    has none (a bare erpnext install without the wizard-seeded tree)."""
+    if not frappe.db.exists("DocType", "Supplier Group"):
+        return None
     leaf = frappe.db.get_value("Supplier Group", {"is_group": 0}, "name")
     if leaf:
         return leaf
     root = frappe.db.get_value("Supplier Group", {"is_group": 1, "parent_supplier_group": ["in", ["", None]]}, "name") \
         or frappe.db.get_value("Supplier Group", {"is_group": 1}, "name")
-    if root and not frappe.db.exists("Supplier Group", "Local"):
+    if not root:
+        try:
+            r = frappe.new_doc("Supplier Group")
+            r.supplier_group_name = "All Supplier Groups"
+            r.is_group = 1
+            r.insert(ignore_permissions=True)
+            root = r.name
+        except Exception:
+            frappe.log_error(frappe.get_traceback(), "mallet_estimator seed root Supplier Group")
+            return None
+    if not frappe.db.exists("Supplier Group", "Local"):
         try:
             g = frappe.new_doc("Supplier Group")
             g.supplier_group_name = "Local"

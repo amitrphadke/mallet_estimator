@@ -131,6 +131,7 @@ def after_migrate():
     _safe(ensure_rooms)
     _safe(ensure_pricing_masters)          # F5 — light: one Price List, no Item schema
     _safe(ensure_project_customization)    # F4 — light: Table + Section, no Project column
+    _safe(inventory.ensure_vendor_masters) # S1 — light: Manufacturer/Brand/Supplier records
     _safe(ensure_manufacturing_masters)
     _safe(ensure_print_format)
     _safe(ensure_workspace)
