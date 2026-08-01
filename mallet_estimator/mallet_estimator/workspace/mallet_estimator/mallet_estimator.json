@@ -1,0 +1,69 @@
+{
+ "app": "mallet_estimator",
+ "charts": [],
+ "content": "[{\"id\":\"mest_card\",\"type\":\"card\",\"data\":{\"card_name\":\"Estimating\",\"col\":4}}]",
+ "creation": "2026-08-01 00:00:00.000000",
+ "custom_blocks": [],
+ "docstatus": 0,
+ "doctype": "Workspace",
+ "for_user": "",
+ "hide_custom": 0,
+ "icon": "project",
+ "idx": 0,
+ "indicator_color": "green",
+ "is_hidden": 0,
+ "label": "Mallet Estimator",
+ "links": [
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Estimating",
+   "link_count": 0,
+   "onboard": 0,
+   "type": "Card Break"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Estimate SKU",
+   "link_count": 0,
+   "link_to": "Estimate SKU",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Estimate",
+   "link_count": 0,
+   "link_to": "Estimate",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Estimate Settings",
+   "link_count": 0,
+   "link_to": "Estimate Settings",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  }
+ ],
+ "modified": "2026-08-01 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Mallet Estimator",
+ "name": "Mallet Estimator",
+ "number_cards": [],
+ "owner": "Administrator",
+ "parent_page": "",
+ "public": 1,
+ "quick_lists": [],
+ "roles": [],
+ "sequence_id": 20.0,
+ "shortcuts": [],
+ "title": "Mallet Estimator"
+}

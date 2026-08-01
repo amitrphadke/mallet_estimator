@@ -325,10 +325,13 @@ def verify_setup():
 
 
 def ensure_workspace():
-    """Create/refresh the desk Workspace programmatically (disk sync of
-    workspaces is unreliable across benches)."""
+    """The workspace now ships as a STANDARD on-disk file
+    (mallet_estimator/workspace/mallet_estimator/mallet_estimator.json), which the
+    migrate syncs — that is what makes it tile on the app switcher (module -> app).
+    This stays only as a fallback: create it if the disk sync somehow didn't, and
+    NEVER clobber the synced standard one."""
     if frappe.db.exists("Workspace", WORKSPACE_NAME):
-        frappe.delete_doc("Workspace", WORKSPACE_NAME, ignore_permissions=True, force=True)
+        return
 
     ws = frappe.new_doc("Workspace")
     ws.name = WORKSPACE_NAME
