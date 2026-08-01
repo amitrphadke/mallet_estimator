@@ -177,5 +177,61 @@ class TestCodingAndVendors(MalletTestCase):
         # F2: an Item can carry a buying price; when the Supplier exists it is scoped.
         code, _, _ = inventory.ensure_material_item("HWD_VENDORPRICE_TEST", kind="hardware")
         inventory.ensure_vendor_masters()
-        inventory.set_vendor_price(code, "Hafele", 250)
+        inventory.set_vendor_price(code, "Sun Tradelink", 250)
         self.assertTrue(frappe.db.exists("Item Price", {"item_code": code, "buying": 1}))
+
+
+class TestVendorSourcing(MalletTestCase):
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        inventory.ensure_inventory_masters()  # seeds groups, vendors, Paint, Litre
+
+    def test_paint_kind(self):
+        self.assertEqual(inventory.kind_for_code("PT_Duco_White"), "paint")
+        self.assertEqual(inventory.KIND_SPEC["paint"]["group"], "Paint")
+
+    def test_supplier_scope(self):
+        # S2: each vendor only supplies its allowed kinds.
+        self.assertIn("Sun Tradelink", inventory.suppliers_for_kind("hardware"))
+        self.assertNotIn("Sun Tradelink", inventory.suppliers_for_kind("sheet"))
+        self.assertEqual(inventory.suppliers_for_kind("paint"), ["Lotus Paint"])
+        self.assertIn("EdgeIndia", inventory.suppliers_for_kind("edge"))
+        self.assertNotIn("EdgeIndia", inventory.suppliers_for_kind("hardware"))
+
+    def test_attach_scope_suppliers(self):
+        inventory.ensure_vendor_masters()
+        code, _, _ = inventory.ensure_material_item("HWD_SCOPE_TEST", kind="hardware")
+        sups = {frappe.db.get_value("Supplier", r.supplier, "supplier_name")
+                for r in frappe.get_doc("Item", code).supplier_items}
+        self.assertIn("Sun Tradelink", sups)
+        self.assertIn("SAI Ply", sups)
+        self.assertNotIn("EdgeIndia", sups)  # edge-only vendor
+
+    def test_ceiling_is_max_supplier_price(self):
+        # S4: estimation rate = max supplier MRP, so an estimate never underquotes.
+        inventory.ensure_vendor_masters()
+        code, _, _ = inventory.ensure_material_item("HWD_CEILING_TEST", kind="hardware")
+        inventory.set_vendor_price(code, "Sun Tradelink", 100)
+        inventory.set_vendor_price(code, "SAI Ply", 130)
+        rate, source = inventory.material_rate(code)
+        self.assertEqual(rate, 130)
+        self.assertEqual(source, "assumed")
+
+    def test_rate_sheet_import(self):
+        # S6: a supplier rate CSV creates catalogue Items + per-supplier MRP.
+        from mallet_estimator import rate_import
+        inventory.ensure_vendor_masters()
+        csv_text = ("part_no,description,rate\n"
+                    "H-311.01.357,Clip-On Hinge Full Overlay,230\n"
+                    "H-311.01.358,Clip-On Hinge Half Overlay,235\n")
+        rows = rate_import.parse_rate_csv(csv_text)
+        self.assertEqual(len(rows), 2)
+        self.assertEqual(rows[0]["part_no"], "H-311.01.357")
+        res = rate_import.import_supplier_rates(
+            "Sun Tradelink", csv_text, manufacturer="Hafele", item_group="Hardware")
+        self.assertEqual(res["priced"], 2)
+        it = frappe.get_doc("Item", "H-311.01.357")
+        self.assertEqual(it.get("mallet_mfr_part_no"), "H-311.01.357")
+        self.assertEqual(it.get("default_item_manufacturer"), "Hafele")
+        self.assertTrue(frappe.db.exists("Item Price", {"item_code": "H-311.01.357"}))

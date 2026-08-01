@@ -49,6 +49,60 @@ def ensure_project_customization():
     frappe.db.commit()
 
 
+GST_TEMPLATE_TITLE = "Mallet GST 18% (Intra-State)"
+
+
+def ensure_gst_purchase_template():
+    """S5 — seed one intra-state GST purchase template (CGST 9% + SGST 9% on net),
+    so a PO computes tax on the discounted amount natively (MRP → discount → tax).
+    Defensive: needs a Company with GST input-tax accounts (India Compliance setup);
+    if they aren't there it skips cleanly. Idempotent."""
+    if not frappe.db.exists("DocType", "Purchase Taxes and Charges Template"):
+        return {"created": 0, "skipped": "no purchase-tax doctype"}
+    company = _company_for_tax()
+    if not company:
+        return {"created": 0, "skipped": "no company"}
+
+    def find_account(*keys):
+        for k in keys:
+            n = frappe.db.get_value(
+                "Account", {"company": company, "account_name": ["like", f"%{k}%"], "is_group": 0}, "name"
+            )
+            if n:
+                return n
+        return None
+
+    cgst = find_account("Input Tax CGST", "CGST")
+    sgst = find_account("Input Tax SGST", "SGST")
+    if not (cgst and sgst):
+        return {"created": 0, "skipped": "no CGST/SGST input accounts — set up GST first"}
+    if frappe.db.exists("Purchase Taxes and Charges Template", {"title": GST_TEMPLATE_TITLE, "company": company}):
+        return {"created": 0}
+    try:
+        t = frappe.new_doc("Purchase Taxes and Charges Template")
+        t.title = GST_TEMPLATE_TITLE
+        t.company = company
+        for acc_head, rate, desc in ((cgst, 9, "CGST @ 9%"), (sgst, 9, "SGST @ 9%")):
+            t.append("taxes", {
+                "category": "Total", "add_deduct_tax": "Add", "charge_type": "On Net Total",
+                "account_head": acc_head, "rate": rate, "description": desc,
+            })
+        t.insert(ignore_permissions=True)
+        frappe.db.commit()
+        return {"created": 1}
+    except Exception as exc:
+        frappe.log_error(frappe.get_traceback(), "mallet_estimator GST template")
+        return {"created": 0, "skipped": str(exc)}
+
+
+def _company_for_tax():
+    return (
+        frappe.defaults.get_user_default("Company")
+        or frappe.db.get_default("company")
+        or frappe.db.get_value("Company", {}, "name")
+    )
+
+
 DEFAULT_ROOMS = [
     "Master Bedroom", "Kids Bedroom", "Guest Bedroom", "Living Room", "Dining Room",
     "Kitchen", "Study", "Pooja Room", "Foyer", "Balcony", "Bathroom", "Utility", "Other",
@@ -62,6 +116,7 @@ def after_install():
     _safe(ensure_warehouses)
     _safe(ensure_pricing_masters)
     _safe(ensure_project_customization)
+    _safe(ensure_gst_purchase_template)
     _safe(ensure_manufacturing_masters)
     _safe(ensure_print_format)
     _safe(ensure_workspace)
@@ -277,7 +332,7 @@ def setup():
     result = ensure_manufacturing_masters()
     result["inventory"] = inv
     result["warehouses"] = wh
-    for fn in (ensure_project_customization, ensure_print_format, ensure_workspace):
+    for fn in (ensure_project_customization, ensure_gst_purchase_template, ensure_print_format, ensure_workspace):
         try:
             fn()
         except Exception as exc:
@@ -368,15 +423,20 @@ def verify_setup():
         "Project.mallet_material_choices")
     chk("Allowance table", frappe.get_meta("Estimate").has_field("allowances"), "Estimate.allowances")
 
-    # F3 — structured coding Item fields; F2 — maker/brand/vendor option pools.
+    # F3 — structured coding Item fields; F2/S3 — maker/brand + part-no fields.
     imeta = frappe.get_meta("Item")
-    cf = [f for f in ("mallet_visible_sides", "mallet_lam_internal", "mallet_lam_external") if not imeta.has_field(f)]
-    chk("Coding fields", not cf, ("missing: " + ", ".join(cf)) if cf else "visible sides + int/ext laminate ✓")
-    miss_mfr = missing("Manufacturer", inventory.VENDOR_NAMES)
-    miss_brand = missing("Brand", inventory.VENDOR_NAMES)
-    chk("Vendor masters", not miss_mfr and not miss_brand,
+    cf = [f for f in ("mallet_visible_sides", "mallet_lam_internal", "mallet_lam_external",
+                      "mallet_mfr_part_no") if not imeta.has_field(f)]
+    chk("Coding/sourcing fields", not cf, ("missing: " + ", ".join(cf)) if cf else "coding + mfr part no ✓")
+    miss_mfr = missing("Manufacturer", inventory.MANUFACTURERS)
+    miss_brand = missing("Brand", inventory.BRAND_NAMES)
+    chk("Manufacturers/Brands", not miss_mfr and not miss_brand,
         ("missing mfr: " + ", ".join(miss_mfr) + " brand: " + ", ".join(miss_brand))
-        if (miss_mfr or miss_brand) else f"{len(inventory.VENDOR_NAMES)} makers + brands ✓")
+        if (miss_mfr or miss_brand) else f"{len(inventory.MANUFACTURERS)} OEM makers + brands ✓")
+    # S1 — the real vendors + Paint category.
+    miss_sup = [s for s in inventory.SUPPLIER_SCOPE if not inventory.supplier_docname(s)]
+    chk("Suppliers", not miss_sup, ("missing: " + ", ".join(miss_sup)) if miss_sup else f"{len(inventory.SUPPLIER_SCOPE)} vendors ✓")
+    chk("Paint category", frappe.db.exists("Item Group", "Paint"), "Paint item group")
 
     n_unpriced = frappe.db.count("Item", {
         "item_group": ["in", inventory.ITEM_GROUPS], "disabled": 0, "valuation_rate": 0,

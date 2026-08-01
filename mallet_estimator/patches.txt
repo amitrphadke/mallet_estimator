@@ -18,3 +18,5 @@ mallet_estimator.patches.link_operations
 mallet_estimator.patches.operation_std_time
 # F3 coding fields + F2 vendor pools — needs the Item DocType schema in place.
 mallet_estimator.patches.structured_material_coding
+# Wave A (S1/S2/S3): fix vendor model, real suppliers, Paint, mfr part no, scope.
+mallet_estimator.patches.stock_vendor_model

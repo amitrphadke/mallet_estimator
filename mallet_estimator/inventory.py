@@ -22,11 +22,28 @@ EDGE_ROLL_METERS = 50.0  # edge banding is bought in 50 m rolls
 PARENT_GROUP = "Mallet Materials"
 CLIENT_SKU_GROUP = "Client SKU"  # finished articles per client project (archivable)
 
-# F2 — the makers/brands/vendors the shop deals with. One record each seeds the
-# native Manufacturer / Brand / Supplier pools so an Item can carry its maker +
-# brand and many vendor prices, all native. (Same names reused across the three
-# masters — the shop buys these brands direct.)
-VENDOR_NAMES = ("Hafele", "Ebco", "Merino", "Royal Touch")
+# S1 — makers vs vendors are DIFFERENT (corrects F2, which wrongly seeded the OEMs
+# as Suppliers). Manufacturers (OEM) make the goods; Suppliers are the vendors the
+# shop actually buys from. One technical Item carries its Manufacturer + many
+# Supplier prices — all native.
+#   MANUFACTURERS: maker -> the material kind they make (used to default the Item's
+#   manufacturer). BRAND_NAMES mirror the maker names.
+MANUFACTURERS = {"Hafele": "hardware", "Ebco": "hardware", "Merino": "laminate", "Royal Touch": "laminate"}
+BRAND_NAMES = tuple(MANUFACTURERS)
+# Back-compat: the 4 maker/brand names verify_setup still asserts.
+VENDOR_NAMES = tuple(MANUFACTURERS)
+
+# The real vendors, and which material kinds each is allowed to supply. Drives the
+# Item Supplier rows so a PO only offers a supplier who actually sells that item.
+SUPPLIER_SCOPE = {
+    "SAI Ply":        {"sheet", "laminate", "edge", "hardware"},
+    "Shanti":         {"sheet", "laminate", "edge", "hardware"},
+    "EdgeIndia":      {"edge"},
+    "Vibrant Ply":    {"sheet", "laminate"},
+    "Sun Tradelink":  {"hardware"},
+    "Lotus Hardware": {"hardware"},
+    "Lotus Paint":    {"paint"},
+}
 
 # F5 — assumed-vs-actual pricing. The estimate values material at a deliberate
 # *planning* rate held on this Buying price list, kept separate from live
@@ -45,6 +62,7 @@ KIND_SPEC = {
     "laminate":    {"group": "Laminate",          "stock_uom": "Sheet", "purchase_uom": "Sheet", "conv": 1},
     "edge":        {"group": "Edge Banding",      "stock_uom": "Meter", "purchase_uom": "Roll",  "conv": EDGE_ROLL_METERS},
     "hardware":    {"group": "Hardware",          "stock_uom": "Nos",   "purchase_uom": "Nos",   "conv": 1},
+    "paint":       {"group": "Paint",             "stock_uom": "Litre", "purchase_uom": "Litre", "conv": 1},
     "solidwood":   {"group": "Solid Wood",        "stock_uom": "Nos",   "purchase_uom": "Nos",   "conv": 1},
     "dimensional": {"group": "Dimensional Lumber", "stock_uom": "Nos",  "purchase_uom": "Nos",   "conv": 1},
 }
@@ -52,7 +70,7 @@ ITEM_GROUPS = [spec["group"] for spec in KIND_SPEC.values()]
 
 # Raw-material code families. Used to tell a genuine material apart from a
 # finished article or a real Product, so re-homing never misfiles a non-material.
-MATERIAL_PREFIXES = ("SG_LAM", "LAM_", "DL_", "SG_", "EB_", "HWD_", "SW_", "DIM_", "DM_")
+MATERIAL_PREFIXES = ("SG_LAM", "LAM_", "DL_", "SG_", "EB_", "HWD_", "SW_", "DIM_", "DM_", "PT_", "PAINT")
 
 
 def is_material_code(code):
@@ -72,6 +90,8 @@ def kind_for_code(code):
         return "edge"
     if up.startswith("HWD_"):
         return "hardware"
+    if up.startswith("PT_") or up.startswith("PAINT"):
+        return "paint"
     if up.startswith("SW_"):
         return "solidwood"
     if up.startswith("DIM_") or up.startswith("DM_"):
@@ -297,11 +317,12 @@ def _default_supplier_group():
 
 
 def ensure_vendor_masters():
-    """F2 — seed the native Manufacturer / Brand / Supplier pools so an Item can
-    carry its maker + brand and many vendor prices. Idempotent; never clobbers."""
+    """S1 — seed the native masters, with makers and vendors kept SEPARATE:
+      • Manufacturer + Brand  = the 4 OEMs (Hafele/Ebco/Merino/Royal Touch)
+      • Supplier              = the 7 real vendors the shop buys from
+    Idempotent; never clobbers an existing record."""
     result = {"manufacturers": 0, "brands": 0, "suppliers": 0, "errors": []}
-    sg = _default_supplier_group() if frappe.db.exists("DocType", "Supplier") else None
-    for name in VENDOR_NAMES:
+    for name in MANUFACTURERS:
         try:
             if frappe.db.exists("DocType", "Manufacturer") and not frappe.db.exists("Manufacturer", name):
                 d = frappe.new_doc("Manufacturer")
@@ -318,8 +339,11 @@ def ensure_vendor_masters():
                 result["brands"] += 1
         except Exception as exc:
             result["errors"].append(f"Brand {name}: {exc}")
+    sg = _default_supplier_group() if frappe.db.exists("DocType", "Supplier") else None
+    for name in SUPPLIER_SCOPE:
         try:
-            if sg and not frappe.db.exists("Supplier", name):
+            # existence by supplier_name — the docname may be a series, not the name.
+            if sg and not supplier_docname(name):
                 d = frappe.new_doc("Supplier")
                 d.supplier_name = name
                 d.supplier_group = sg
@@ -331,6 +355,62 @@ def ensure_vendor_masters():
     return result
 
 
+def suppliers_for_kind(kind):
+    """S2 — the seeded vendors allowed to supply this material kind."""
+    return [s for s, scope in SUPPLIER_SCOPE.items() if kind in scope]
+
+
+def supplier_docname(name):
+    """Resolve a vendor's human name to its Supplier docname (they differ when the
+    site names Suppliers by series, not by name). None if the vendor isn't set up."""
+    if not name:
+        return None
+    if frappe.db.exists("Supplier", name):
+        return name
+    return frappe.db.get_value("Supplier", {"supplier_name": name}, "name")
+
+
+def attach_scope_suppliers(item_code, kind):
+    """S2 — attach an Item Supplier row for every vendor whose scope covers this
+    kind, so a PO only offers valid suppliers for the item. Idempotent."""
+    for s in suppliers_for_kind(kind):
+        doc = supplier_docname(s)
+        if doc:
+            _ensure_item_supplier(item_code, doc)
+
+
+def recompute_estimation_ceiling(item_code, price_list=None):
+    """S4 — set the item's Estimation (Assumed) rate to the MAX buying rate across
+    all its supplier prices, so an estimate never quotes below any actual supplier
+    price (purchase = MRP − discount ≤ MRP ≤ estimate). Returns the ceiling or None."""
+    pl = price_list or _default_buying_price_list()
+    if not pl:
+        return None
+    rates = [r for r in frappe.get_all(
+        "Item Price", filters={"item_code": item_code, "price_list": pl}, pluck="price_list_rate"
+    ) if r]
+    if not rates:
+        return None
+    ceiling = max(rates)
+    set_assumed_rate(item_code, ceiling)
+    return ceiling
+
+
+@frappe.whitelist()
+def recompute_all_ceilings():
+    """S4 — refresh the estimation ceiling for every material Item from its current
+    supplier prices. Callable from the Estimate Settings 'setup' button / console."""
+    if not frappe.has_permission("Item", "read"):
+        frappe.throw("Not permitted")
+    pl = _default_buying_price_list()
+    done = 0
+    for code in set(frappe.get_all("Item Price", filters={"price_list": pl}, pluck="item_code")):
+        if recompute_estimation_ceiling(code, pl) is not None:
+            done += 1
+    frappe.db.commit()
+    return {"items_repriced": done}
+
+
 def set_vendor_price(item_code, supplier, rate, price_list=None):
     """F2 — upsert a buying Item Price for a specific (item, supplier) so the same
     Item carries many vendor prices. Falls back to a supplier-less price when the
@@ -338,22 +418,26 @@ def set_vendor_price(item_code, supplier, rate, price_list=None):
     pl = price_list or _default_buying_price_list()
     if not pl:
         return None
+    supplier = supplier_docname(supplier) or supplier
     has_supplier = supplier and frappe.db.exists("Supplier", supplier)
     flt = {"item_code": item_code, "price_list": pl}
     flt["supplier"] = supplier if has_supplier else ["in", ["", None]]
     name = frappe.db.get_value("Item Price", flt, "name")
     if name:
         frappe.db.set_value("Item Price", name, "price_list_rate", rate)
-        return name
-    doc = frappe.new_doc("Item Price")
-    doc.item_code = item_code
-    doc.price_list = pl
-    doc.buying = 1
-    if has_supplier:
-        doc.supplier = supplier
-    doc.price_list_rate = rate
-    doc.insert(ignore_permissions=True)
-    return doc.name
+    else:
+        doc = frappe.new_doc("Item Price")
+        doc.item_code = item_code
+        doc.price_list = pl
+        doc.buying = 1
+        if has_supplier:
+            doc.supplier = supplier
+        doc.price_list_rate = rate
+        doc.insert(ignore_permissions=True)
+        name = doc.name
+    # S4 — keep the estimation ceiling = max supplier MRP for this item.
+    recompute_estimation_ceiling(item_code, pl)
+    return name
 
 
 @frappe.whitelist()
@@ -486,8 +570,68 @@ def ensure_material_item(name, kind=None, thickness=0, dims=None):
         # the part now, without clobbering any value already set.
         _backfill_hardware_dims(code, dims)
 
+    # S2 — attach the vendors allowed to supply this kind (idempotent).
+    attach_scope_suppliers(code, kind)
+
     rate, source = material_rate(code)
     return code, rate, source
+
+
+def ensure_catalogue_item(part_no, description=None, manufacturer=None, kind="hardware", item_group=None):
+    """S3/S6 — create or enrich a vendor-catalogue Item keyed by its manufacturer
+    part number (e.g. a Hafele hardware code 'H-311.01.357'). Sets group, stock
+    flags, manufacturer + brand + part no + description, and attaches the vendors
+    allowed to supply this kind. Never clobbers a value already set. Returns the
+    item_code."""
+    code = str(part_no or "").strip()
+    if not code:
+        return None
+    spec = KIND_SPEC.get(kind, KIND_SPEC["hardware"])
+    group = item_group or spec["group"]
+    meta = frappe.get_meta("Item")
+    is_mfr = manufacturer and frappe.db.exists("Manufacturer", manufacturer)
+    is_brand = manufacturer and frappe.db.exists("Brand", manufacturer)
+
+    if not frappe.db.exists("Item", code):
+        item = frappe.new_doc("Item")
+        item.item_code = code
+        item.item_name = (description or code)[:140]
+        item.item_group = group if frappe.db.exists("Item Group", group) else _fallback_group()
+        item.stock_uom = spec["stock_uom"] if frappe.db.exists("UOM", spec["stock_uom"]) else "Nos"
+        item.is_stock_item = 1
+        item.is_purchase_item = 1
+        if meta.has_field("include_item_in_manufacturing"):
+            item.include_item_in_manufacturing = 1
+        if description:
+            item.description = description
+        _set(item, meta, "mallet_mfr_part_no", code)
+        if is_mfr:
+            _set(item, meta, "default_item_manufacturer", manufacturer)
+            _set(item, meta, "default_manufacturer_part_no", code)
+        if is_brand:
+            _set(item, meta, "brand", manufacturer)
+        item.insert(ignore_permissions=True)
+    else:
+        item = frappe.get_doc("Item", code)
+        changed = False
+        if description and not (item.description or "").strip():
+            item.description = description
+            changed = True
+        if meta.has_field("mallet_mfr_part_no") and not item.get("mallet_mfr_part_no"):
+            item.mallet_mfr_part_no = code
+            changed = True
+        if is_mfr and meta.has_field("default_item_manufacturer") and not item.get("default_item_manufacturer"):
+            item.default_item_manufacturer = manufacturer
+            _set(item, meta, "default_manufacturer_part_no", code)
+            changed = True
+        if is_brand and meta.has_field("brand") and not item.get("brand"):
+            item.brand = manufacturer
+            changed = True
+        if changed:
+            item.save(ignore_permissions=True)
+
+    attach_scope_suppliers(code, kind)
+    return code
 
 
 def _backfill_hardware_dims(code, dims):
@@ -546,6 +690,13 @@ CUSTOM_FIELDS = {
         {"fieldname": "mallet_coding_cb", "fieldtype": "Column Break", "insert_after": "mallet_lam_internal"},
         {"fieldname": "mallet_lam_external", "fieldtype": "Data", "label": "External Laminate",
          "insert_after": "mallet_coding_cb"},
+        # S3 — the manufacturer part number (e.g. Hafele 'H-311.01.357'). Same spec
+        # whoever supplies it, so it lives on the Item and flows onto every PO.
+        {"fieldname": "mallet_sourcing_sb", "fieldtype": "Section Break", "label": "Sourcing",
+         "insert_after": "mallet_lam_external", "collapsible": 1},
+        {"fieldname": "mallet_mfr_part_no", "fieldtype": "Data", "label": "Manufacturer Part No",
+         "insert_after": "mallet_sourcing_sb",
+         "description": "OEM catalogue code (e.g. Hafele H-311.01.357) — carried onto purchase orders."},
     ]
 }
 
@@ -555,7 +706,7 @@ def ensure_inventory_masters():
     custom fields. Idempotent."""
     result = {"item_groups": 0, "uoms": 0, "custom_fields": 0, "errors": []}
 
-    for uom in ("Sheet", "Meter", "Roll", "Square Meter"):
+    for uom in ("Sheet", "Meter", "Roll", "Square Meter", "Litre"):
         if not frappe.db.exists("UOM", uom):
             try:
                 d = frappe.new_doc("UOM")

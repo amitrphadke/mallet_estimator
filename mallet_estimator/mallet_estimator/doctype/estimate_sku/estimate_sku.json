@@ -30,12 +30,12 @@
   "article_image",
   "material_section",
   "estimate_pdf",
-  "parts_csv",
   "materials",
   "unpriced_materials",
   "material_cost",
   "import_drivers",
   "parts_section",
+  "parts_csv",
   "parts",
   "labor_section",
   "labor",
@@ -186,12 +186,8 @@
   {
    "fieldname": "estimate_pdf",
    "fieldtype": "Attach",
-   "label": "OpenCutList Estimate PDF"
-  },
-  {
-   "fieldname": "parts_csv",
-   "fieldtype": "Attach",
-   "label": "OpenCutList Parts CSV"
+   "label": "Material Estimate PDF (estimation source)",
+   "description": "OpenCutList Material Estimate export — the ONLY material input needed to estimate."
   },
   {
    "fieldname": "materials",
@@ -222,8 +218,15 @@
   {
    "fieldname": "parts_section",
    "fieldtype": "Section Break",
-   "label": "Parts (from CSV \u2014 for job cards / QR)",
-   "collapsible": 1
+   "label": "Execution \u2014 Parts / Cut List (not needed to estimate)",
+   "collapsible": 1,
+   "collapsible_depends_on": "eval:false",
+   "description": "Execution-phase inputs. The Parts CSV, cut diagrams and labels are used on the shop floor after the estimate is approved \u2014 they do not affect the estimate."
+  },
+  {
+   "fieldname": "parts_csv",
+   "fieldtype": "Attach",
+   "label": "OpenCutList Parts CSV (execution)"
   },
   {
    "fieldname": "parts",
