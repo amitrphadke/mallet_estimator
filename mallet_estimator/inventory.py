@@ -9,6 +9,8 @@
 # valuation / last purchase / buying price list / standard rate (in that order).
 # ---------------------------------------------------------------------------
 
+import re
+
 import frappe
 
 # Standard sheet size for sheet goods & laminate (mm) — your 1220 x 2440 stock.
@@ -19,6 +21,12 @@ EDGE_ROLL_METERS = 50.0  # edge banding is bought in 50 m rolls
 
 PARENT_GROUP = "Mallet Materials"
 CLIENT_SKU_GROUP = "Client SKU"  # finished articles per client project (archivable)
+
+# F2 — the makers/brands/vendors the shop deals with. One record each seeds the
+# native Manufacturer / Brand / Supplier pools so an Item can carry its maker +
+# brand and many vendor prices, all native. (Same names reused across the three
+# masters — the shop buys these brands direct.)
+VENDOR_NAMES = ("Hafele", "Ebco", "Merino", "Royal Touch")
 
 # F5 — assumed-vs-actual pricing. The estimate values material at a deliberate
 # *planning* rate held on this Buying price list, kept separate from live
@@ -73,6 +81,39 @@ def kind_for_code(code):
 
 def stock_uom_for(kind):
     return KIND_SPEC.get(kind or "hardware", KIND_SPEC["hardware"])["stock_uom"]
+
+
+def parse_material_code(name):
+    """F3 — decode a sheet/laminate code into its structural attributes:
+      SG_PLY_V{v}_{int}_{ext}[_{th}mm]   (plywood core)
+      SG_LAM_V{v}_{th}mm_{int}_{ext}     (laminate sheet)
+    Returns {visible_sides:int|None, lam_internal:str|None, lam_external:str|None}.
+    Tolerant: finds the V{n} token, then the first two non-thickness tokens after
+    it are the internal/external laminate codes. Empty dict for non-SG codes."""
+    out = {"visible_sides": None, "lam_internal": None, "lam_external": None}
+    tokens = str(name or "").split("_")
+    for i, t in enumerate(tokens):
+        m = re.fullmatch(r"[Vv](\d+)", t)
+        if not m:
+            continue
+        out["visible_sides"] = int(m.group(1))
+        rest = [x for x in tokens[i + 1:] if not re.fullmatch(r"\d+mm", x, re.I)]
+        if len(rest) >= 1:
+            out["lam_internal"] = rest[0]
+        if len(rest) >= 2:
+            out["lam_external"] = rest[1]
+        break
+    return out
+
+
+def _coding_fields(name):
+    """parse_material_code() mapped onto the Item custom-field names."""
+    p = parse_material_code(name)
+    return {
+        "mallet_visible_sides": p["visible_sides"],
+        "mallet_lam_internal": p["lam_internal"],
+        "mallet_lam_external": p["lam_external"],
+    }
 
 
 def sheet_dims(kind, thickness):
@@ -216,16 +257,132 @@ def set_actual_buying_rate(item_code, rate):
     return doc.name
 
 
-def _ensure_item_supplier(item_code, supplier):
+def _ensure_item_supplier(item_code, supplier, part_no=None):
     """Record a vendor on the Item's supplier list (native Item Supplier), idempotent."""
     item = frappe.get_doc("Item", item_code)
     if not item.meta.has_field("supplier_items"):
         return
     for s in item.get("supplier_items") or []:
         if s.supplier == supplier:
+            if part_no and not s.supplier_part_no:
+                s.supplier_part_no = part_no
+                item.save(ignore_permissions=True)
             return
-    item.append("supplier_items", {"supplier": supplier})
+    row = {"supplier": supplier}
+    if part_no:
+        row["supplier_part_no"] = part_no
+    item.append("supplier_items", row)
     item.save(ignore_permissions=True)
+
+
+# --- F2: makers, brands, vendors + many prices per item -------------------
+def _default_supplier_group():
+    """A leaf Supplier Group for seeded vendors — an existing non-group leaf, else
+    create 'Local' under the root, else the root itself."""
+    leaf = frappe.db.get_value("Supplier Group", {"is_group": 0}, "name")
+    if leaf:
+        return leaf
+    root = frappe.db.get_value("Supplier Group", {"is_group": 1, "parent_supplier_group": ["in", ["", None]]}, "name") \
+        or frappe.db.get_value("Supplier Group", {"is_group": 1}, "name")
+    if root and not frappe.db.exists("Supplier Group", "Local"):
+        try:
+            g = frappe.new_doc("Supplier Group")
+            g.supplier_group_name = "Local"
+            g.parent_supplier_group = root
+            g.insert(ignore_permissions=True)
+            return "Local"
+        except Exception:
+            frappe.log_error(frappe.get_traceback(), "mallet_estimator seed Supplier Group")
+    return root
+
+
+def ensure_vendor_masters():
+    """F2 — seed the native Manufacturer / Brand / Supplier pools so an Item can
+    carry its maker + brand and many vendor prices. Idempotent; never clobbers."""
+    result = {"manufacturers": 0, "brands": 0, "suppliers": 0, "errors": []}
+    sg = _default_supplier_group() if frappe.db.exists("DocType", "Supplier") else None
+    for name in VENDOR_NAMES:
+        try:
+            if frappe.db.exists("DocType", "Manufacturer") and not frappe.db.exists("Manufacturer", name):
+                d = frappe.new_doc("Manufacturer")
+                d.short_name = name
+                d.insert(ignore_permissions=True)
+                result["manufacturers"] += 1
+        except Exception as exc:
+            result["errors"].append(f"Manufacturer {name}: {exc}")
+        try:
+            if frappe.db.exists("DocType", "Brand") and not frappe.db.exists("Brand", name):
+                d = frappe.new_doc("Brand")
+                d.brand = name
+                d.insert(ignore_permissions=True)
+                result["brands"] += 1
+        except Exception as exc:
+            result["errors"].append(f"Brand {name}: {exc}")
+        try:
+            if sg and not frappe.db.exists("Supplier", name):
+                d = frappe.new_doc("Supplier")
+                d.supplier_name = name
+                d.supplier_group = sg
+                d.insert(ignore_permissions=True)
+                result["suppliers"] += 1
+        except Exception as exc:
+            result["errors"].append(f"Supplier {name}: {exc}")
+    frappe.db.commit()
+    return result
+
+
+def set_vendor_price(item_code, supplier, rate, price_list=None):
+    """F2 — upsert a buying Item Price for a specific (item, supplier) so the same
+    Item carries many vendor prices. Falls back to a supplier-less price when the
+    site has no Supplier record for that name."""
+    pl = price_list or _default_buying_price_list()
+    if not pl:
+        return None
+    has_supplier = supplier and frappe.db.exists("Supplier", supplier)
+    flt = {"item_code": item_code, "price_list": pl}
+    flt["supplier"] = supplier if has_supplier else ["in", ["", None]]
+    name = frappe.db.get_value("Item Price", flt, "name")
+    if name:
+        frappe.db.set_value("Item Price", name, "price_list_rate", rate)
+        return name
+    doc = frappe.new_doc("Item Price")
+    doc.item_code = item_code
+    doc.price_list = pl
+    doc.buying = 1
+    if has_supplier:
+        doc.supplier = supplier
+    doc.price_list_rate = rate
+    doc.insert(ignore_permissions=True)
+    return doc.name
+
+
+@frappe.whitelist()
+def set_item_manufacturer(item_code, manufacturer=None, brand=None, part_no=None):
+    """F2 — set an Item's native maker + brand (default_item_manufacturer / brand)
+    and append an Item Manufacturer row. All fields optional; idempotent."""
+    if not frappe.has_permission("Item", "write"):
+        frappe.throw("Not permitted")
+    item = frappe.get_doc("Item", item_code)
+    meta = item.meta
+    if manufacturer and frappe.db.exists("Manufacturer", manufacturer):
+        _set(item, meta, "default_item_manufacturer", manufacturer)
+        if part_no:
+            _set(item, meta, "default_manufacturer_part_no", part_no)
+    if brand and frappe.db.exists("Brand", brand):
+        _set(item, meta, "brand", brand)
+    item.save(ignore_permissions=True)
+    # Item Manufacturer (multiple makers of the same spec) — separate doctype.
+    if manufacturer and frappe.db.exists("Manufacturer", manufacturer) \
+            and frappe.db.exists("DocType", "Item Manufacturer") \
+            and not frappe.db.exists("Item Manufacturer", {"item_code": item_code, "manufacturer": manufacturer}):
+        im = frappe.new_doc("Item Manufacturer")
+        im.item_code = item_code
+        im.manufacturer = manufacturer
+        if part_no:
+            im.manufacturer_part_no = part_no
+        im.insert(ignore_permissions=True)
+    frappe.db.commit()
+    return {"item": item_code, "manufacturer": manufacturer, "brand": brand}
 
 
 @frappe.whitelist()
@@ -260,9 +417,12 @@ def apply_material_choices(project):
         if not r.chosen_item or not (r.actual_rate or 0):
             skipped.append(r.code or r.chosen_item or "?")
             continue
-        set_actual_buying_rate(r.chosen_item, r.actual_rate)
         if r.vendor:
+            # Per-vendor buying price (F2: same item, many vendor prices) + Item Supplier.
+            set_vendor_price(r.chosen_item, r.vendor, r.actual_rate)
             _ensure_item_supplier(r.chosen_item, r.vendor)
+        else:
+            set_actual_buying_rate(r.chosen_item, r.actual_rate)
         applied.append(r.chosen_item)
     frappe.db.commit()
     return {"applied": applied, "skipped": skipped}
@@ -307,6 +467,10 @@ def ensure_material_item(name, kind=None, thickness=0, dims=None):
         if kind in ("sheet", "laminate"):
             _set(item, meta, "mallet_sheet_length_mm", (dims or {}).get("length") or SHEET_LENGTH_MM)
             _set(item, meta, "mallet_sheet_width_mm", (dims or {}).get("width") or SHEET_WIDTH_MM)
+            # F3 — decode V{n} + internal/external laminate into filterable fields.
+            for fld, val in _coding_fields(name).items():
+                if val is not None:
+                    _set(item, meta, fld, val)
         elif kind == "hardware" and dims:
             # A hinge/handle/rail has a real physical size (from the part) — store
             # it in the same generic Length/Width fields (these are not "sheet" sizes).
@@ -370,6 +534,18 @@ CUSTOM_FIELDS = {
          "insert_after": "mallet_material_cb"},
         {"fieldname": "mallet_sheet_width_mm", "fieldtype": "Float", "label": "Width (mm)",
          "insert_after": "mallet_sheet_length_mm"},
+        # F3 — the SG/laminate code decoded into filterable attributes (the encoded
+        # name is kept; these make V0/V1 + internal/external laminate reportable).
+        {"fieldname": "mallet_coding_sb", "fieldtype": "Section Break", "label": "Material Coding",
+         "insert_after": "mallet_sheet_width_mm", "collapsible": 1},
+        {"fieldname": "mallet_visible_sides", "fieldtype": "Int", "label": "Visible Sides (V)",
+         "insert_after": "mallet_coding_sb",
+         "description": "0 = internal (shelves, drawer boxes); 1 = one visible face (door, visible carcass side)."},
+        {"fieldname": "mallet_lam_internal", "fieldtype": "Data", "label": "Internal Laminate",
+         "insert_after": "mallet_visible_sides"},
+        {"fieldname": "mallet_coding_cb", "fieldtype": "Column Break", "insert_after": "mallet_lam_internal"},
+        {"fieldname": "mallet_lam_external", "fieldtype": "Data", "label": "External Laminate",
+         "insert_after": "mallet_coding_cb"},
     ]
 }
 
@@ -429,6 +605,14 @@ def ensure_inventory_masters():
         result["errors"] += pr.get("errors", [])
     except Exception as exc:
         result["errors"].append(f"pricing masters: {exc}")
+
+    # F2 — Manufacturer / Brand / Supplier option pools.
+    try:
+        vm = ensure_vendor_masters()
+        result["vendors"] = {k: vm[k] for k in ("manufacturers", "brands", "suppliers")}
+        result["errors"] += vm.get("errors", [])
+    except Exception as exc:
+        result["errors"].append(f"vendor masters: {exc}")
 
     frappe.db.commit()
     return result

@@ -348,6 +348,16 @@ def verify_setup():
         "Project.mallet_material_choices")
     chk("Allowance table", frappe.get_meta("Estimate").has_field("allowances"), "Estimate.allowances")
 
+    # F3 — structured coding Item fields; F2 — maker/brand/vendor option pools.
+    imeta = frappe.get_meta("Item")
+    cf = [f for f in ("mallet_visible_sides", "mallet_lam_internal", "mallet_lam_external") if not imeta.has_field(f)]
+    chk("Coding fields", not cf, ("missing: " + ", ".join(cf)) if cf else "visible sides + int/ext laminate ✓")
+    miss_mfr = missing("Manufacturer", inventory.VENDOR_NAMES)
+    miss_brand = missing("Brand", inventory.VENDOR_NAMES)
+    chk("Vendor masters", not miss_mfr and not miss_brand,
+        ("missing mfr: " + ", ".join(miss_mfr) + " brand: " + ", ".join(miss_brand))
+        if (miss_mfr or miss_brand) else f"{len(inventory.VENDOR_NAMES)} makers + brands ✓")
+
     n_unpriced = frappe.db.count("Item", {
         "item_group": ["in", inventory.ITEM_GROUPS], "disabled": 0, "valuation_rate": 0,
         "last_purchase_rate": 0, "standard_rate": 0,

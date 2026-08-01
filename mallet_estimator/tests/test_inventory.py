@@ -143,3 +143,39 @@ class TestMaterialItem(MalletTestCase):
         rate, source = inventory.material_rate(code)
         self.assertEqual(rate, 123)
         self.assertEqual(source, "assumed")
+
+
+class TestCodingAndVendors(MalletTestCase):
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        inventory.ensure_inventory_masters()
+
+    def test_parse_material_code(self):
+        # F3: V{n} + internal/external laminate decoded; thickness token ignored.
+        p = inventory.parse_material_code("SG_PLY_V0_a_a")
+        self.assertEqual((p["visible_sides"], p["lam_internal"], p["lam_external"]), (0, "a", "a"))
+        p = inventory.parse_material_code("SG_LAM_V1_16mm_a_b")
+        self.assertEqual((p["visible_sides"], p["lam_internal"], p["lam_external"]), (1, "a", "b"))
+        p = inventory.parse_material_code("SG_PLY_V0_a_a_16mm")
+        self.assertEqual(p["lam_external"], "a")
+        self.assertIsNone(inventory.parse_material_code("HWD_Hinge")["visible_sides"])
+
+    def test_coding_fields_populated_on_item(self):
+        code, _, _ = inventory.ensure_material_item("SG_PLY_V1_b_c", kind="sheet", thickness=18)
+        it = frappe.get_doc("Item", code)
+        self.assertEqual(it.get("mallet_visible_sides"), 1)
+        self.assertEqual(it.get("mallet_lam_internal"), "b")
+        self.assertEqual(it.get("mallet_lam_external"), "c")
+
+    def test_vendor_masters_seeded(self):
+        inventory.ensure_vendor_masters()
+        self.assertTrue(frappe.db.exists("Manufacturer", "Merino"))
+        self.assertTrue(frappe.db.exists("Brand", "Hafele"))
+
+    def test_vendor_price_per_item(self):
+        # F2: an Item can carry a buying price; when the Supplier exists it is scoped.
+        code, _, _ = inventory.ensure_material_item("HWD_VENDORPRICE_TEST", kind="hardware")
+        inventory.ensure_vendor_masters()
+        inventory.set_vendor_price(code, "Hafele", 250)
+        self.assertTrue(frappe.db.exists("Item Price", {"item_code": code, "buying": 1}))

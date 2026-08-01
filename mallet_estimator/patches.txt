@@ -15,3 +15,5 @@ mallet_estimator.patches.hardware_designation_items
 # so this MUST run post-model-sync, not before.
 mallet_estimator.patches.link_operations
 mallet_estimator.patches.operation_std_time
+# F3 coding fields + F2 vendor pools — needs the Item DocType schema in place.
+mallet_estimator.patches.structured_material_coding
