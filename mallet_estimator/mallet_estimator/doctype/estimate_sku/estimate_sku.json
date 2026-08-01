@@ -22,6 +22,10 @@
   "outer_w",
   "outer_d",
   "outer_h",
+  "door_type",
+  "num_doors",
+  "num_drawers",
+  "finish",
   "description",
   "article_image",
   "material_section",
@@ -143,6 +147,26 @@
    "fieldname": "outer_h",
    "fieldtype": "Float",
    "label": "Outer Height (mm)"
+  },
+  {
+   "fieldname": "door_type",
+   "fieldtype": "Data",
+   "label": "Door Type"
+  },
+  {
+   "fieldname": "num_doors",
+   "fieldtype": "Int",
+   "label": "No. of Doors"
+  },
+  {
+   "fieldname": "num_drawers",
+   "fieldtype": "Int",
+   "label": "No. of Drawers"
+  },
+  {
+   "fieldname": "finish",
+   "fieldtype": "Data",
+   "label": "Finish"
   },
   {
    "fieldname": "description",

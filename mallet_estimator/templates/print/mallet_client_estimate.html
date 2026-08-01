@@ -41,6 +41,15 @@
     .mce .grand .row { display: flex; justify-content: space-between; padding: 3px 0; }
     .mce .grand .final { border-top: 1px solid #e2e6eb; margin-top: 4px; padding-top: 6px; font-size: 16px; font-weight: 800; color: #1a7f45; }
     .mce .foot { color: #6b7280; font-size: 10px; margin-top: 18px; border-top: 1px solid #e2e6eb; padding-top: 8px; }
+    .mce .artpage { page-break-before: always; padding-top: 4px; }
+    .mce .artpage .arttitle { color: #2f5233; font-size: 16px; font-weight: 700; }
+    .mce .artpage .artsub { color: #6b7280; font-size: 11px; margin-bottom: 6px; }
+    .mce .artpage .imgwrap { text-align: center; margin: 8px 0 14px; }
+    .mce .artpage .imgwrap img { max-width: 100%; max-height: 430px; border: 1px solid #e2e6eb; border-radius: 8px; }
+    .mce .artpage .noimg { color: #9aa5b1; font-size: 11px; border: 1px dashed #e2e6eb; border-radius: 8px; padding: 46px; text-align: center; margin: 8px 0 14px; }
+    .mce .spectbl { max-width: 520px; }
+    .mce .spectbl td, .mce .spectbl th { border-bottom: 1px solid #eef0f2; padding: 5px 8px; font-size: 12px; }
+    .mce .spectbl th { background: #f6f8f4; text-align: left; width: 90px; color: #334; font-weight: 600; }
   </style>
 
   <div class="head">
@@ -79,7 +88,7 @@
           <div>{{ money(s.client_total) }}</div>
         </div>
         {% if s.description %}<div class="desc">{{ s.description }}</div>{% endif %}
-        {% if s.article_image %}<div style="margin:6px 0;"><img src="{{ s.article_image }}" style="max-width:220px;max-height:180px;border:1px solid #e2e6eb;border-radius:6px;"></div>{% endif %}
+        {# Article ISO view + specs are on the per-article pages below. #}
         {# Internal per-material cost breakdown intentionally omitted — the client
            sees only the payable values below. Curated client-facing allowances
            (handles/hinges/rails) come from the Provisional Allowance table (F6). #}
@@ -124,6 +133,35 @@
     <div class="row"><span>Design &amp; execution</span><span>{{ money(sku_docs | sum(attribute="client_design_exec")) }}</span></div>
     <div class="row final"><span>Total estimate</span><span>{{ money(sku_docs | sum(attribute="client_total")) }}</span></div>
   </div>
+
+  {# --- One page per article: ISO view + specs + price --- #}
+  {% for s in sku_docs %}
+    <div class="artpage">
+      <div class="arttitle">{{ s.sku_code or s.name }}{% if s.article_name %} — {{ s.article_name }}{% endif %}</div>
+      <div class="artsub">{{ s.room or "Unassigned" }}</div>
+      {% if s.article_image %}
+        <div class="imgwrap"><img src="{{ s.article_image }}"></div>
+      {% else %}
+        <div class="noimg">No ISO view attached — add one on the Estimate SKU (Article Image).</div>
+      {% endif %}
+      <table class="spectbl">
+        <tr>
+          <th>Size</th><td>{{ "%g × %g × %g mm"|format(s.outer_w or 0, s.outer_d or 0, s.outer_h or 0) }}</td>
+          <th>Finish</th><td>{{ s.finish or "—" }}</td>
+        </tr>
+        <tr>
+          <th>Door type</th><td>{{ s.door_type or "—" }}</td>
+          <th>Doors / Drawers</th><td>{{ s.num_doors or 0 }} door(s) · {{ s.num_drawers or 0 }} drawer(s)</td>
+        </tr>
+      </table>
+      {% if s.description %}<div class="desc" style="margin-top:8px;">{{ s.description }}</div>{% endif %}
+      <table class="lines">
+        <tr><td>Material</td><td class="r">{{ money(s.client_material) }}</td></tr>
+        <tr><td>Design &amp; execution</td><td class="r">{{ money(s.client_design_exec) }}</td></tr>
+        <tr class="tot"><td>Article total</td><td class="r">{{ money(s.client_total) }}</td></tr>
+      </table>
+    </div>
+  {% endfor %}
 
   <div class="foot">Inclusive of material, design &amp; execution. Taxes as applicable. Valid for 30 days.</div>
 </div>

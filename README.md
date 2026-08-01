@@ -192,6 +192,9 @@ warehouses under Board & Sheet Store — the app won't clash with them.)
     **only what they pay** — Material, Design & execution, and totals per SKU/room. **No internal
     cost is ever printed** (no per-material unit rates, no line costs). Curated client-facing
     allowances (handles/hinges/rails) will come from the Provisional Allowance table.
+    After the room summary, the estimate prints **one page per article** with its **ISO view
+    image** (Estimate SKU → *Article Image*), size, **Door Type**, **No. of Doors / Drawers**,
+    finish, and the article price — so the client sees exactly what each piece looks like.
 13. Client accepts → **Quotation → Sales Order** (standard button). The Sales Order is the
     confirmed job.
 
