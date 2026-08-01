@@ -118,6 +118,18 @@ jobs:
                 | { app: $a.app, source: $a.source,
                     release: ( $a.next_release // ($rel.name // "") ),
                     hash:    ( $rel.hash // "" ) } ]')
+            # deploy_information sometimes returns releases:[] with only next_release
+            # set (seen on a stalled swap). Fetch the commit hash straight from the
+            # App Release doc so the update can still be re-issued.
+            REL=$(printf '%s' "$APPS" | jq -r '.[0].release // ""')
+            H=$(printf '%s' "$APPS" | jq -r '.[0].hash // ""')
+            if [ -n "$REL" ] && [ -z "$H" ]; then
+              call "${CLIENT_BASE}.get" "$(jq -nc --arg d 'App Release' --arg n "$REL" '{doctype:$d, name:$n}')"
+              if is_json "$BODY"; then
+                H=$(printf '%s' "$BODY" | jq -r '.message.hash // .message.commit // ""')
+                [ -n "$H" ] && APPS=$(printf '%s' "$APPS" | jq -c --arg h "$H" '[.[0] + {hash:$h}]')
+              fi
+            fi
             echo "force APPS: $APPS"
           fi
 

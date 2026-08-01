@@ -86,18 +86,19 @@ _TAIL_RE = re.compile(r"(\d+)\s+PR\s+([\d,]+(?:\.\d+)?)\s+PR\s+([\d.]+)\s*%\s+([
 def _pdf_text(content):
     if isinstance(content, str):
         content = content.encode("utf-8", "ignore")
+    # pypdf is a declared app dependency (pyproject.toml), so it's always present.
+    try:
+        from pypdf import PdfReader
+        reader = PdfReader(io.BytesIO(content))
+        return "\n".join((page.extract_text() or "") for page in reader.pages)
+    except ImportError:
+        pass
     try:
         from pdfminer.high_level import extract_text
         return extract_text(io.BytesIO(content)) or ""
     except ImportError:
-        pass
-    try:
-        import pdfplumber
-        with pdfplumber.open(io.BytesIO(content)) as pdf:
-            return "\n".join((p.extract_text() or "") for p in pdf.pages)
-    except ImportError:
         frappe.throw(
-            "PDF parsing needs pdfminer.six (or pdfplumber) on the bench. Export the "
+            "PDF parsing needs pypdf (or pdfminer.six) on the bench. Export the "
             "rate sheet to CSV, or ask to add the dependency."
         )
 
