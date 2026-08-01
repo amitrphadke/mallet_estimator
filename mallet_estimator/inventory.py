@@ -20,6 +20,13 @@ EDGE_ROLL_METERS = 50.0  # edge banding is bought in 50 m rolls
 PARENT_GROUP = "Mallet Materials"
 CLIENT_SKU_GROUP = "Client SKU"  # finished articles per client project (archivable)
 
+# F5 — assumed-vs-actual pricing. The estimate values material at a deliberate
+# *planning* rate held on this Buying price list, kept separate from live
+# procurement prices (valuation / last purchase / vendor buying lists). An
+# Item Price on this list wins for estimation; real purchase prices are what
+# procurement negotiates and pays (visible as Project margin variance).
+ESTIMATION_PRICE_LIST = "Estimation (Assumed)"
+
 # kind -> how ERPNext should hold it.
 #   group        : Item Group (under Mallet Materials)
 #   stock_uom    : the unit stock/consumption is measured in
@@ -107,8 +114,17 @@ def _describe(name, kind, thickness, category=None):
 
 
 def material_rate(item_code):
-    """(rate, source) for a material Item: valuation -> last purchase -> buying
-    Item Price -> standard rate. rate 0 with source 'unset' means not priced yet."""
+    """(rate, source) for a material Item, in estimation priority order:
+    Estimation (Assumed) price list -> valuation -> last purchase -> any buying
+    Item Price -> standard rate. The assumed planning rate wins so estimates use a
+    deliberate number, not whatever valuation happens to be. rate 0 with source
+    'unset' means not priced yet."""
+    # F5: the deliberate assumed planning rate takes precedence for estimation.
+    assumed = frappe.db.get_value(
+        "Item Price", {"item_code": item_code, "price_list": ESTIMATION_PRICE_LIST}, "price_list_rate"
+    )
+    if assumed:
+        return assumed, "assumed"
     v = frappe.db.get_value(
         "Item", item_code, ["valuation_rate", "last_purchase_rate", "standard_rate"], as_dict=True
     ) or {}
@@ -122,6 +138,134 @@ def material_rate(item_code):
     if v.get("standard_rate"):
         return v["standard_rate"], "standard rate"
     return 0.0, "unset"
+
+
+def ensure_pricing_masters():
+    """F5 — create the 'Estimation (Assumed)' Buying price list that holds the
+    planning rates the estimate reads from. Idempotent; never clobbers an existing
+    one. Returns a small summary."""
+    result = {"price_list": 0, "errors": []}
+    if not frappe.db.exists("DocType", "Price List"):
+        return result
+    if not frappe.db.exists("Price List", ESTIMATION_PRICE_LIST):
+        try:
+            currency = frappe.db.get_default("currency") or "INR"
+            pl = frappe.new_doc("Price List")
+            pl.price_list_name = ESTIMATION_PRICE_LIST
+            pl.buying = 1
+            pl.selling = 0
+            pl.enabled = 1
+            pl.currency = currency
+            pl.insert(ignore_permissions=True)
+            result["price_list"] = 1
+        except Exception as exc:
+            result["errors"].append(f"Price List {ESTIMATION_PRICE_LIST}: {exc}")
+    frappe.db.commit()
+    return result
+
+
+def set_assumed_rate(item_code, rate):
+    """Upsert the assumed planning rate (Item Price on ESTIMATION_PRICE_LIST) for
+    an Item. Used by F4 'apply choices' and by manual price maintenance."""
+    ensure_pricing_masters()
+    name = frappe.db.get_value(
+        "Item Price", {"item_code": item_code, "price_list": ESTIMATION_PRICE_LIST}, "name"
+    )
+    if name:
+        frappe.db.set_value("Item Price", name, "price_list_rate", rate)
+        return name
+    doc = frappe.new_doc("Item Price")
+    doc.item_code = item_code
+    doc.price_list = ESTIMATION_PRICE_LIST
+    doc.buying = 1
+    doc.price_list_rate = rate
+    doc.insert(ignore_permissions=True)
+    return doc.name
+
+
+def _default_buying_price_list():
+    """The site's real buying price list for procurement actuals — Buying Settings
+    default, else 'Standard Buying', else any enabled buying list."""
+    pl = frappe.db.get_single_value("Buying Settings", "buying_price_list") \
+        if frappe.db.exists("DocType", "Buying Settings") else None
+    if pl and frappe.db.exists("Price List", pl):
+        return pl
+    if frappe.db.exists("Price List", "Standard Buying"):
+        return "Standard Buying"
+    return frappe.db.get_value("Price List", {"buying": 1, "enabled": 1}, "name")
+
+
+def set_actual_buying_rate(item_code, rate):
+    """Upsert the ACTUAL negotiated rate on the real buying price list (kept
+    separate from the assumed planning rate, so Project margin shows the variance)."""
+    pl = _default_buying_price_list()
+    if not pl:
+        return None
+    name = frappe.db.get_value(
+        "Item Price", {"item_code": item_code, "price_list": pl}, "name"
+    )
+    if name:
+        frappe.db.set_value("Item Price", name, "price_list_rate", rate)
+        return name
+    doc = frappe.new_doc("Item Price")
+    doc.item_code = item_code
+    doc.price_list = pl
+    doc.buying = 1
+    doc.price_list_rate = rate
+    doc.insert(ignore_permissions=True)
+    return doc.name
+
+
+def _ensure_item_supplier(item_code, supplier):
+    """Record a vendor on the Item's supplier list (native Item Supplier), idempotent."""
+    item = frappe.get_doc("Item", item_code)
+    if not item.meta.has_field("supplier_items"):
+        return
+    for s in item.get("supplier_items") or []:
+        if s.supplier == supplier:
+            return
+    item.append("supplier_items", {"supplier": supplier})
+    item.save(ignore_permissions=True)
+
+
+@frappe.whitelist()
+def refresh_material_choices(project):
+    """F4 — fill assumed rate + variance on every Project Material Choice row from
+    the current planning rates. Read-only helper: no procurement side effects."""
+    if not frappe.has_permission("Project", "write"):
+        frappe.throw("Not permitted")
+    doc = frappe.get_doc("Project", project)
+    rows = doc.get("mallet_material_choices") or []
+    for r in rows:
+        if r.chosen_item:
+            rate, _src = material_rate(r.chosen_item)
+            r.assumed_rate = rate
+            r.variance = (r.actual_rate or 0) - (rate or 0)
+    doc.save(ignore_permissions=True)
+    return {"rows": len(rows)}
+
+
+@frappe.whitelist()
+def apply_material_choices(project):
+    """F4 — push each choice's ACTUAL negotiated rate onto the real buying price
+    list and record its vendor as an Item Supplier, so procurement (PO) uses the
+    chosen price. The assumed planning rate is left untouched — the estimate keeps
+    valuing at assumed and Project margin shows the assumed-vs-actual variance.
+    Idempotent + reversible (delete the buying Item Price to undo)."""
+    if not frappe.has_permission("Project", "write"):
+        frappe.throw("Not permitted")
+    doc = frappe.get_doc("Project", project)
+    applied, skipped = [], []
+    for r in doc.get("mallet_material_choices") or []:
+        if not r.chosen_item or not (r.actual_rate or 0):
+            skipped.append(r.code or r.chosen_item or "?")
+            continue
+        set_actual_buying_rate(r.chosen_item, r.actual_rate)
+        if r.vendor:
+            _ensure_item_supplier(r.chosen_item, r.vendor)
+        applied.append(r.chosen_item)
+    frappe.db.commit()
+    return {"applied": applied, "skipped": skipped}
 
 
 def ensure_material_item(name, kind=None, thickness=0, dims=None):
@@ -277,6 +421,14 @@ def ensure_inventory_masters():
         result["custom_fields"] = len(CUSTOM_FIELDS["Item"])
     except Exception as exc:
         result["errors"].append(f"custom fields: {exc}")
+
+    # F5 — assumed-price planning list.
+    try:
+        pr = ensure_pricing_masters()
+        result["price_list"] = pr.get("price_list", 0)
+        result["errors"] += pr.get("errors", [])
+    except Exception as exc:
+        result["errors"].append(f"pricing masters: {exc}")
 
     frappe.db.commit()
     return result

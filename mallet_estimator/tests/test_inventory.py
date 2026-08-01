@@ -133,3 +133,13 @@ class TestMaterialItem(MalletTestCase):
         code, rate, source = inventory.ensure_material_item("HWD_TEST_UNPRICED", kind="hardware")
         self.assertEqual(rate, 0)
         self.assertEqual(source, "unset")
+
+    def test_assumed_rate_wins_for_estimation(self):
+        # F5: an Item Price on the Estimation (Assumed) list is the deliberate
+        # planning rate and takes precedence over valuation/standard for the estimate.
+        code, _, _ = inventory.ensure_material_item("HWD_ASSUMED_TEST", kind="hardware")
+        frappe.db.set_value("Item", code, "standard_rate", 999)
+        inventory.set_assumed_rate(code, 123)
+        rate, source = inventory.material_rate(code)
+        self.assertEqual(rate, 123)
+        self.assertEqual(source, "assumed")

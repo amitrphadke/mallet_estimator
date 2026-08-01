@@ -27,6 +27,7 @@ class TestMasters(MalletTestCase):
         super().setUpClass()
         install.seed_settings()
         inventory.ensure_inventory_masters()
+        install.ensure_project_customization()
         install.ensure_manufacturing_masters()
         inventory.ensure_warehouses(_ensure_company())
 

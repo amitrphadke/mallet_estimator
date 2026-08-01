@@ -9,6 +9,16 @@ class Estimate(Document):
         # SKU list and totals are frozen as the baseline; changes go via Amend.
         if self.docstatus == 0:
             self.aggregate_project_skus()
+        # Provisional allowances (F6) — amounts are a simple qty x assumed rate,
+        # recomputed every save so the client-print subtotal is always right.
+        self.compute_allowances()
+
+    def compute_allowances(self):
+        total = 0
+        for a in self.allowances or []:
+            a.amount = (a.qty or 0) * (a.assumed_rate or 0)
+            total += a.amount
+        self.total_allowance = total
 
     @frappe.whitelist()
     def refresh_skus(self):

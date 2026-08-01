@@ -8,7 +8,9 @@ from mallet_estimator.estimator import (
     ROUTING_NAME, WS_COMPONENTS, workstation_rates,
 )
 from mallet_estimator import inventory
-from mallet_estimator.inventory import ensure_inventory_masters, ensure_warehouses
+from mallet_estimator.inventory import (
+    ensure_inventory_masters, ensure_warehouses, ensure_pricing_masters,
+)
 
 PRINT_FORMAT_NAME = "Mallet Client Estimate"
 JOB_CARD_PRINT_FORMAT_NAME = "Mallet Job Card"
@@ -25,6 +27,27 @@ OPERATION_CUSTOM_FIELDS = {
     ]
 }
 
+# F4 — a per-Project map from abstract material code (a/b/c, generic hardware) to
+# the client's actual chosen Item + vendor + negotiated rate. Table + Section Break
+# add no column to the Project table, so this is light enough for after_migrate.
+PROJECT_CUSTOM_FIELDS = {
+    "Project": [
+        {"fieldname": "mallet_choices_section", "fieldtype": "Section Break",
+         "label": "Mallet — Material Choices", "insert_after": "notes", "collapsible": 1},
+        {"fieldname": "mallet_material_choices", "fieldtype": "Table",
+         "label": "Material Choices", "options": "Project Material Choice",
+         "insert_after": "mallet_choices_section",
+         "description": "Abstract code → chosen Item + vendor + actual rate. 'Apply choices' pushes the actual to procurement; the estimate keeps valuing at the assumed rate."},
+    ]
+}
+
+
+def ensure_project_customization():
+    """F4 — the Project 'Material Choices' child table custom field. Idempotent."""
+    from frappe.custom.doctype.custom_field.custom_field import create_custom_fields
+    create_custom_fields(PROJECT_CUSTOM_FIELDS, ignore_validate=True)
+    frappe.db.commit()
+
 
 DEFAULT_ROOMS = [
     "Master Bedroom", "Kids Bedroom", "Guest Bedroom", "Living Room", "Dining Room",
@@ -37,6 +60,8 @@ def after_install():
     _safe(ensure_rooms)
     _safe(ensure_inventory_masters)
     _safe(ensure_warehouses)
+    _safe(ensure_pricing_masters)
+    _safe(ensure_project_customization)
     _safe(ensure_manufacturing_masters)
     _safe(ensure_print_format)
     _safe(ensure_workspace)
@@ -49,6 +74,8 @@ def after_migrate():
     # refresh manufacturing masters" button, NOT here, so a deploy's site-migration
     # step never stalls on them.
     _safe(ensure_rooms)
+    _safe(ensure_pricing_masters)          # F5 — light: one Price List, no Item schema
+    _safe(ensure_project_customization)    # F4 — light: Table + Section, no Project column
     _safe(ensure_manufacturing_masters)
     _safe(ensure_print_format)
     _safe(ensure_workspace)
@@ -230,7 +257,7 @@ def setup():
     result = ensure_manufacturing_masters()
     result["inventory"] = inv
     result["warehouses"] = wh
-    for fn in (ensure_print_format, ensure_workspace):
+    for fn in (ensure_project_customization, ensure_print_format, ensure_workspace):
         try:
             fn()
         except Exception as exc:
@@ -313,6 +340,13 @@ def verify_setup():
     chk("Print format", frappe.db.exists("Print Format", PRINT_FORMAT_NAME), PRINT_FORMAT_NAME)
     chk("Job Card print", frappe.db.exists("Print Format", JOB_CARD_PRINT_FORMAT_NAME), JOB_CARD_PRINT_FORMAT_NAME)
     chk("Workspace", frappe.db.exists("Workspace", WORKSPACE_NAME), WORKSPACE_NAME)
+
+    # F5 — assumed price list; F4 — Project material-choice table; F6 — allowance table.
+    chk("Assumed price list", frappe.db.exists("Price List", inventory.ESTIMATION_PRICE_LIST),
+        inventory.ESTIMATION_PRICE_LIST)
+    chk("Project material choices", frappe.get_meta("Project").has_field("mallet_material_choices"),
+        "Project.mallet_material_choices")
+    chk("Allowance table", frappe.get_meta("Estimate").has_field("allowances"), "Estimate.allowances")
 
     n_unpriced = frappe.db.count("Item", {
         "item_group": ["in", inventory.ITEM_GROUPS], "disabled": 0, "valuation_rate": 0,

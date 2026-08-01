@@ -1,0 +1,81 @@
+{
+ "actions": [],
+ "creation": "2026-08-01 00:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "material_type",
+  "description",
+  "qty",
+  "uom",
+  "assumed_rate",
+  "amount",
+  "note"
+ ],
+ "fields": [
+  {
+   "fieldname": "material_type",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "columns": 2,
+   "label": "Material Type",
+   "reqd": 1,
+   "description": "e.g. Handles, Hinges, Drawer Rails, Profile Lights."
+  },
+  {
+   "fieldname": "description",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "columns": 3,
+   "label": "Description"
+  },
+  {
+   "fieldname": "qty",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "columns": 1,
+   "label": "Qty",
+   "default": "1"
+  },
+  {
+   "fieldname": "uom",
+   "fieldtype": "Link",
+   "options": "UOM",
+   "in_list_view": 1,
+   "columns": 1,
+   "label": "UOM"
+  },
+  {
+   "fieldname": "assumed_rate",
+   "fieldtype": "Currency",
+   "in_list_view": 1,
+   "columns": 1,
+   "label": "Assumed Rate"
+  },
+  {
+   "fieldname": "amount",
+   "fieldtype": "Currency",
+   "in_list_view": 1,
+   "columns": 1,
+   "label": "Amount",
+   "read_only": 1
+  },
+  {
+   "fieldname": "note",
+   "fieldtype": "Data",
+   "label": "Note",
+   "default": "billed at actual selection"
+  }
+ ],
+ "istable": 1,
+ "links": [],
+ "modified": "2026-08-01 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Mallet Estimator",
+ "name": "Estimate Allowance",
+ "owner": "Administrator",
+ "permissions": [],
+ "sort_field": "modified",
+ "sort_order": "DESC"
+}

@@ -33,4 +33,5 @@ doctype_js = {
     "Estimate Settings": "public/js/estimate_settings.js",
     "Estimate SKU": "public/js/estimate_sku.js",
     "Estimate": "public/js/estimate.js",
+    "Project": "public/js/project.js",
 }

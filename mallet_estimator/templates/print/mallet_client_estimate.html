@@ -134,6 +134,34 @@
     <div class="row final"><span>Total estimate</span><span>{{ money(sku_docs | sum(attribute="client_total")) }}</span></div>
   </div>
 
+  {# --- Provisional allowances (F6): price-sensitive items shown transparently,
+       trued up to the actual chosen price at final invoice --- #}
+  {% if doc.allowances %}
+    <div class="roomtitle">Provisional allowances</div>
+    <div style="color:#6b7280;font-size:11px;margin:-4px 0 8px;">
+      Indicative amounts for the items below. Each is billed at the <b>actual</b> price of the piece you finally select — the difference is adjusted transparently in the final invoice.
+    </div>
+    <table>
+      <thead><tr><th>Item</th><th>Description</th><th class="r">Qty</th><th>UOM</th><th class="r">Assumed rate</th><th class="r">Amount</th></tr></thead>
+      <tbody>
+      {% for a in doc.allowances %}
+        <tr>
+          <td>{{ a.material_type }}</td>
+          <td>{{ a.description or "—" }}</td>
+          <td class="r">{{ "%g"|format(a.qty or 0) }}</td>
+          <td>{{ a.uom or "—" }}</td>
+          <td class="r">{{ money(a.assumed_rate) }}</td>
+          <td class="r">{{ money(a.amount) }}</td>
+        </tr>
+      {% endfor %}
+        <tr style="font-weight:700;background:#fafbf8;">
+          <td colspan="5">Provisional allowances total (billed at actual)</td>
+          <td class="r">{{ money(doc.total_allowance) }}</td>
+        </tr>
+      </tbody>
+    </table>
+  {% endif %}
+
   {# --- One page per article: ISO view + specs + price --- #}
   {% for s in sku_docs %}
     <div class="artpage">
