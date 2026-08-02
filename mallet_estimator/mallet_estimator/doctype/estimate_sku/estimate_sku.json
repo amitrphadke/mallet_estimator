@@ -18,13 +18,11 @@
   "item",
   "create_item",
   "include_misc",
+  "exclude_from_estimate",
   "spec_section",
   "outer_w",
   "outer_d",
   "outer_h",
-  "door_type",
-  "num_doors",
-  "num_drawers",
   "finish",
   "description",
   "article_image",
@@ -149,6 +147,12 @@
    "default": "1"
   },
   {
+   "fieldname": "exclude_from_estimate",
+   "fieldtype": "Check",
+   "label": "Exclude from Estimate",
+   "description": "Tick to DELINK this SKU from the project's draft estimates — it is dropped from the estimate on its next save and can then be deleted."
+  },
+  {
    "fieldname": "spec_section",
    "fieldtype": "Section Break",
    "label": "Specification"
@@ -169,21 +173,6 @@
    "label": "Outer Height (mm)"
   },
   {
-   "fieldname": "door_type",
-   "fieldtype": "Data",
-   "label": "Door Type"
-  },
-  {
-   "fieldname": "num_doors",
-   "fieldtype": "Int",
-   "label": "No. of Doors"
-  },
-  {
-   "fieldname": "num_drawers",
-   "fieldtype": "Int",
-   "label": "No. of Drawers"
-  },
-  {
    "fieldname": "finish",
    "fieldtype": "Data",
    "label": "Finish"
@@ -198,7 +187,7 @@
    "fieldtype": "Attach Image",
    "label": "Isometric View (auto-filled from 7 Views PDF)",
    "read_only": 1,
-   "description": "Extracted from the 'IsoView' page of the 7 Views PDF above \u2014 no manual upload. Shown on the client estimate."
+   "description": "Extracted from the 'IsoView' page of the 7 Views PDF above — no manual upload. Shown on the client estimate."
   },
   {
    "fieldname": "material_section",
@@ -234,7 +223,7 @@
    "fieldtype": "Small Text",
    "label": "Materials Needing a Price",
    "read_only": 1,
-   "description": "Materials with no ERPNext price yet \u2014 set a rate on the Item so the estimate can cost them."
+   "description": "Materials with no ERPNext price yet — set a rate on the Item so the estimate can cost them."
   },
   {
    "fieldname": "material_cost",
@@ -278,21 +267,24 @@
   {
    "fieldname": "parts_section",
    "fieldtype": "Section Break",
-   "label": "Execution \u2014 Parts / Cut List (not needed to estimate)",
+   "label": "Execution — Parts (from earlier imports)",
    "collapsible": 1,
    "collapsible_depends_on": "eval:false",
-   "description": "Execution-phase inputs. The Parts CSV, cut diagrams and labels are used on the shop floor after the estimate is approved \u2014 they do not affect the estimate."
+   "description": "Execution-phase inputs. The Parts CSV, cut diagrams and labels are used on the shop floor after the estimate is approved — they do not affect the estimate.",
+   "hidden": 1
   },
   {
    "fieldname": "parts_csv",
    "fieldtype": "Attach",
-   "label": "OpenCutList Parts CSV (execution)"
+   "label": "OpenCutList Parts CSV (execution)",
+   "hidden": 1
   },
   {
    "fieldname": "parts",
    "fieldtype": "Table",
    "label": "Parts",
-   "options": "Estimate Part"
+   "options": "Estimate Part",
+   "hidden": 1
   },
   {
    "fieldname": "labor_section",
@@ -320,15 +312,14 @@
   {
    "fieldname": "labor_cost",
    "fieldtype": "Currency",
-   "label": "Labor Cost",
+   "label": "Wages Cost (workstation wage components)",
    "read_only": 1
   },
   {
    "fieldname": "joinery_section",
    "fieldtype": "Section Break",
    "label": "Joinery Consumables (derived from Sheet Lamination)",
-   "collapsible": 1,
-   "description": "Fevicol + Abrotape auto-computed from the Sheet Lamination step quantity: 3 packets + 11 m tape per laminated sheet."
+   "description": "Fevicol + Abrotape auto-computed from the Sheet Lamination qty (3 packets + 11 m tape per laminated sheet). Use these quantities to raise the purchase order — Abrotape is bought in 20 m rolls."
   },
   {
    "fieldname": "joinery_items",
@@ -377,14 +368,44 @@
    "fieldtype": "Section Break",
    "label": "Transport (standalone view — consolidated on the Estimate)",
    "collapsible": 1,
-   "description": "Inward trips: big tempo ₹/trip (ply + internal laminate + joinery), external laminate trip, client-hardware trip; plus outward delivery. Rates live in Estimate Settings. Multiple SKUs share trips — the Estimate consolidates."
+   "description": "Inward trips: big tempo ₹/trip (ply + internal laminate + joinery), external laminate trip, client-hardware trip; plus outward delivery. Rates live in Estimate Settings. Multiple SKUs share trips — the Estimate consolidates.",
+   "hidden": 1
   },
-  {"fieldname": "trips_tempo", "fieldtype": "Int", "label": "Tempo Trips (ply/int-lam/joinery)"},
-  {"fieldname": "trips_ext_lam", "fieldtype": "Int", "label": "External Laminate Trips"},
-  {"fieldname": "column_break_transport", "fieldtype": "Column Break"},
-  {"fieldname": "trips_client_hw", "fieldtype": "Int", "label": "Client Hardware Trips"},
-  {"fieldname": "trips_outward", "fieldtype": "Int", "label": "Outward (delivery) Trips"},
-  {"fieldname": "transport_cost", "fieldtype": "Currency", "label": "Transport Cost", "read_only": 1},
+  {
+   "fieldname": "trips_tempo",
+   "fieldtype": "Int",
+   "label": "Tempo Trips (ply/int-lam/joinery)",
+   "hidden": 1
+  },
+  {
+   "fieldname": "trips_ext_lam",
+   "fieldtype": "Int",
+   "label": "External Laminate Trips",
+   "hidden": 1
+  },
+  {
+   "fieldname": "column_break_transport",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "trips_client_hw",
+   "fieldtype": "Int",
+   "label": "Client Hardware Trips",
+   "hidden": 1
+  },
+  {
+   "fieldname": "trips_outward",
+   "fieldtype": "Int",
+   "label": "Outward (delivery) Trips",
+   "hidden": 1
+  },
+  {
+   "fieldname": "transport_cost",
+   "fieldtype": "Currency",
+   "label": "Transport Cost",
+   "read_only": 1,
+   "hidden": 1
+  },
   {
    "fieldname": "breakup_section",
    "fieldtype": "Section Break",
@@ -411,18 +432,20 @@
    "fieldname": "machine_cost",
    "fieldtype": "Currency",
    "label": "Machine (depreciation)",
-   "read_only": 1
+   "read_only": 1,
+   "hidden": 1
   },
   {
    "fieldname": "rent_cost",
    "fieldtype": "Currency",
    "label": "Factory Rent",
-   "read_only": 1
+   "read_only": 1,
+   "hidden": 1
   },
   {
    "fieldname": "overhead_cost",
    "fieldtype": "Currency",
-   "label": "Overhead (machine + rent)",
+   "label": "Factory Overhead (rent + electricity + consumables + depreciation)",
    "read_only": 1
   },
   {

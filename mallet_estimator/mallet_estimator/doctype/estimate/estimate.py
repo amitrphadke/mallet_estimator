@@ -22,36 +22,33 @@ class Estimate(Document):
         self.total_allowance = total
 
     def compute_transport_and_tax(self):
-        """C1 — consolidated transport: SKUs SHARE trips, so the estimate's own
-        trip counts (defaulted to the max any SKU needs, editable) are what the
-        client pays — per-SKU transport is only a standalone view. T1 — output
+        """C1 — consolidated transport as an EDITABLE table: SKUs share trips, so
+        the estimate's trip rows (change qty/rate, add more) are what the client
+        pays. Rows are seeded once from the Estimate Settings rates. T1 — output
         GST is charged on top of the client total (quote plus GST, always)."""
         if not self.meta.has_field("total_transport"):
             return
         from mallet_estimator.estimator import transport_rates
         settings = frappe.get_single("Estimate Settings")
         rates = transport_rates(settings)
-        # Default each trip type to the max any SKU suggests (shared trip).
-        if not any(int(self.get(f) or 0) for f in
-                   ("trips_tempo", "trips_ext_lam", "trips_client_hw", "trips_outward")):
-            need = {"trips_tempo": 0, "trips_ext_lam": 0, "trips_client_hw": 0, "trips_outward": 0}
-            for row in self.skus or []:
-                if not row.estimate_sku:
-                    continue
-                vals = frappe.db.get_value(
-                    "Estimate SKU", row.estimate_sku,
-                    ["trips_tempo", "trips_ext_lam", "trips_client_hw", "trips_outward"], as_dict=True,
-                ) or {}
-                for f in need:
-                    need[f] = max(need[f], int(vals.get(f) or 0))
-            for f, v in need.items():
-                self.set(f, v)
-        self.total_transport = (
-            int(self.trips_tempo or 0) * rates["tempo"]
-            + int(self.trips_ext_lam or 0) * rates["ext_lam"]
-            + int(self.trips_client_hw or 0) * rates["client_hw"]
-            + int(self.trips_outward or 0) * rates["outward"]
-        )
+        if self.meta.has_field("transport_items"):
+            if not self.get("transport_items"):
+                for label, desc, rate in (
+                    ("Big Tempo (inward)", "Ply + internal laminate + joinery hardware", rates["tempo"]),
+                    ("External Laminate (inward)", "External laminate sheets", rates["ext_lam"]),
+                    ("Client Hardware (inward)", "Hinges, rails, handles, lifts", rates["client_hw"]),
+                    ("Outward Delivery", "Finished goods to site", rates["outward"]),
+                ):
+                    self.append("transport_items", {
+                        "trip_type": label, "description": desc, "qty": 1, "rate": rate,
+                    })
+            total = 0
+            for t in self.transport_items:
+                t.amount = (t.qty or 0) * (t.rate or 0)
+                total += t.amount
+            self.total_transport = total
+        else:
+            self.total_transport = 0
         # aggregate_project_skus left the totals transport-free; add the shared
         # trips here, then output GST on the full client amount.
         if self.docstatus == 0:
@@ -76,7 +73,9 @@ class Estimate(Document):
         """Rebuild the SKU list from every Estimate SKU linked to this Project
         (no manual add, so a SKU can't be counted twice) and roll up the totals."""
         names = frappe.get_all(
-            "Estimate SKU", filters={"project": self.project}, order_by="room asc, article_name asc", pluck="name"
+            "Estimate SKU",
+            filters={"project": self.project, "exclude_from_estimate": ["!=", 1]},
+            order_by="room asc, article_name asc", pluck="name",
         ) if self.project else []
         self.set("skus", [])
         totals = dict(material=0, labor=0, overhead=0, design=0, internal=0, client=0)

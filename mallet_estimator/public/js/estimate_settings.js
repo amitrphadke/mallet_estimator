@@ -49,8 +49,6 @@ frappe.ui.form.on("Estimate Settings", {
   paid_holidays_per_month: (frm) => render_calculator(frm),
   national_holidays_per_year: (frm) => render_calculator(frm),
   lunch_hours_per_day: (frm) => render_calculator(frm),
-  carpenter_rate: (frm) => render_calculator(frm),
-  helper_rate: (frm) => render_calculator(frm),
   monthly_rent: (frm) => render_calculator(frm),
   working_days_per_month: (frm) => render_calculator(frm),
   working_hours_per_day: (frm) => render_calculator(frm),

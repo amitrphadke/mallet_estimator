@@ -16,10 +16,6 @@
   "national_holidays_per_year",
   "working_hours_per_day",
   "lunch_hours_per_day",
-  "rates_section",
-  "carpenter_rate",
-  "helper_rate",
-  "design_rate",
   "column_break_rates",
   "monthly_rent",
   "factory_section",
@@ -111,33 +107,6 @@
    "fieldtype": "Float",
    "label": "Lunch Break (hrs, paid, inside shift)",
    "default": "1"
-  },
-  {
-   "fieldname": "rates_section",
-   "fieldtype": "Section Break",
-   "label": "Legacy Hourly Rates (fallback only — superseded by salaries)",
-   "collapsible": 1
-  },
-  {
-   "fieldname": "carpenter_rate",
-   "fieldtype": "Currency",
-   "label": "Carpenter Rate (per hour) — legacy",
-   "default": "0",
-   "description": "Used only when no Carpenter Salary is set. (### sensitive — key the real value here on the site; never stored in the repo.)"
-  },
-  {
-   "fieldname": "helper_rate",
-   "fieldtype": "Currency",
-   "label": "Helper Rate (per hour) — legacy",
-   "default": "0",
-   "description": "(### sensitive — key the real value here on the site; never stored in the repo.)"
-  },
-  {
-   "fieldname": "design_rate",
-   "fieldtype": "Currency",
-   "label": "Design Rate (per hour) — legacy",
-   "default": "0",
-   "description": "(### sensitive — key the real value here on the site; never stored in the repo.)"
   },
   {
    "fieldname": "column_break_rates",

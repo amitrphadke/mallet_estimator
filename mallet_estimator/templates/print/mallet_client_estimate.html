@@ -181,12 +181,8 @@
       {% endif %}
       <table class="spectbl">
         <tr>
-          <th>Size</th><td>{{ "%g × %g × %g mm"|format(s.outer_w or 0, s.outer_d or 0, s.outer_h or 0) }}</td>
+          <th>Size (W×D×H)</th><td>{{ "%g × %g × %g mm"|format(s.outer_w or 0, s.outer_d or 0, s.outer_h or 0) }}</td>
           <th>Finish</th><td>{{ s.finish or "—" }}</td>
-        </tr>
-        <tr>
-          <th>Door type</th><td>{{ s.door_type or "—" }}</td>
-          <th>Doors / Drawers</th><td>{{ s.num_doors or 0 }} door(s) · {{ s.num_drawers or 0 }} drawer(s)</td>
         </tr>
       </table>
       {% if s.description %}<div class="desc" style="margin-top:8px;">{{ s.description }}</div>{% endif %}

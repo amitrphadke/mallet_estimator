@@ -87,9 +87,32 @@ frappe.ui.form.on("Estimate Labor", {
   },
   workstation: (frm, cdt, cdn) => recompute_total(frm, cdt, cdn),
   labor_add: (frm) => lock_qty(frm),
+  labor_remove: (frm) => update_live_totals(frm),
   qty: (frm, cdt, cdn) => recompute_total(frm, cdt, cdn),
   carp_min: (frm, cdt, cdn) => recompute_total(frm, cdt, cdn),
 });
+
+// I3: Material + Labor cost totals update INSTANTLY as rows are edited — no save.
+frappe.ui.form.on("Estimate Material", {
+  qty: (frm, cdt, cdn) => recompute_material(frm, cdt, cdn),
+  unit_cost: (frm, cdt, cdn) => recompute_material(frm, cdt, cdn),
+  customer_supplied: (frm, cdt, cdn) => recompute_material(frm, cdt, cdn),
+  materials_remove: (frm) => update_live_totals(frm),
+});
+
+function recompute_material(frm, cdt, cdn) {
+  const row = locals[cdt][cdn];
+  if (!row) return;
+  const cost = row.customer_supplied ? 0 : (row.qty || 0) * (row.unit_cost || 0);
+  frappe.model.set_value(cdt, cdn, "line_cost", cost).then(() => update_live_totals(frm));
+}
+
+function update_live_totals(frm) {
+  const mat = (frm.doc.materials || []).reduce((s, m) => s + (m.line_cost || 0), 0);
+  const lab = (frm.doc.labor || []).reduce((s, r) => s + (r.op_cost || 0), 0);
+  frm.set_value("material_cost", mat);
+  frm.set_value("labor_cost", lab);
+}
 
 // Live Total Min = Qty x Min/Unit, and live Phase Cost = crew-hours x the
 // Workstation Net Hour Rate — both update as you type, no save (I1). The save
@@ -102,7 +125,9 @@ function recompute_total(frm, cdt, cdn) {
   const rates = frm._ws_net || {};
   const net = row.workstation && rates[row.workstation] != null ? rates[row.workstation] : rates.__default__;
   if (net != null) {
-    frappe.model.set_value(cdt, cdn, "op_cost", (total / 60) * net);
+    frappe.model.set_value(cdt, cdn, "op_cost", (total / 60) * net).then(() => update_live_totals(frm));
+  } else {
+    update_live_totals(frm);
   }
 }
 
@@ -115,26 +140,34 @@ function lock_qty(frm) {
   });
 }
 
-// C1: render the one-table cost breakup (built server-side as JSON on save).
+// C1: render the grouped cost grid (built server-side as JSON on save) — each
+// group shows its lines and a bold GROUP TOTAL (Sheet Goods total, Hardware
+// total, Labor & Overhead total, …).
 function render_cost_breakup(frm) {
   const f = frm.get_field("cost_breakup_html");
   if (!f || !f.$wrapper) return;
   let d = null;
   try { d = JSON.parse(frm.doc.cost_breakup || "null"); } catch (e) { d = null; }
-  if (!d || !(d.rows || []).length) { f.$wrapper.empty(); return; }
+  if (!d || !(d.groups || []).length) { f.$wrapper.empty(); return; }
   const money = (v) => format_currency(v || 0);
-  const rows = d.rows
-    .filter((r) => r[1])
-    .map((r) => `<tr><td>${frappe.utils.escape_html(r[0])}</td><td class="text-right">${money(r[1])}</td></tr>`)
-    .join("");
+  const esc = frappe.utils.escape_html;
+  let body = "";
+  for (const [gname, lines] of d.groups) {
+    const shown = lines.filter((r) => r[1]);
+    if (!shown.length) continue;
+    const gtotal = lines.reduce((s, r) => s + (r[1] || 0), 0);
+    body += `<tr style="background:var(--subtle-fg, #f4f5f6);font-weight:700"><td>${esc(gname)} total</td><td class="text-right">${money(gtotal)}</td></tr>`;
+    body += shown.map((r) => `<tr><td style="padding-left:24px">${esc(r[0])}</td><td class="text-right">${money(r[1])}</td></tr>`).join("");
+  }
   f.$wrapper.html(`
     <table class="table table-bordered" style="font-size:12.5px;margin:0">
       <thead><tr><th>Cost Component</th><th class="text-right">Amount</th></tr></thead>
-      <tbody>${rows}
-        <tr style="font-weight:700;border-top:2px solid var(--gray-600)"><td>Internal Cost (incl. transport)</td><td class="text-right">${money(d.internal)}</td></tr>
+      <tbody>${body}
+        <tr style="font-weight:700;border-top:2px solid var(--gray-600)"><td>Internal Cost</td><td class="text-right">${money(d.internal)}</td></tr>
         <tr><td>Client: Material</td><td class="text-right">${money(d.client_material)}</td></tr>
         <tr><td>Client: Design &amp; Execution</td><td class="text-right">${money(d.client_design_exec)}</td></tr>
-        <tr style="font-weight:700"><td>Client Total (transport billed on the Estimate; GST extra)</td><td class="text-right">${money(d.client_total)}</td></tr>
+        <tr style="font-weight:700"><td>Client Total</td><td class="text-right">${money(d.client_total)}</td></tr>
       </tbody>
-    </table>`);
+    </table>
+    <p class="text-muted" style="font-size:11.5px;margin:6px 0 0">${esc(d.note || "")}</p>`);
 }

@@ -97,13 +97,68 @@ def extract_iso_image(content):
     return None
 
 
-def attach_iso_image(doc, views_pdf_content):
-    """Extract the IsoView render and attach it to the document as a File,
-    returning the file_url (or None). Used to fill Estimate SKU.article_image."""
+_MM_RE = re.compile(r"(\d{2,5})\s*mm")
+
+
+def extract_outer_dims(content):
+    """Outer W/D/H (mm) from the 7-Views dimension callouts:
+      W = largest dim on the TopView (plan = width x depth),
+      H = largest dim on the LeftView (elevation = height),
+      D = second-largest dim on the LeftView (depth).
+    Validated on YS_MB_WAR (1524 x 598 x 2060). Returns {w,d,h} with None for
+    anything that can't be read — the user keys those in manually."""
+    from pypdf import PdfReader
+    if isinstance(content, str):
+        content = content.encode("utf-8", "ignore")
+    reader = PdfReader(io.BytesIO(content))
+    views = {}
+    for page in reader.pages:
+        text = page.extract_text() or ""
+        for v in ("TopView", "LeftView", "RightView", "FrontView"):
+            if v in text:
+                views[v] = sorted({int(n) for n in _MM_RE.findall(text)}, reverse=True)
+    w = views.get("TopView", [None])[0] if views.get("TopView") else None
+    side = views.get("LeftView") or views.get("RightView") or []
+    h = side[0] if side else None
+    d = side[1] if len(side) > 1 else None
+    return {"w": w, "d": d, "h": h}
+
+
+def annotate_dims(image_data, dims_text):
+    """Stamp the outer dimensions onto the ISO render (bottom-left) so the image
+    itself carries them. Returns new PNG bytes, or the original data if Pillow
+    can't process it."""
+    try:
+        from PIL import Image, ImageDraw
+        img = Image.open(io.BytesIO(image_data)).convert("RGB")
+        draw = ImageDraw.Draw(img)
+        pad = max(img.width // 100, 6)
+        # readable at any size: default font scaled by drawing on a strip
+        strip_h = max(img.height // 18, 28)
+        draw.rectangle([0, img.height - strip_h, img.width, img.height], fill=(47, 82, 51))
+        try:
+            from PIL import ImageFont
+            font = ImageFont.load_default(size=int(strip_h * 0.55))
+        except Exception:
+            font = None
+        draw.text((pad, img.height - strip_h + pad // 2), dims_text, fill=(255, 255, 255), font=font)
+        out = io.BytesIO()
+        img.save(out, format="PNG")
+        return out.getvalue()
+    except Exception:
+        return image_data
+
+
+def attach_iso_image(doc, views_pdf_content, dims=None):
+    """Extract the IsoView render, stamp the outer dims on it when known, and
+    attach it as a File. Returns the file_url (or None)."""
     result = extract_iso_image(views_pdf_content)
     if not result:
         return None
     filename, data = result
+    if dims and all(dims.get(k) for k in ("w", "d", "h")):
+        data = annotate_dims(data, f"W {dims['w']:g} x D {dims['d']:g} x H {dims['h']:g} mm")
+        filename = "iso_view.png"
     f = frappe.get_doc({
         "doctype": "File",
         "file_name": f"{doc.name}_{filename}",

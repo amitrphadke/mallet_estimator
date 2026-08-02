@@ -79,7 +79,9 @@
   {
    "fieldname": "remark",
    "fieldtype": "Data",
-   "label": "Remark"
+   "label": "Remarks (what this step takes care of)",
+   "in_list_view": 1,
+   "columns": 2
   },
   {
    "fieldname": "phase",

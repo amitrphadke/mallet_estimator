@@ -140,6 +140,26 @@ def transport_rates(settings):
         "outward": _get(settings, "trip_rate_outward", TRANSPORT_DEFAULTS["outward"]) or TRANSPORT_DEFAULTS["outward"],
     }
 
+# What each process step is supposed to take care of — seeded into the step's
+# Remarks (editable per SKU; Assembly/Packing are meant to be refined by the user).
+STEP_REMARKS = {
+    "Sheet Lamination": "Apply glue on BOTH sides of the ply and paste laminate according to the material code.",
+    "Sheet Tape Removal": "Remove the holding tape from the laminated sheets.",
+    "Sheet Cutting": "Cut sheets per the cutting diagram (CD).",
+    "Edge Banding": "Band exposed edges per part list (internal/external tape per code).",
+    "Minifix Boring": "Bore minifix housings (qty = minifix count).",
+    "Drilling": "Pilot holes + screws — qty is the SCREW count.",
+    "Assembly": "Specify what gets assembled here: typically carcass and/or drawer boxes.",
+    "Install Hardware": "Hinges, drawer rails, handles and shelf supports only (qty = their total).",
+    "Disassembly": "Dismantle what must travel flat.",
+    "Packing": "Dismantle where required before packing — a wardrobe carcass is dismantled, drawer boxes are not.",
+    "Loading": "Load packed parts + hardware boxes.",
+    "Transport": "Factory → site trip.",
+    "Unloading": "Unload and stage at site.",
+    "Assembly (on-site)": "Re-assemble carcass, hang doors/drawers.",
+    "Installation": "Fix to wall/level, final alignment and handover.",
+}
+
 ROUTING_NAME = "Mallet Standard Build"
 
 

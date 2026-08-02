@@ -106,10 +106,12 @@ def operation_quantities(materials, part_count):
         "Sheet Cutting": sg,
         "Edge Banding": part_count,
         "Minifix Boring": hw["minifix"],
-        "Drilling": hw["screws"] + hw["hinges"],
+        # Screws are part of Drilling (their count is the step qty).
+        "Drilling": hw["screws"],
         "Grooving": 2,
         "Assembly": assembly,
-        "Install Hardware": hw["hinges"] + hw["rails"] + hw["handles"] + hw["tower"] + hw["shelf"],
+        # Install Hardware covers ONLY hinges / drawer rails / handles / shelf supports.
+        "Install Hardware": hw["hinges"] + hw["rails"] + hw["handles"] + hw["shelf"],
         "Disassembly": assembly,
         "Miscellaneous - extra": 0,
     }

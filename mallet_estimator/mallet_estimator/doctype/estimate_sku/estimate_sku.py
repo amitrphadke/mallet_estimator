@@ -49,13 +49,33 @@ class EstimateSKU(Document):
     def validate(self):
         self.ensure_steps()
         self.ensure_design_steps()
+        self.ensure_step_remarks()
         self.maybe_import()
         self.compute_code()
         self.enforce_locked_qty()
         self.derive_joinery()
-        self.suggest_transport_trips()
         self.compute_costs()
         self.build_cost_breakup()
+
+    def on_trash(self):
+        """Delink from DRAFT estimates so the SKU can actually be deleted (a
+        submitted estimate still blocks — amend it first)."""
+        for name in frappe.get_all(
+            "Execution Estimate SKU", filters={"estimate_sku": self.name}, pluck="parent", distinct=True
+        ):
+            if frappe.db.get_value("Estimate", name, "docstatus") == 0:
+                est = frappe.get_doc("Estimate", name)
+                est.set("skus", [r for r in est.skus if r.estimate_sku != self.name])
+                est.save(ignore_permissions=True)
+
+    def ensure_step_remarks(self):
+        """Seed each step's Remarks with what it is supposed to take care of
+        (glue both sides on lamination, screws in Drilling, what to assemble /
+        dismantle, …). Only fills EMPTY remarks — user edits always stick."""
+        from mallet_estimator.estimator import STEP_REMARKS
+        for row in self.labor or []:
+            if not (row.remark or "").strip():
+                row.remark = STEP_REMARKS.get(op_phase(row), "")
 
     def maybe_import(self):
         """When an estimation input PDF is attached (or changed), import the
@@ -78,11 +98,26 @@ class EstimateSKU(Document):
         if self.article_image and not self.has_value_changed("views_pdf"):
             return
         try:
-            url = views_pdf.attach_iso_image(self, _file_content(self.views_pdf))
+            content = _file_content(self.views_pdf)
+            # Outer W/D/H from the views' dimension callouts — fills empty fields
+            # only (a keyed-in value always wins) and gets stamped onto the image.
+            dims = {}
+            try:
+                dims = views_pdf.extract_outer_dims(content)
+                for field, key in (("outer_w", "w"), ("outer_d", "d"), ("outer_h", "h")):
+                    if dims.get(key) and not (self.get(field) or 0):
+                        self.set(field, dims[key])
+            except Exception:
+                frappe.log_error(frappe.get_traceback(), f"dims extract {self.name}")
+            stamp = {"w": self.outer_w, "d": self.outer_d, "h": self.outer_h}
+            url = views_pdf.attach_iso_image(self, content, dims=stamp)
             if url:
                 self.article_image = url
             else:
                 frappe.msgprint(_("No 'IsoView' page found in the 7 Views PDF — attach an Article Image manually."),
+                                indicator="orange")
+            if not all(stamp.values()) and not all(dims.get(k) for k in ("w", "d", "h")):
+                frappe.msgprint(_("Outer dimensions could not be read from the 7 Views PDF — key in Outer Width/Depth/Height."),
                                 indicator="orange")
         except Exception:
             frappe.log_error(frappe.get_traceback(), f"iso extract {self.name}")
@@ -125,9 +160,16 @@ class EstimateSKU(Document):
         for m in materials:
             if m.get("kind") == "hardware" and hardware:
                 continue  # replaced by designation-level part-list hardware below
+            qty = m["qty"] or 0
+            desc = _pdf_desc(m)
+            if m.get("kind") == "edge":
+                # The estimate PDF counts edge banding in ROLLS; we stock/cost it
+                # per METER (50 m per roll).
+                qty = qty * inventory.EDGE_ROLL_METERS
+                desc = f"{desc} — {m['qty']:g} roll(s) × {inventory.EDGE_ROLL_METERS:g} m"[:140]
             self._add_material_line(
-                m["name"], m.get("kind"), m.get("thickness") or 0, m["qty"] or 0,
-                _pdf_desc(m), unpriced,
+                m["name"], m.get("kind"), m.get("thickness") or 0, qty,
+                desc, unpriced,
             )
         for h in hardware:
             cat = f" · {h['category']}" if h.get("category") and h["category"] != h["code"] else ""
@@ -298,26 +340,10 @@ class EstimateSKU(Document):
                 "derived_from": "Sheet Lamination",
             })
 
-    def suggest_transport_trips(self):
-        """C1 — default the inward/outward trip counts from what the SKU actually
-        uses; never overrides a hand-set value (any non-zero trip field)."""
-        if not self.meta.has_field("trips_tempo"):
-            return
-        if any(int(getattr(self, f, 0) or 0) for f in
-               ("trips_tempo", "trips_ext_lam", "trips_client_hw", "trips_outward")):
-            return
-        buckets = {inventory.material_bucket(m.item, m.material) for m in (self.materials or [])}
-        tempo_buckets = {"Ply V0 (structure grade)", "Ply V1 (visible grade)",
-                         "Laminate Internal", "Joinery Hardware", "Edge Banding Internal",
-                         "Edge Banding External"}
-        self.trips_tempo = 1 if (buckets & tempo_buckets or self.get("joinery_items")) else 0
-        self.trips_ext_lam = 1 if "Laminate External" in buckets else 0
-        self.trips_client_hw = 1 if "Client Hardware" in buckets else 0
-        self.trips_outward = 1 if self.materials else 0
-
     def build_cost_breakup(self):
-        """C1 — the one-table cost story: material by bucket, joinery, design
-        labor, carpentry wages, factory cost, transport → internal + client."""
+        """C1 — the cost grid: material buckets grouped into Sheet Goods /
+        Laminate / Edge Banding / Hardware totals, then Design, Wages, Factory
+        Overhead. Transport is billed on the Estimate (shared trips)."""
         if not self.meta.has_field("cost_breakup"):
             return
         r = getattr(self, "_calc", None) or {}
@@ -325,19 +351,46 @@ class EstimateSKU(Document):
         for m in self.materials or []:
             b = inventory.material_bucket(m.item, m.material)
             mat[b] = mat.get(b, 0) + float(m.line_cost or 0)
-        rows = [[f"Material — {k}", v] for k, v in sorted(mat.items())]
-        rows.append(["Material — Joinery Consumables (Fevicol/Abrotape)", float(self.get("joinery_cost") or 0)])
-        rows.append(["Design Labor (Design Desk)", float(self.design_cost or 0)])
-        rows.append(["Carpentry Wages (workstation wage components)", float(r.get("labor_cost", self.labor_cost or 0))])
-        rows.append(["Factory Cost (rent + electricity + consumables + depreciation)",
-                     float(self.overhead_cost or 0)])
-        rows.append(["Transport (inward + outward)", float(self.get("transport_cost") or 0)])
+        joinery = float(self.get("joinery_cost") or 0)
+
+        def bucket(*names):
+            return sum(mat.get(n, 0) for n in names)
+
+        groups = [
+            ["Sheet Goods", [
+                ["Ply V0 (structure grade)", mat.get("Ply V0 (structure grade)", 0)],
+                ["Ply V1 (visible grade)", mat.get("Ply V1 (visible grade)", 0)],
+            ]],
+            ["Laminate", [
+                ["Internal", mat.get("Laminate Internal", 0)],
+                ["External", mat.get("Laminate External", 0)],
+            ]],
+            ["Edge Banding", [
+                ["Internal", mat.get("Edge Banding Internal", 0)],
+                ["External", mat.get("Edge Banding External", 0)],
+            ]],
+            ["Hardware", [
+                ["Client Hardware (hinges/rails/handles…)", mat.get("Client Hardware", 0)],
+                ["Joinery Hardware (screws/minifix…)", mat.get("Joinery Hardware", 0)],
+                ["Joinery Consumables (Fevicol/Abrotape)", joinery],
+            ]],
+            ["Labor & Overhead", [
+                ["Design Labor (Design Desk)", float(self.design_cost or 0)],
+                ["Carpentry Wages", float(r.get("labor_cost", self.labor_cost or 0))],
+                ["Factory Overhead (rent + electricity + consumables + depreciation)",
+                 float(self.overhead_cost or 0)],
+            ]],
+        ]
+        other = bucket("Other Material")
+        if other:
+            groups[0][1].append(["Other Material", other])
         self.cost_breakup = json.dumps({
-            "rows": rows,
+            "groups": groups,
             "internal": float(self.internal_cost or 0),
             "client_material": float(self.client_material or 0),
             "client_design_exec": float(self.client_design_exec or 0),
             "client_total": float(self.client_total or 0),
+            "note": "Transport is billed on the Estimate (trips shared across SKUs); GST extra.",
         })
 
     # --- naming ------------------------------------------------------------

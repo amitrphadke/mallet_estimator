@@ -27,3 +27,5 @@ mallet_estimator.patches.seed_material_rates
 mallet_estimator.patches.cost_model_rework
 # L1 follow-up: seed salary/calendar on the existing Single, rebuild at true rates.
 mallet_estimator.patches.seed_salary_calendar
+# Fix batch 2026-08-02: clear grid/user-settings caches (CSV remnants), UI cleanup.
+mallet_estimator.patches.estimation_ui_cleanup

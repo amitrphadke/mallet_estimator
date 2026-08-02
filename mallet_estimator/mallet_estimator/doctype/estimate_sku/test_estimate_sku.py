@@ -17,8 +17,8 @@ class TestEstimateSKU(MalletTestCase):
         # Cost figures are sensitive (###) — repo defaults are zero, so key
         # SYNTHETIC rates here for the pricing assertions.
         s = frappe.get_single("Estimate Settings")
-        s.carpenter_rate = 100
-        s.helper_rate = 50
+        s.carpenter_salary = 15000
+        s.helper_salary = 7500
         s.monthly_rent = 10000
         s.flags.ignore_permissions = True
         s.save()
