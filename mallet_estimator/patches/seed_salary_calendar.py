@@ -2,11 +2,11 @@ import frappe
 
 from mallet_estimator.patches import cost_model_rework
 
-# The user's staffing facts (2026-08-02) — L1's source of truth.
+# Salaries are SENSITIVE (###) — never stored in this repo. They are keyed on
+# the site's Estimate Settings (already present on mcft-stg). Only the neutral
+# CALENDAR values are seeded here; the workstation rebuild then uses whatever
+# salaries the site holds.
 DEFAULTS = {
-    "carpenter_salary": ###,
-    "helper_salary": ###,
-    "designer_salary": ###,
     "bonus_months": 1,
     "paid_holidays_per_month": 2,
     "national_holidays_per_year": 10,
@@ -15,10 +15,9 @@ DEFAULTS = {
 
 
 def execute():
-    """L1 follow-up: JSON field defaults don't apply to an existing Single, so
-    cost_model_rework rebuilt the workstations at the legacy hourly fallback
-    (###). Seed the salary + calendar values where unset, then rebuild the
-    operating components at the salary-derived rates (~### over ~162 hrs)."""
+    """L1 follow-up: JSON field defaults don't apply to an existing Single. Seed
+    the calendar values where unset, then rebuild the operating components at the
+    salary-derived rates (salaries: keyed on the site, ### in this repo)."""
     if not frappe.db.exists("DocType", "Estimate Settings"):
         return
     s = frappe.get_single("Estimate Settings")

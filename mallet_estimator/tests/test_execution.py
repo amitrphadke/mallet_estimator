@@ -72,9 +72,8 @@ class TestMaterialRateCard(MalletTestCase):
         # Hardware only when the group doesn't exist yet).
         self.assertIn(frappe.db.get_value("Item", "HWD_AH_SC_0", "item_group"),
                       ("Client Hardware", "Hardware"))
-        rate, source = inventory.material_rate("HWD_AH_SC_0")
-        self.assertEqual(rate, 300)
-        self.assertEqual(source, "assumed")
+        # Rates are sensitive (###) and no longer seeded from the repo — keyed on
+        # the site's price list instead, so no rate assertion here.
         # sheet code already carries its thickness — no double suffix
         self.assertTrue(frappe.db.exists("Item", "SG_PLY_V0_a_a_16mm"))
         self.assertFalse(frappe.db.exists("Item", "SG_PLY_V0_a_a_16mm_16mm"))

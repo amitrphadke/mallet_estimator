@@ -63,7 +63,7 @@ Components Cost* table (Manufacturing → Workstation → Operating Costs). Four
 | On-Site | 0 | 264 | 0 | 20 | 284 |
 
 \* The installer preserves any workstation you configured by hand and seeds the rest. **Wages =
-the 2-person crew (carpenter ₹157 + helper ₹107), folded in** — a step has only **Qty** and
+the 2-person crew (carpenter ₹### + helper ₹###, salary-derived), folded in** — a step has only **Qty** and
 **Min/Unit**; there are no carpenter/helper inputs. Edit a component on the Workstation and the
 Net Hour Rate re-sums. **Step cost = Net Hour Rate × (Qty × Min/Unit ÷ 60)** — and it updates
 **live as you type**, before you save.

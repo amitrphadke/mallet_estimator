@@ -57,11 +57,8 @@ class TestCostModelPatch(MalletTestCase):
         it = frappe.get_doc("Item", "JH_Abrotape")
         self.assertEqual(it.stock_uom, "Meter")
         self.assertIn("Roll", {r.uom for r in it.uoms})
-        # landed rate reproduces the tax-inclusive MRP: 325 packet / 55-per-roll÷20
-        landed, base, gst, _ = inventory.landed_rate("JH_Fevicol")
-        self.assertAlmostEqual(landed, ###, 0)
-        landed_m, *_ = inventory.landed_rate("JH_Abrotape")
-        self.assertAlmostEqual(landed_m * 20, ###, 0)
+        # MRPs are sensitive (###) and not seeded from the repo — rates are keyed
+        # on the site, so only the item/UOM structure is asserted here.
 
     def test_design_desk_and_operations_seeded(self):
         install.ensure_manufacturing_masters()

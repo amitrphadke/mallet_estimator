@@ -3,10 +3,11 @@ import frappe
 from mallet_estimator import inventory, install
 
 
-# .numbers card MRPs INCLUDE tax — store ex-tax so landed (= ex-tax x 1.18)
-# reproduces the MRP exactly.
-FEVICOL_MRP_INCL = ###   # per packet
-ABROTAPE_MRP_INCL = ###   # per 20 m roll
+# Joinery MRPs are SENSITIVE (###) — never stored in this repo. Rates were
+# seeded directly on the site's Estimation (Assumed) price list; 0 here means
+# "skip rate seeding" (items are still created).
+FEVICOL_MRP_INCL = 0.0
+ABROTAPE_MRP_INCL = 0.0
 GST = 18.0
 
 
@@ -49,9 +50,11 @@ def execute():
     #    bought in 20 m rolls — ensure_material_item's joinery spec is Nos-based.
     try:
         inventory.ensure_material_item("JH_Fevicol", kind="joinery")
-        inventory.set_assumed_rate("JH_Fevicol", round(FEVICOL_MRP_INCL / (1 + GST / 100), 2))
+        if FEVICOL_MRP_INCL:
+            inventory.set_assumed_rate("JH_Fevicol", round(FEVICOL_MRP_INCL / (1 + GST / 100), 2))
         _ensure_abrotape()
-        inventory.set_assumed_rate("JH_Abrotape", round(ABROTAPE_MRP_INCL / (1 + GST / 100) / 20.0, 4))
+        if ABROTAPE_MRP_INCL:
+            inventory.set_assumed_rate("JH_Abrotape", round(ABROTAPE_MRP_INCL / (1 + GST / 100) / 20.0, 4))
     except Exception:
         frappe.log_error(frappe.get_traceback(), "cost_model_rework joinery items")
 

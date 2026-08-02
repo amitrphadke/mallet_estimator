@@ -49,19 +49,22 @@ STEP_TEMPLATE = [
 # "Operating Components Cost" the Workstation master uses: Rent + Wages +
 # Machinery (depreciation) + Electricity + Consumables. `elec_hr`/`consumable_hr`
 # are per-workstation defaults (₹/hr) you can override directly on the Workstation.
+# COST DATA IS SENSITIVE (###): capital / electricity / consumables seed values
+# are NOT stored in this repo — key them on each ERPNext Workstation (the live
+# site already carries them). Zeros here mean "no code-side seed".
 # `dims` = (length, width) ft — shown in the settings footprint table. `crew` =
 # which staff work the station (their salary-derived rates become the Wage
 # components); default is the 2-person carpenter+helper crew.
 WORKSTATIONS = [
-    {"name": "Panel Saw",        "dims": (26, 15), "area_sqft": 26 * 15, "capital": ###, "life_years": 10, "elec_hr": 50, "consumable_hr": 50},
-    {"name": "Edge Bander",      "dims": (16, 4),  "area_sqft": 16 * 4,  "capital": ###, "life_years": 10, "elec_hr": 40, "consumable_hr": 60},
-    {"name": "Drill Press",      "dims": (16, 3),  "area_sqft": 16 * 3,  "capital": ###,  "life_years": 10, "elec_hr": 20, "consumable_hr": 20},
-    {"name": "Pasting Station",  "dims": (12, 8),  "area_sqft": 12 * 8,  "capital": 0,      "life_years": 10, "elec_hr": 10, "consumable_hr": 40},
-    {"name": "Assembly Station", "dims": (14, 15), "area_sqft": 14 * 15, "capital": ###,  "life_years": 10, "elec_hr": 10, "consumable_hr": 20},
-    {"name": "Project Room",     "dims": (14, 15), "area_sqft": 14 * 15, "capital": 0,      "life_years": 10, "elec_hr": 20, "consumable_hr": 10},
-    # D1 — the designer's desk: 6x4 ft, MAC + screens capital, designer crew.
-    {"name": "Design Desk",      "dims": (6, 4),   "area_sqft": 6 * 4,   "capital": ###, "life_years": 10, "elec_hr": 5,  "consumable_hr": 10, "crew": ("designer",)},
-    {"name": "On-Site",          "dims": (0, 0),   "area_sqft": 0,       "capital": 0,      "life_years": 10, "elec_hr": 0,  "consumable_hr": 20},
+    {"name": "Panel Saw",        "dims": (26, 15), "area_sqft": 26 * 15, "capital": 0, "life_years": 10, "elec_hr": 0, "consumable_hr": 0},
+    {"name": "Edge Bander",      "dims": (16, 4),  "area_sqft": 16 * 4,  "capital": 0, "life_years": 10, "elec_hr": 0, "consumable_hr": 0},
+    {"name": "Drill Press",      "dims": (16, 3),  "area_sqft": 16 * 3,  "capital": 0, "life_years": 10, "elec_hr": 0, "consumable_hr": 0},
+    {"name": "Pasting Station",  "dims": (12, 8),  "area_sqft": 12 * 8,  "capital": 0, "life_years": 10, "elec_hr": 0, "consumable_hr": 0},
+    {"name": "Assembly Station", "dims": (14, 15), "area_sqft": 14 * 15, "capital": 0, "life_years": 10, "elec_hr": 0, "consumable_hr": 0},
+    {"name": "Project Room",     "dims": (14, 15), "area_sqft": 14 * 15, "capital": 0, "life_years": 10, "elec_hr": 0, "consumable_hr": 0},
+    # D1 — the designer's desk: 6x4 ft, designer crew (capital ###, keyed on site).
+    {"name": "Design Desk",      "dims": (6, 4),   "area_sqft": 6 * 4,   "capital": 0, "life_years": 10, "elec_hr": 0, "consumable_hr": 0, "crew": ("designer",)},
+    {"name": "On-Site",          "dims": (0, 0),   "area_sqft": 0,       "capital": 0, "life_years": 10, "elec_hr": 0, "consumable_hr": 0},
 ]
 
 # Canonical order of the operating-cost components on every Workstation (OPS3 —
@@ -125,7 +128,8 @@ OPERATION_STANDARDS_DESIGN = DESIGN_STANDARDS  # alias for controllers
 #   ext    = external laminate (separate careful trip)
 #   client = client hardware (hinges/rails/handles/lifts)
 #   outward = finished goods to site
-TRANSPORT_DEFAULTS = {"tempo": 1500, "ext_lam": 500, "client_hw": 800, "outward": 1500}
+# Trip rates are SENSITIVE (###) — live values are keyed in Estimate Settings.
+TRANSPORT_DEFAULTS = {"tempo": 0, "ext_lam": 0, "client_hw": 0, "outward": 0}
 
 
 def transport_rates(settings):

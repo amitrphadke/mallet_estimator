@@ -19,28 +19,41 @@ def _settings(**over):
 
 class TestWorkstationRates(unittest.TestCase):
     def test_modular_components(self):
-        # OPS3: Rent = pure space rent, Depreciation its own component, one Wage
-        # component per crew member; zero-value components skipped per station.
+        # OPS3: modular per-role components in canonical order; zero-value
+        # components are skipped (cost seed values are ### — never in the repo,
+        # so code-side seeds are zeros and only rent + wages appear here).
         rates = {w["name"]: w for w in E.workstation_rates(_settings())}
         comps = [c for c, _ in rates["Panel Saw"]["components"]]
-        self.assertEqual(comps, ["Rent", "Depreciation", "Carpenter Wage", "Helper Wage",
-                                 "Electricity", "Consumables"])
+        self.assertIn("Rent", comps)
+        self.assertIn("Carpenter Wage", comps)
+        self.assertIn("Helper Wage", comps)
+        # order always respects WS_COMPONENTS
+        idx = [E.WS_COMPONENTS.index(c) for c in comps]
+        self.assertEqual(idx, sorted(idx))
+        # a synthetic capital produces a Depreciation component of its own
+        orig = E.WORKSTATIONS[0]["capital"]
+        try:
+            E.WORKSTATIONS[0]["capital"] = 120000
+            r2 = {w["name"]: w for w in E.workstation_rates(_settings())}
+            self.assertIn("Depreciation", [c for c, _ in r2["Panel Saw"]["components"]])
+        finally:
+            E.WORKSTATIONS[0]["capital"] = orig
         # D1: the Design Desk is crewed by the designer only.
         dcomps = [c for c, _ in rates["Design Desk"]["components"]]
         self.assertIn("Designer Wage", dcomps)
         self.assertNotIn("Carpenter Wage", dcomps)
 
     def test_salary_calendar_rates(self):
-        # L1: ###/mo carpenter + 1-month Diwali bonus over ~162 productive hrs
-        # (26 − 2 paid − 10/12 natl days x 7 hrs) ≈ ₹174.5/hr.
-        s = _settings(carpenter_salary=###, helper_salary=###, bonus_months=1,
+        # L1: SYNTHETIC salaries (real figures are sensitive, never in the repo).
+        # salary + bonus month over (26 − 2 paid − 10/12 natl days) x 7 hrs.
+        s = _settings(carpenter_salary=13000, helper_salary=6500, bonus_months=1,
                       paid_holidays_per_month=2, national_holidays_per_year=10,
                       lunch_hours_per_day=1)
         self.assertAlmostEqual(E.working_days_per_month(s), 26 - 2 - 10 / 12.0, places=4)
         self.assertAlmostEqual(E.working_hours_per_month(s), (26 - 2 - 10 / 12.0) * 7, places=4)
         r = E.staff_rates(s)
-        self.assertAlmostEqual(r["carpenter"], ### * 13 / 12.0 / ((26 - 2 - 10 / 12.0) * 7), places=4)
-        self.assertAlmostEqual(r["helper"], ### * 13 / 12.0 / ((26 - 2 - 10 / 12.0) * 7), places=4)
+        self.assertAlmostEqual(r["carpenter"], 13000 * 13 / 12.0 / ((26 - 2 - 10 / 12.0) * 7), places=4)
+        self.assertAlmostEqual(r["helper"], 6500 * 13 / 12.0 / ((26 - 2 - 10 / 12.0) * 7), places=4)
 
     def test_legacy_hourly_fallback(self):
         # No salaries keyed -> the old hourly fields still price (back-compat).

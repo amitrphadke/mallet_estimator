@@ -54,19 +54,22 @@
    "fieldname": "carpenter_salary",
    "fieldtype": "Currency",
    "label": "Carpenter Salary (₹/month)",
-   "default": "###"
+   "default": "0",
+   "description": "(### sensitive — key the real value here on the site; never stored in the repo.)"
   },
   {
    "fieldname": "helper_salary",
    "fieldtype": "Currency",
    "label": "Helper Salary (₹/month)",
-   "default": "###"
+   "default": "0",
+   "description": "(### sensitive — key the real value here on the site; never stored in the repo.)"
   },
   {
    "fieldname": "designer_salary",
    "fieldtype": "Currency",
    "label": "Designer Salary (₹/month)",
-   "default": "###"
+   "default": "0",
+   "description": "(### sensitive — key the real value here on the site; never stored in the repo.)"
   },
   {
    "fieldname": "bonus_months",
@@ -119,20 +122,22 @@
    "fieldname": "carpenter_rate",
    "fieldtype": "Currency",
    "label": "Carpenter Rate (per hour) — legacy",
-   "default": "157",
-   "description": "Used only when no Carpenter Salary is set."
+   "default": "0",
+   "description": "Used only when no Carpenter Salary is set. (### sensitive — key the real value here on the site; never stored in the repo.)"
   },
   {
    "fieldname": "helper_rate",
    "fieldtype": "Currency",
    "label": "Helper Rate (per hour) — legacy",
-   "default": "107"
+   "default": "0",
+   "description": "(### sensitive — key the real value here on the site; never stored in the repo.)"
   },
   {
    "fieldname": "design_rate",
    "fieldtype": "Currency",
    "label": "Design Rate (per hour) — legacy",
-   "default": "300"
+   "default": "0",
+   "description": "(### sensitive — key the real value here on the site; never stored in the repo.)"
   },
   {
    "fieldname": "column_break_rates",
@@ -142,7 +147,8 @@
    "fieldname": "monthly_rent",
    "fieldtype": "Currency",
    "label": "Monthly Rent",
-   "default": "###"
+   "default": "0",
+   "description": "(### sensitive — key the real value here on the site; never stored in the repo.)"
   },
   {
    "fieldname": "factory_section",
@@ -185,11 +191,38 @@
    "label": "Transport Trip Rates (₹/trip)",
    "description": "Inward: big tempo = ply + internal laminate + joinery hardware; separate trips for external laminate and client hardware. Outward = finished goods to site."
   },
-  {"fieldname": "trip_rate_tempo", "fieldtype": "Currency", "label": "Big Tempo (ply / int-laminate / joinery)", "default": "1500"},
-  {"fieldname": "trip_rate_ext_lam", "fieldtype": "Currency", "label": "External Laminate Trip", "default": "500"},
-  {"fieldname": "column_break_transport", "fieldtype": "Column Break"},
-  {"fieldname": "trip_rate_client_hw", "fieldtype": "Currency", "label": "Client Hardware Trip", "default": "800"},
-  {"fieldname": "trip_rate_outward", "fieldtype": "Currency", "label": "Outward Delivery Trip", "default": "1500"},
+  {
+   "fieldname": "trip_rate_tempo",
+   "fieldtype": "Currency",
+   "label": "Big Tempo (ply / int-laminate / joinery)",
+   "default": "0",
+   "description": "(### sensitive — key the real value here on the site; never stored in the repo.)"
+  },
+  {
+   "fieldname": "trip_rate_ext_lam",
+   "fieldtype": "Currency",
+   "label": "External Laminate Trip",
+   "default": "0",
+   "description": "(### sensitive — key the real value here on the site; never stored in the repo.)"
+  },
+  {
+   "fieldname": "column_break_transport",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "trip_rate_client_hw",
+   "fieldtype": "Currency",
+   "label": "Client Hardware Trip",
+   "default": "0",
+   "description": "(### sensitive — key the real value here on the site; never stored in the repo.)"
+  },
+  {
+   "fieldname": "trip_rate_outward",
+   "fieldtype": "Currency",
+   "label": "Outward Delivery Trip",
+   "default": "0",
+   "description": "(### sensitive — key the real value here on the site; never stored in the repo.)"
+  },
   {
    "fieldname": "calculator_section",
    "fieldtype": "Section Break",
@@ -210,13 +243,14 @@
    "fieldtype": "Percent",
    "label": "Material %",
    "default": "0",
-   "description": "Material shows at the unit rates you enter; keep 0 unless you add a % on top."
+   "description": "Material shows at the unit rates you enter; keep 0 unless you add a % on top. (### sensitive — key the real value here on the site; never stored in the repo.)"
   },
   {
    "fieldname": "markup_labor",
    "fieldtype": "Percent",
    "label": "Labor %",
-   "default": "40"
+   "default": "0",
+   "description": "(### sensitive — key the real value here on the site; never stored in the repo.)"
   },
   {
    "fieldname": "column_break_markup",
@@ -226,13 +260,15 @@
    "fieldname": "markup_overhead",
    "fieldtype": "Percent",
    "label": "Overhead %",
-   "default": "40"
+   "default": "0",
+   "description": "(### sensitive — key the real value here on the site; never stored in the repo.)"
   },
   {
    "fieldname": "markup_design",
    "fieldtype": "Percent",
    "label": "Design %",
-   "default": "30"
+   "default": "0",
+   "description": "(### sensitive — key the real value here on the site; never stored in the repo.)"
   }
  ],
  "links": [],
