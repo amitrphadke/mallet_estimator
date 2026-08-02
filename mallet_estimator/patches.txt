@@ -25,3 +25,5 @@ mallet_estimator.patches.seed_material_rates
 # T1/L1/OPS3/D1/J1/C1 — GST field, Client/Joinery groups + re-home, JH items,
 # modular workstation components, Design Desk + design operations.
 mallet_estimator.patches.cost_model_rework
+# L1 follow-up: seed salary/calendar on the existing Single, rebuild at true rates.
+mallet_estimator.patches.seed_salary_calendar
