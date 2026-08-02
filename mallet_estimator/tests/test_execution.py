@@ -68,7 +68,10 @@ class TestMaterialRateCard(MalletTestCase):
         inventory.ensure_inventory_masters()
         seed_material_rates.execute()
         self.assertTrue(frappe.db.exists("Item", "HWD_AH_SC_0"))
-        self.assertEqual(frappe.db.get_value("Item", "HWD_AH_SC_0", "item_group"), "Hardware")
+        # C1: client-selectable hardware lands in its own group (falls back to
+        # Hardware only when the group doesn't exist yet).
+        self.assertIn(frappe.db.get_value("Item", "HWD_AH_SC_0", "item_group"),
+                      ("Client Hardware", "Hardware"))
         rate, source = inventory.material_rate("HWD_AH_SC_0")
         self.assertEqual(rate, 300)
         self.assertEqual(source, "assumed")

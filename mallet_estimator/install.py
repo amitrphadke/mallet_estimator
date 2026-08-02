@@ -6,7 +6,12 @@ import frappe
 from mallet_estimator.estimator import (
     STEP_TEMPLATE, WORKSTATIONS, OPERATION_WORKSTATION, OPERATION_STANDARDS,
     ROUTING_NAME, WS_COMPONENTS, workstation_rates,
+    DESIGN_STEP_TEMPLATE, DESIGN_STANDARDS,
 )
+
+# Legacy operating components (pre-OPS3 folded model) — still valid on a
+# workstation until the rework patch rebuilds it; never auto-stripped.
+LEGACY_WS_COMPONENTS = ("Wages", "Machinery")
 from mallet_estimator import inventory
 from mallet_estimator.inventory import (
     ensure_inventory_masters, ensure_warehouses, ensure_pricing_masters,
@@ -187,7 +192,8 @@ def _strip_invalid_costs(ws):
     if not ws.meta.has_field("workstation_costs"):
         return False
     rows = ws.get("workstation_costs") or []
-    valid = [r for r in rows if r.operating_component in WS_COMPONENTS]
+    ok = set(WS_COMPONENTS) | set(LEGACY_WS_COMPONENTS)
+    valid = [r for r in rows if r.operating_component in ok]
     if len(valid) != len(rows):
         ws.set("workstation_costs", valid)
         return True
@@ -260,9 +266,10 @@ def ensure_manufacturing_masters():
     op_meta = frappe.get_meta("Operation")
     has_min = op_meta.has_field("mallet_min_per_unit")
 
-    for t in STEP_TEMPLATE:
+    for t in STEP_TEMPLATE + DESIGN_STEP_TEMPLATE:
         op_name = _op_name(t["phase"])
-        mins = OPERATION_STANDARDS.get(t["phase"], {}).get("min_per_unit", 0)
+        mins = OPERATION_STANDARDS.get(t["phase"], {}).get("min_per_unit", 0) \
+            or DESIGN_STANDARDS.get(t["phase"], {}).get("min_per_unit", 0)
         ws = OPERATION_WORKSTATION.get(t["phase"])
         try:
             if frappe.db.exists("Operation", op_name):
@@ -427,8 +434,8 @@ def verify_setup():
     # F3 — structured coding Item fields; F2/S3 — maker/brand + part-no fields.
     imeta = frappe.get_meta("Item")
     cf = [f for f in ("mallet_visible_sides", "mallet_lam_internal", "mallet_lam_external",
-                      "mallet_mfr_part_no") if not imeta.has_field(f)]
-    chk("Coding/sourcing fields", not cf, ("missing: " + ", ".join(cf)) if cf else "coding + mfr part no ✓")
+                      "mallet_mfr_part_no", "mallet_gst_pct") if not imeta.has_field(f)]
+    chk("Coding/sourcing fields", not cf, ("missing: " + ", ".join(cf)) if cf else "coding + mfr part no + GST% ✓")
     miss_mfr = missing("Manufacturer", inventory.MANUFACTURERS)
     miss_brand = missing("Brand", inventory.BRAND_NAMES)
     chk("Manufacturers/Brands", not miss_mfr and not miss_brand,

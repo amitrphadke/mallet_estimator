@@ -18,10 +18,35 @@ def _settings(**over):
 
 
 class TestWorkstationRates(unittest.TestCase):
-    def test_four_components_no_machinery(self):
+    def test_modular_components(self):
+        # OPS3: Rent = pure space rent, Depreciation its own component, one Wage
+        # component per crew member; zero-value components skipped per station.
         rates = {w["name"]: w for w in E.workstation_rates(_settings())}
         comps = [c for c, _ in rates["Panel Saw"]["components"]]
-        self.assertEqual(comps, ["Rent", "Wages", "Electricity", "Consumables"])
+        self.assertEqual(comps, ["Rent", "Depreciation", "Carpenter Wage", "Helper Wage",
+                                 "Electricity", "Consumables"])
+        # D1: the Design Desk is crewed by the designer only.
+        dcomps = [c for c, _ in rates["Design Desk"]["components"]]
+        self.assertIn("Designer Wage", dcomps)
+        self.assertNotIn("Carpenter Wage", dcomps)
+
+    def test_salary_calendar_rates(self):
+        # L1: ###/mo carpenter + 1-month Diwali bonus over ~162 productive hrs
+        # (26 − 2 paid − 10/12 natl days x 7 hrs) ≈ ₹174.5/hr.
+        s = _settings(carpenter_salary=###, helper_salary=###, bonus_months=1,
+                      paid_holidays_per_month=2, national_holidays_per_year=10,
+                      lunch_hours_per_day=1)
+        self.assertAlmostEqual(E.working_days_per_month(s), 26 - 2 - 10 / 12.0, places=4)
+        self.assertAlmostEqual(E.working_hours_per_month(s), (26 - 2 - 10 / 12.0) * 7, places=4)
+        r = E.staff_rates(s)
+        self.assertAlmostEqual(r["carpenter"], ### * 13 / 12.0 / ((26 - 2 - 10 / 12.0) * 7), places=4)
+        self.assertAlmostEqual(r["helper"], ### * 13 / 12.0 / ((26 - 2 - 10 / 12.0) * 7), places=4)
+
+    def test_legacy_hourly_fallback(self):
+        # No salaries keyed -> the old hourly fields still price (back-compat).
+        r = E.staff_rates(_settings())
+        self.assertEqual(r["carpenter"], 157)
+        self.assertEqual(r["helper"], 107)
 
     def test_wages_is_two_person_crew(self):
         r = {w["name"]: w for w in E.workstation_rates(_settings())}["Assembly Station"]

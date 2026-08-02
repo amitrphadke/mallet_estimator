@@ -12,6 +12,7 @@ class Estimate(Document):
         # Provisional allowances (F6) — amounts are a simple qty x assumed rate,
         # recomputed every save so the client-print subtotal is always right.
         self.compute_allowances()
+        self.compute_transport_and_tax()
 
     def compute_allowances(self):
         total = 0
@@ -19,6 +20,47 @@ class Estimate(Document):
             a.amount = (a.qty or 0) * (a.assumed_rate or 0)
             total += a.amount
         self.total_allowance = total
+
+    def compute_transport_and_tax(self):
+        """C1 — consolidated transport: SKUs SHARE trips, so the estimate's own
+        trip counts (defaulted to the max any SKU needs, editable) are what the
+        client pays — per-SKU transport is only a standalone view. T1 — output
+        GST is charged on top of the client total (quote plus GST, always)."""
+        if not self.meta.has_field("total_transport"):
+            return
+        from mallet_estimator.estimator import transport_rates
+        settings = frappe.get_single("Estimate Settings")
+        rates = transport_rates(settings)
+        # Default each trip type to the max any SKU suggests (shared trip).
+        if not any(int(self.get(f) or 0) for f in
+                   ("trips_tempo", "trips_ext_lam", "trips_client_hw", "trips_outward")):
+            need = {"trips_tempo": 0, "trips_ext_lam": 0, "trips_client_hw": 0, "trips_outward": 0}
+            for row in self.skus or []:
+                if not row.estimate_sku:
+                    continue
+                vals = frappe.db.get_value(
+                    "Estimate SKU", row.estimate_sku,
+                    ["trips_tempo", "trips_ext_lam", "trips_client_hw", "trips_outward"], as_dict=True,
+                ) or {}
+                for f in need:
+                    need[f] = max(need[f], int(vals.get(f) or 0))
+            for f, v in need.items():
+                self.set(f, v)
+        self.total_transport = (
+            int(self.trips_tempo or 0) * rates["tempo"]
+            + int(self.trips_ext_lam or 0) * rates["ext_lam"]
+            + int(self.trips_client_hw or 0) * rates["client_hw"]
+            + int(self.trips_outward or 0) * rates["outward"]
+        )
+        # aggregate_project_skus left the totals transport-free; add the shared
+        # trips here, then output GST on the full client amount.
+        if self.docstatus == 0:
+            self.total_internal = (self.total_internal or 0) + self.total_transport
+            self.total_client = (self.total_client or 0) + self.total_transport
+        base = (self.total_client or 0)
+        gst_pct = self.gst_pct if self.gst_pct is not None else 18
+        self.total_gst = base * (gst_pct or 0) / 100.0
+        self.total_with_gst = base + self.total_gst
 
     @frappe.whitelist()
     def refresh_skus(self):
@@ -52,12 +94,17 @@ class Estimate(Document):
             totals["labor"] += s.labor_cost or 0
             totals["overhead"] += s.overhead_cost or 0
             totals["design"] += s.design_cost or 0
-            totals["internal"] += s.internal_cost or 0
+            # Per-SKU transport is a STANDALONE view (client_total already excludes
+            # it) — strip it from internal too; the estimate's consolidated trips
+            # are added in compute_transport_and_tax.
+            totals["internal"] += (s.internal_cost or 0) - (s.get("transport_cost") or 0)
             totals["client"] += s.client_total or 0
         self.total_material = totals["material"]
         self.total_labor = totals["labor"]
         self.total_overhead = totals["overhead"]
         self.total_design = totals["design"]
+        # Transport-free at this point; compute_transport_and_tax (which runs
+        # right after in validate) adds the consolidated trips + GST on top.
         self.total_internal = totals["internal"]
         self.total_client = totals["client"]
 

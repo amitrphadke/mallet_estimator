@@ -8,6 +8,7 @@ from mallet_estimator import opencutlist, estimate_pdf, inventory, views_pdf
 from mallet_estimator.estimator import (
     STEP_TEMPLATE, OPERATION_STANDARDS, OPERATION_WORKSTATION, calc_sku, sku_code,
     customer_initials, op_phase, live_workstation_rates,
+    DESIGN_STEP_TEMPLATE, DESIGN_STANDARDS,
 )
 
 DEFAULT_WORKSTATION = "Assembly Station"
@@ -28,7 +29,8 @@ def operation_defaults(op_name):
             mins = frappe.db.get_value("Operation", op_name, "mallet_min_per_unit") or 0
         ws = frappe.db.get_value("Operation", op_name, "workstation")
     if not mins:
-        mins = OPERATION_STANDARDS.get(op_name, {}).get("min_per_unit", 0)
+        mins = OPERATION_STANDARDS.get(op_name, {}).get("min_per_unit", 0) \
+            or DESIGN_STANDARDS.get(op_name, {}).get("min_per_unit", 0)
     if not ws:
         ws = OPERATION_WORKSTATION.get(op_name)
     return mins, ws
@@ -46,10 +48,14 @@ def get_default_item_group():
 class EstimateSKU(Document):
     def validate(self):
         self.ensure_steps()
+        self.ensure_design_steps()
         self.maybe_import()
         self.compute_code()
         self.enforce_locked_qty()
+        self.derive_joinery()
+        self.suggest_transport_trips()
         self.compute_costs()
+        self.build_cost_breakup()
 
     def maybe_import(self):
         """When an estimation input PDF is attached (or changed), import the
@@ -164,13 +170,14 @@ class EstimateSKU(Document):
 
     def _add_material_line(self, name, kind, thickness, qty, desc, unpriced, dims=None):
         """Create/link the ERPNext stock Item and append a costed material row.
-        Length/width/thickness are fetched from the Item (fetch_from) — single
-        source of truth, not stored redundantly on the line."""
+        T1: the unit cost is the LANDED (post-tax) rate — ex-tax estimation rate
+        grossed up by the item's GST % — so estimates never underquote taxes."""
         code, rate, source = inventory.ensure_material_item(name, kind=kind, thickness=thickness, dims=dims)
+        landed, _base, _gst, _src = inventory.landed_rate(code)
         self.append("materials", {
             "item": code, "material": name, "description": (desc or name)[:140],
             "qty": qty, "uom": inventory.stock_uom_for(kind),
-            "unit_cost": rate, "line_cost": qty * (rate or 0),
+            "unit_cost": landed, "line_cost": qty * (landed or 0),
         })
         if source == "unset":
             unpriced.append(code)
@@ -233,6 +240,106 @@ class EstimateSKU(Document):
                 "qty": 1,
             })
 
+    def ensure_design_steps(self):
+        """D1 — seed the designer's 7-step pipeline (priced at the Design Desk
+        workstation). Same Operation-master model as the execution steps."""
+        if not self.meta.has_field("design_labor"):
+            return
+        if self.design_labor:
+            for row in self.design_labor:
+                if not getattr(row, "operation", None):
+                    row.operation = op_phase(row)
+                if not row.workstation:
+                    row.workstation = "Design Desk"
+            return
+        for t in DESIGN_STEP_TEMPLATE:
+            op_name = t["phase"]
+            mins, ws = operation_defaults(op_name)
+            if not mins:
+                mins = DESIGN_STANDARDS.get(op_name, {}).get("min_per_unit", 0)
+            self.append("design_labor", {
+                "operation": op_name,
+                "phase": op_name,
+                "workstation": ws or "Design Desk",
+                "carp_min": mins,
+                "in_factory": t.get("in_factory", 1),
+                "qty": 1,
+            })
+
+    # --- derived consumables + transport (J1 / C1) -------------------------
+    def derive_joinery(self):
+        """J1 — Fevicol + Abrotape derived from the Sheet Lamination step qty:
+        3 packets + 11 m tape per laminated sheet, as stocked Joinery Hardware
+        items at their landed (post-tax) rate."""
+        if not self.meta.has_field("joinery_items"):
+            return
+        sheets = 0.0
+        for row in self.labor or []:
+            if op_phase(row) == "Sheet Lamination":
+                sheets = float(row.qty or 0)
+                break
+        self.set("joinery_items", [])
+        if not sheets:
+            return
+        for code, qty, uom, note in (
+            ("JH_Fevicol", 3 * sheets, "Nos", f"3 packets × {sheets:g} laminated sheet(s)"),
+            ("JH_Abrotape", 11 * sheets, "Meter", f"11 m × {sheets:g} laminated sheet(s) — 20 m rolls"),
+        ):
+            try:
+                item_code, _rate, _src = inventory.ensure_material_item(code, kind="joinery")
+                landed, _base, _gst, _s = inventory.landed_rate(item_code)
+            except Exception:
+                frappe.log_error(frappe.get_traceback(), f"derive_joinery {code}")
+                item_code, landed = None, 0
+            self.append("joinery_items", {
+                "item": item_code, "description": note, "qty": qty,
+                "uom": uom if frappe.db.exists("UOM", uom) else None,
+                "unit_cost": landed, "amount": qty * (landed or 0),
+                "derived_from": "Sheet Lamination",
+            })
+
+    def suggest_transport_trips(self):
+        """C1 — default the inward/outward trip counts from what the SKU actually
+        uses; never overrides a hand-set value (any non-zero trip field)."""
+        if not self.meta.has_field("trips_tempo"):
+            return
+        if any(int(getattr(self, f, 0) or 0) for f in
+               ("trips_tempo", "trips_ext_lam", "trips_client_hw", "trips_outward")):
+            return
+        buckets = {inventory.material_bucket(m.item, m.material) for m in (self.materials or [])}
+        tempo_buckets = {"Ply V0 (structure grade)", "Ply V1 (visible grade)",
+                         "Laminate Internal", "Joinery Hardware", "Edge Banding Internal",
+                         "Edge Banding External"}
+        self.trips_tempo = 1 if (buckets & tempo_buckets or self.get("joinery_items")) else 0
+        self.trips_ext_lam = 1 if "Laminate External" in buckets else 0
+        self.trips_client_hw = 1 if "Client Hardware" in buckets else 0
+        self.trips_outward = 1 if self.materials else 0
+
+    def build_cost_breakup(self):
+        """C1 — the one-table cost story: material by bucket, joinery, design
+        labor, carpentry wages, factory cost, transport → internal + client."""
+        if not self.meta.has_field("cost_breakup"):
+            return
+        r = getattr(self, "_calc", None) or {}
+        mat = {}
+        for m in self.materials or []:
+            b = inventory.material_bucket(m.item, m.material)
+            mat[b] = mat.get(b, 0) + float(m.line_cost or 0)
+        rows = [[f"Material — {k}", v] for k, v in sorted(mat.items())]
+        rows.append(["Material — Joinery Consumables (Fevicol/Abrotape)", float(self.get("joinery_cost") or 0)])
+        rows.append(["Design Labor (Design Desk)", float(self.design_cost or 0)])
+        rows.append(["Carpentry Wages (workstation wage components)", float(r.get("labor_cost", self.labor_cost or 0))])
+        rows.append(["Factory Cost (rent + electricity + consumables + depreciation)",
+                     float(self.overhead_cost or 0)])
+        rows.append(["Transport (inward + outward)", float(self.get("transport_cost") or 0)])
+        self.cost_breakup = json.dumps({
+            "rows": rows,
+            "internal": float(self.internal_cost or 0),
+            "client_material": float(self.client_material or 0),
+            "client_design_exec": float(self.client_design_exec or 0),
+            "client_total": float(self.client_total or 0),
+        })
+
     # --- naming ------------------------------------------------------------
     def customer_display_name(self):
         if not self.customer:
@@ -262,19 +369,22 @@ class EstimateSKU(Document):
                 m.line_cost = (m.qty or 0) * (m.unit_cost or 0)
         # Show each step's master Std Time (min/unit) next to its actual Min/Unit,
         # so an override (Min/Unit != Std) is obvious at a glance.
-        for row in self.labor or []:
+        for row in list(self.labor or []) + list(self.get("design_labor") or []):
             row.std_min = operation_defaults(op_phase(row))[0]
         # Each phase is priced at its Workstation's live Net Hour Rate from the
-        # ERPNext Manufacturing master (Rent + Wages + Machinery + Electricity +
-        # Consumables). Wages are folded in — no per-row carpenter/helper charge.
+        # ERPNext Manufacturing master (Rent + per-role Wages + Depreciation +
+        # Electricity + Consumables). Wages are folded in per workstation crew.
         ws_rates = live_workstation_rates(settings)
         r = calc_sku(self, settings, ws_rates=ws_rates)
+        self._calc = r  # kept for the cost-breakup table
         for k in (
             "material_cost", "labor_cost", "machine_cost", "rent_cost", "overhead_cost",
             "design_cost", "internal_cost", "client_material", "client_design_exec",
             "client_total", "carp_min_total", "helper_min_total",
+            "joinery_cost", "transport_cost",
         ):
-            self.set(k, r[k])
+            if self.meta.has_field(k):
+                self.set(k, r.get(k, 0))
         self.compute_execution()
 
     def compute_execution(self):

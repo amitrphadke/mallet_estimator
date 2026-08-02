@@ -49,21 +49,29 @@ STEP_TEMPLATE = [
 # "Operating Components Cost" the Workstation master uses: Rent + Wages +
 # Machinery (depreciation) + Electricity + Consumables. `elec_hr`/`consumable_hr`
 # are per-workstation defaults (₹/hr) you can override directly on the Workstation.
+# `dims` = (length, width) ft — shown in the settings footprint table. `crew` =
+# which staff work the station (their salary-derived rates become the Wage
+# components); default is the 2-person carpenter+helper crew.
 WORKSTATIONS = [
-    {"name": "Panel Saw",        "area_sqft": 26 * 15, "capital": ###, "life_years": 10, "elec_hr": 50, "consumable_hr": 50},
-    {"name": "Edge Bander",      "area_sqft": 16 * 4,  "capital": ###, "life_years": 10, "elec_hr": 40, "consumable_hr": 60},
-    {"name": "Drill Press",      "area_sqft": 16 * 3,  "capital": ###,  "life_years": 10, "elec_hr": 20, "consumable_hr": 20},
-    {"name": "Pasting Station",  "area_sqft": 12 * 8,  "capital": 0,      "life_years": 10, "elec_hr": 10, "consumable_hr": 40},
-    {"name": "Assembly Station", "area_sqft": 14 * 15, "capital": ###,  "life_years": 10, "elec_hr": 10, "consumable_hr": 20},
-    {"name": "Project Room",     "area_sqft": 14 * 15, "capital": 0,      "life_years": 10, "elec_hr": 20, "consumable_hr": 10},
-    {"name": "On-Site",          "area_sqft": 0,       "capital": 0,      "life_years": 10, "elec_hr": 0,  "consumable_hr": 20},
+    {"name": "Panel Saw",        "dims": (26, 15), "area_sqft": 26 * 15, "capital": ###, "life_years": 10, "elec_hr": 50, "consumable_hr": 50},
+    {"name": "Edge Bander",      "dims": (16, 4),  "area_sqft": 16 * 4,  "capital": ###, "life_years": 10, "elec_hr": 40, "consumable_hr": 60},
+    {"name": "Drill Press",      "dims": (16, 3),  "area_sqft": 16 * 3,  "capital": ###,  "life_years": 10, "elec_hr": 20, "consumable_hr": 20},
+    {"name": "Pasting Station",  "dims": (12, 8),  "area_sqft": 12 * 8,  "capital": 0,      "life_years": 10, "elec_hr": 10, "consumable_hr": 40},
+    {"name": "Assembly Station", "dims": (14, 15), "area_sqft": 14 * 15, "capital": ###,  "life_years": 10, "elec_hr": 10, "consumable_hr": 20},
+    {"name": "Project Room",     "dims": (14, 15), "area_sqft": 14 * 15, "capital": 0,      "life_years": 10, "elec_hr": 20, "consumable_hr": 10},
+    # D1 — the designer's desk: 6x4 ft, MAC + screens capital, designer crew.
+    {"name": "Design Desk",      "dims": (6, 4),   "area_sqft": 6 * 4,   "capital": ###, "life_years": 10, "elec_hr": 5,  "consumable_hr": 10, "crew": ("designer",)},
+    {"name": "On-Site",          "dims": (0, 0),   "area_sqft": 0,       "capital": 0,      "life_years": 10, "elec_hr": 0,  "consumable_hr": 20},
 ]
 
-# Canonical order of the operating-cost components on every Workstation. These
-# are the four standard ERPNext "Workstation Operating Component" records; machine
-# depreciation is folded into Consumables (no separate "Machinery" component to
-# create). Wages = the 2-person crew, so labour lives inside the workstation rate.
-WS_COMPONENTS = ["Rent", "Wages", "Electricity", "Consumables"]
+# Canonical order of the operating-cost components on every Workstation (OPS3 —
+# modular): Rent = pure space rent; Depreciation = machine capital straight-line
+# (its own component, no longer folded into Consumables); one Wage component per
+# crew member (salary-derived, L1). Zero-value components are skipped per station.
+WS_COMPONENTS = ["Rent", "Depreciation", "Carpenter Wage", "Helper Wage", "Designer Wage",
+                 "Electricity", "Consumables"]
+DEFAULT_CREW = ("carpenter", "helper")
+WAGE_COMPONENT = {"carpenter": "Carpenter Wage", "helper": "Helper Wage", "designer": "Designer Wage"}
 
 # Which workstation each of the 17 operations runs on (matches STEP_TEMPLATE).
 OPERATION_WORKSTATION = {
@@ -86,6 +94,48 @@ OPERATION_WORKSTATION = {
     "Miscellaneous - extra": "Assembly Station",
 }
 
+# D1 — the design pipeline as first-class labor: 7 steps, all worked by the
+# designer at the Design Desk (site measurement happens on-site but is still the
+# designer's time; in_factory=0 marks it off-site). Std minutes live on the
+# Operation master (mallet_min_per_unit) like every other operation — these are
+# the seed defaults, tune them on the Operation.
+DESIGN_STEP_TEMPLATE = [
+    {"phase": "Site Measurement (ImageMeter + Laser)", "in_factory": 0},
+    {"phase": "Live 3D Floor Plan",                    "in_factory": 1},
+    {"phase": "Export 3D Plan to SKP",                 "in_factory": 1},
+    {"phase": "SKU in SketchUp (OCL)",                 "in_factory": 1},
+    {"phase": "7 Views PDF (Layout)",                  "in_factory": 1},
+    {"phase": "Estimate PDF (OCL)",                    "in_factory": 1},
+    {"phase": "Part List PDF (OCL)",                   "in_factory": 1},
+]
+DESIGN_STANDARDS = {
+    "Site Measurement (ImageMeter + Laser)": {"qty_source": "manual", "min_per_unit": 120},
+    "Live 3D Floor Plan":                    {"qty_source": "manual", "min_per_unit": 240},
+    "Export 3D Plan to SKP":                 {"qty_source": "manual", "min_per_unit": 30},
+    "SKU in SketchUp (OCL)":                 {"qty_source": "manual", "min_per_unit": 180},
+    "7 Views PDF (Layout)":                  {"qty_source": "manual", "min_per_unit": 60},
+    "Estimate PDF (OCL)":                    {"qty_source": "manual", "min_per_unit": 15},
+    "Part List PDF (OCL)":                   {"qty_source": "manual", "min_per_unit": 15},
+}
+OPERATION_WORKSTATION.update({t["phase"]: "Design Desk" for t in DESIGN_STEP_TEMPLATE})
+OPERATION_STANDARDS_DESIGN = DESIGN_STANDARDS  # alias for controllers
+
+# C1 — inward material trips (₹/trip, defaults; live values come from settings):
+#   tempo  = ply + internal laminate + joinery hardware (one big tempo)
+#   ext    = external laminate (separate careful trip)
+#   client = client hardware (hinges/rails/handles/lifts)
+#   outward = finished goods to site
+TRANSPORT_DEFAULTS = {"tempo": 1500, "ext_lam": 500, "client_hw": 800, "outward": 1500}
+
+
+def transport_rates(settings):
+    return {
+        "tempo": _get(settings, "trip_rate_tempo", TRANSPORT_DEFAULTS["tempo"]) or TRANSPORT_DEFAULTS["tempo"],
+        "ext_lam": _get(settings, "trip_rate_ext_lam", TRANSPORT_DEFAULTS["ext_lam"]) or TRANSPORT_DEFAULTS["ext_lam"],
+        "client_hw": _get(settings, "trip_rate_client_hw", TRANSPORT_DEFAULTS["client_hw"]) or TRANSPORT_DEFAULTS["client_hw"],
+        "outward": _get(settings, "trip_rate_outward", TRANSPORT_DEFAULTS["outward"]) or TRANSPORT_DEFAULTS["outward"],
+    }
+
 ROUTING_NAME = "Mallet Standard Build"
 
 
@@ -103,31 +153,34 @@ def workstation_rates(settings):
     """
     whm = working_hours_per_month(settings)
     monthly_rent = _num(settings.monthly_rent)
-    # Every operation is a 2-person crew (1 carpenter + 1 helper); the wage is
-    # folded into the workstation rate, not charged per person on the row.
-    wages_hr = _num(settings.carpenter_rate) + _num(settings.helper_rate)
+    roles = staff_rates(settings)
     billable_area = sum(w["area_sqft"] for w in WORKSTATIONS if w["area_sqft"] > 0)
     rent_per_sqft = (monthly_rent / billable_area) if billable_area else 0.0
     out = []
     for w in WORKSTATIONS:
         rent_hr = (w["area_sqft"] * rent_per_sqft / whm) if whm else 0.0
-        machine_hr = (w["capital"] / (w["life_years"] * whm * 12)) if (w["life_years"] and whm) else 0.0
+        # Depreciation is its OWN component now (OPS3) — Rent stays pure space rent
+        # and Consumables stays true consumables.
+        dep_hr = (w["capital"] / (w["life_years"] * whm * 12)) if (w["life_years"] and whm) else 0.0
         elec_hr = _num(w.get("elec_hr"))
-        # Machine depreciation is folded into Consumables (no separate component).
-        consumable_hr = _num(w.get("consumable_hr")) + machine_hr
+        consumable_hr = _num(w.get("consumable_hr"))
+        crew = w.get("crew", DEFAULT_CREW)
+        wage_vals = {WAGE_COMPONENT[role]: roles.get(role, 0.0) for role in crew}
+        wages_hr = sum(wage_vals.values())
         comp_vals = {
-            "Rent": rent_hr, "Wages": wages_hr,
-            "Electricity": elec_hr, "Consumables": consumable_hr,
+            "Rent": rent_hr, "Depreciation": dep_hr,
+            "Electricity": elec_hr, "Consumables": consumable_hr, **wage_vals,
         }
-        components = [(c, comp_vals[c]) for c in WS_COMPONENTS]
-        net_hr = sum(v for _, v in components)
+        # Canonical order; a component a station doesn't have (zero) is skipped.
+        components = [(c, comp_vals[c]) for c in WS_COMPONENTS if comp_vals.get(c)]
+        net_hr = sum(comp_vals.get(c, 0.0) for c in WS_COMPONENTS)
         out.append({
             **w,
-            "rent_hr": rent_hr, "wages_hr": wages_hr, "machine_hr": 0.0,
+            "rent_hr": rent_hr, "wages_hr": wages_hr, "machine_hr": dep_hr,
             "elec_hr": elec_hr, "consumable_hr": consumable_hr,
-            "components": components, "net_hr": net_hr,
+            "components": components, "net_hr": net_hr, "crew": crew,
             # legacy aliases
-            "labour_hr": wages_hr, "dep_hr": 0.0, "total_hr": net_hr,
+            "labour_hr": wages_hr, "dep_hr": dep_hr, "total_hr": net_hr,
         })
     return out
 
@@ -155,8 +208,10 @@ def live_workstation_rates(settings):
             continue
         comp = {r.operating_component: _num(r.operating_cost) for r in rows}
         rent_hr = comp.get("Rent", 0)
-        wages_hr = comp.get("Wages", 0)
-        machine_hr = comp.get("Machinery", 0)
+        # Wages = every per-role Wage component (Carpenter/Helper/Designer) plus
+        # the legacy folded "Wages"; Depreciation plus the legacy "Machinery".
+        wages_hr = comp.get("Wages", 0) + sum(v for c, v in comp.items() if c.endswith("Wage"))
+        machine_hr = comp.get("Machinery", 0) + comp.get("Depreciation", 0)
         elec_hr = comp.get("Electricity", 0)
         consumable_hr = comp.get("Consumables", 0)
         # Net Hour Rate = the sum of ALL component rows (never trust a possibly
@@ -185,8 +240,51 @@ def _num(v):
         return 0.0
 
 
+def _get(settings, field, default=0):
+    return _num(getattr(settings, field, default) or default)
+
+
+def working_days_per_month(settings):
+    """L1 — days the factory actually runs: working days (excl. weekly offs) minus
+    the 2 paid holidays/month minus the 10 national holidays/yr prorated."""
+    return max(
+        _get(settings, "working_days_per_month", 26)
+        - _get(settings, "paid_holidays_per_month")
+        - _get(settings, "national_holidays_per_year") / 12.0,
+        0.0,
+    )
+
+
+def productive_hours_per_day(settings):
+    """L1 — the 8-hr shift includes a 1-hr paid lunch: productive hrs = shift − lunch."""
+    return max(_get(settings, "working_hours_per_day", 8) - _get(settings, "lunch_hours_per_day"), 0.0)
+
+
 def working_hours_per_month(settings):
-    return _num(settings.working_days_per_month) * _num(settings.working_hours_per_day)
+    """Productive (billable) hours the factory runs per month — the base over
+    which rent, depreciation and salaries are recovered."""
+    return working_days_per_month(settings) * productive_hours_per_day(settings)
+
+
+def staff_rates(settings):
+    """L1 — effective ₹/hr per role, derived from MONTHLY SALARY + the holiday
+    calendar + the Diwali bonus (annual cost = salary x (12 + bonus months),
+    spread over the productive hours). Falls back to the legacy keyed hourly
+    rates when no salary is set, so old data/tests still price."""
+    whm = working_hours_per_month(settings)
+    bonus = _get(settings, "bonus_months")
+
+    def rate(salary_field, legacy_field):
+        salary = _get(settings, salary_field)
+        if salary and whm:
+            return salary * (12 + bonus) / 12.0 / whm
+        return _get(settings, legacy_field)
+
+    return {
+        "carpenter": rate("carpenter_salary", "carpenter_rate"),
+        "helper": rate("helper_salary", "helper_rate"),
+        "designer": rate("designer_salary", "design_rate"),
+    }
 
 
 def rent_per_hour(settings):
@@ -273,54 +371,92 @@ def calc_sku(sku, settings, ws_rates=None):
         "design": _num(settings.markup_design),
     }
 
-    crew_min_total = 0.0
-    labor_cost = 0.0     # Wages component
-    machine_cost = 0.0   # Machinery (depreciation) component
-    rent_cost = 0.0      # Rent component
-    other_cost = 0.0     # Electricity + Consumables components
+    def cost_rows(rows, fallback_ws, skip_misc):
+        """Price a table of step rows at their workstation rates. Returns totals
+        split by component bucket; writes each row's op_cost back."""
+        t = {"min": 0.0, "wages": 0.0, "dep": 0.0, "rent": 0.0, "other": 0.0}
+        for s in rows or []:
+            if skip_misc and getattr(s, "is_misc", 0) and not sku.include_misc:
+                s.carp_total = 0
+                s.helper_total = 0
+                s.op_cost = 0
+                continue
+            crew_min = _num(s.qty) * _num(s.carp_min)  # carp_min = workstation minutes/unit
+            s.carp_total = crew_min
+            s.helper_total = crew_min
+            t["min"] += crew_min
+            ws_name = getattr(s, "workstation", None) or OPERATION_WORKSTATION.get(op_phase(s), fallback_ws)
+            r = ws_rates.get(ws_name) or ws_rates.get(fallback_ws) or {}
+            hrs = crew_min / 60.0
+            wages_hr = r.get("wages_hr", r.get("labour_hr", 0))
+            machine_hr = r.get("machine_hr", r.get("dep_hr", 0))
+            rent_hr = r.get("rent_hr", 0)
+            elec_hr = r.get("elec_hr", 0)
+            consumable_hr = r.get("consumable_hr", 0)
+            # Net Hour Rate: prefer the live ERPNext Workstation total when supplied.
+            net_hr = r.get("net_hr", wages_hr + machine_hr + rent_hr + elec_hr + consumable_hr)
+            t["wages"] += hrs * wages_hr
+            t["dep"] += hrs * machine_hr
+            t["rent"] += hrs * rent_hr
+            t["other"] += hrs * (elec_hr + consumable_hr)
+            s.op_cost = hrs * net_hr
+        return t
 
-    for s in sku.labor or []:
-        if getattr(s, "is_misc", 0) and not sku.include_misc:
-            s.carp_total = 0
-            s.helper_total = 0
-            s.op_cost = 0
-            continue
-        crew_min = _num(s.qty) * _num(s.carp_min)  # carp_min = workstation minutes/unit
-        s.carp_total = crew_min
-        s.helper_total = crew_min
-        crew_min_total += crew_min
-        ws_name = getattr(s, "workstation", None) or OPERATION_WORKSTATION.get(op_phase(s), default_ws)
-        r = ws_rates.get(ws_name) or ws_rates.get(default_ws) or {}
-        hrs = crew_min / 60.0
-        wages_hr = r.get("wages_hr", r.get("labour_hr", 0))
-        machine_hr = r.get("machine_hr", r.get("dep_hr", 0))
-        rent_hr = r.get("rent_hr", 0)
-        elec_hr = r.get("elec_hr", 0)
-        consumable_hr = r.get("consumable_hr", 0)
-        # Net Hour Rate: prefer the live ERPNext Workstation total when supplied.
-        net_hr = r.get("net_hr", wages_hr + machine_hr + rent_hr + elec_hr + consumable_hr)
-        labor_cost += hrs * wages_hr
-        machine_cost += hrs * machine_hr
-        rent_cost += hrs * rent_hr
-        other_cost += hrs * (elec_hr + consumable_hr)
-        s.op_cost = hrs * net_hr
+    lab = cost_rows(sku.labor, default_ws, skip_misc=True)
+    crew_min_total = lab["min"]
+    labor_cost = lab["wages"]
+    machine_cost = lab["dep"]
+    rent_cost = lab["rent"]
+    other_cost = lab["other"]
 
     carp_min_total = crew_min_total
     helper_min_total = crew_min_total
     carpenter_cost = labor_cost  # labour is the 2-person crew (folded into wages)
     helper_cost = 0.0
     material_cost = sum(_num(m.line_cost) for m in (sku.materials or []))
-    design_cost = _num(sku.design_hours) * _num(settings.design_rate) + _num(sku.design_flat)
+    # J1 — fevicol/abrotape derived consumables: material, but its own bucket.
+    joinery_cost = sum(_num(j.amount) for j in (getattr(sku, "joinery_items", None) or []))
+
+    # D1 — design as real workstation labor (Design Desk rates, full component
+    # split). Falls back to the legacy hours x rate + flat model when the design
+    # table is empty.
+    design_rows = getattr(sku, "design_labor", None) or []
+    if design_rows:
+        des = cost_rows(design_rows, "Design Desk", skip_misc=False)
+        design_cost = des["wages"] + des["dep"] + des["rent"] + des["other"]
+        design_min_total = des["min"]
+        design_wages = des["wages"]
+        design_overhead = design_cost - des["wages"]
+    else:
+        design_cost = _num(sku.design_hours) * _num(settings.design_rate) + _num(sku.design_flat)
+        design_min_total = 0.0
+        design_wages = design_cost
+        design_overhead = 0.0
+
+    # C1 — inward/outward transport at the settings trip rates. Standalone view of
+    # THIS SKU; consolidated (shared-trip) billing happens on the Estimate.
+    trates = transport_rates(settings)
+    transport_cost = (
+        _num(getattr(sku, "trips_tempo", 0)) * trates["tempo"]
+        + _num(getattr(sku, "trips_ext_lam", 0)) * trates["ext_lam"]
+        + _num(getattr(sku, "trips_client_hw", 0)) * trates["client_hw"]
+        + _num(getattr(sku, "trips_outward", 0)) * trates["outward"]
+    )
+
     overhead_cost = machine_cost + rent_cost + other_cost
     rent_hours = crew_min_total / 60.0
-    internal_cost = material_cost + labor_cost + overhead_cost + design_cost
+    internal_cost = material_cost + joinery_cost + labor_cost + overhead_cost + design_cost + transport_cost
 
-    client_material = material_cost * (1 + markup["material"] / 100.0)
+    # Joinery consumables are material to the client (same markup bucket).
+    client_material = (material_cost + joinery_cost) * (1 + markup["material"] / 100.0)
     client_labor = labor_cost * (1 + markup["labor"] / 100.0)
     client_overhead = overhead_cost * (1 + markup["overhead"] / 100.0)
     client_design = design_cost * (1 + markup["design"] / 100.0)
     # Client view folds labour + overhead + design into one "design & execution" line.
     client_design_exec = client_labor + client_overhead + client_design
+    # Transport is NOT in the SKU's client total — trips are shared across the
+    # project, so the Estimate bills its consolidated trips (at cost, no markup).
+    # It IS inside internal_cost so the SKU's margin view stays honest.
     client_total = client_material + client_design_exec
 
     return {
@@ -334,7 +470,12 @@ def calc_sku(sku, settings, ws_rates=None):
         "rent_hours": rent_hours,
         "overhead_cost": overhead_cost,
         "material_cost": material_cost,
+        "joinery_cost": joinery_cost,
         "design_cost": design_cost,
+        "design_min_total": design_min_total,
+        "design_wages": design_wages,
+        "design_overhead": design_overhead,
+        "transport_cost": transport_cost,
         "internal_cost": internal_cost,
         "client_material": client_material,
         "client_design_exec": client_design_exec,

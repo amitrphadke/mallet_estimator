@@ -131,7 +131,14 @@
   <div class="grand">
     <div class="row"><span>Material</span><span>{{ money(sku_docs | sum(attribute="client_material")) }}</span></div>
     <div class="row"><span>Design &amp; execution</span><span>{{ money(sku_docs | sum(attribute="client_design_exec")) }}</span></div>
-    <div class="row final"><span>Total estimate</span><span>{{ money(sku_docs | sum(attribute="client_total")) }}</span></div>
+    {% if doc.total_transport %}
+    <div class="row"><span>Transport (consolidated)</span><span>{{ money(doc.total_transport) }}</span></div>
+    {% endif %}
+    <div class="row final"><span>Total estimate</span><span>{{ money(doc.total_client or (sku_docs | sum(attribute="client_total"))) }}</span></div>
+    {% if doc.total_gst %}
+    <div class="row"><span>GST @ {{ "%g"|format(doc.gst_pct or 18) }}%</span><span>{{ money(doc.total_gst) }}</span></div>
+    <div class="row final"><span>Grand total (incl. GST)</span><span>{{ money(doc.total_with_gst) }}</span></div>
+    {% endif %}
   </div>
 
   {# --- Provisional allowances (F6): price-sensitive items shown transparently,
@@ -191,5 +198,5 @@
     </div>
   {% endfor %}
 
-  <div class="foot">Inclusive of material, design &amp; execution. Taxes as applicable. Valid for 30 days.</div>
+  <div class="foot">Inclusive of material, design &amp; execution. GST @ {{ "%g"|format(doc.gst_pct or 18) }}% extra as applicable. Valid for 30 days.</div>
 </div>

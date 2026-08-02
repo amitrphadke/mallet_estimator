@@ -22,3 +22,6 @@ mallet_estimator.patches.structured_material_coding
 mallet_estimator.patches.stock_vendor_model
 # Seed the shop's material rate card (.numbers snapshot): items + assumed rates.
 mallet_estimator.patches.seed_material_rates
+# T1/L1/OPS3/D1/J1/C1 — GST field, Client/Joinery groups + re-home, JH items,
+# modular workstation components, Design Desk + design operations.
+mallet_estimator.patches.cost_model_rework

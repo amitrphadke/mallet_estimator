@@ -5,20 +5,35 @@
  "engine": "InnoDB",
  "issingle": 1,
  "field_order": [
+  "salary_section",
+  "carpenter_salary",
+  "helper_salary",
+  "designer_salary",
+  "bonus_months",
+  "column_break_salary",
+  "working_days_per_month",
+  "paid_holidays_per_month",
+  "national_holidays_per_year",
+  "working_hours_per_day",
+  "lunch_hours_per_day",
   "rates_section",
   "carpenter_rate",
   "helper_rate",
   "design_rate",
   "column_break_rates",
   "monthly_rent",
-  "working_days_per_month",
-  "working_hours_per_day",
   "factory_section",
   "factory_length_ft",
   "factory_width_ft",
   "sheet_length_mm",
   "sheet_width_mm",
   "wastage_pct",
+  "transport_section",
+  "trip_rate_tempo",
+  "trip_rate_ext_lam",
+  "column_break_transport",
+  "trip_rate_client_hw",
+  "trip_rate_outward",
   "calculator_section",
   "cost_calculator_html",
   "markup_section",
@@ -30,26 +45,93 @@
  ],
  "fields": [
   {
+   "fieldname": "salary_section",
+   "fieldtype": "Section Break",
+   "label": "Staff Salaries & Calendar (L1 — drives every wage & rent rate)",
+   "description": "Effective ₹/hr is DERIVED: salary × (12 + bonus months) ÷ 12 ÷ productive hours/month. Productive hrs/mo = (working days − paid holidays − national holidays⁄12) × (shift − lunch) hours."
+  },
+  {
+   "fieldname": "carpenter_salary",
+   "fieldtype": "Currency",
+   "label": "Carpenter Salary (₹/month)",
+   "default": "###"
+  },
+  {
+   "fieldname": "helper_salary",
+   "fieldtype": "Currency",
+   "label": "Helper Salary (₹/month)",
+   "default": "###"
+  },
+  {
+   "fieldname": "designer_salary",
+   "fieldtype": "Currency",
+   "label": "Designer Salary (₹/month)",
+   "default": "###"
+  },
+  {
+   "fieldname": "bonus_months",
+   "fieldtype": "Float",
+   "label": "Bonus (months of salary / year)",
+   "default": "1",
+   "description": "Diwali bonus — 1 = one month's salary once a year."
+  },
+  {
+   "fieldname": "column_break_salary",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "working_days_per_month",
+   "fieldtype": "Int",
+   "label": "Working Days / Month (excl. weekly offs)",
+   "default": "26"
+  },
+  {
+   "fieldname": "paid_holidays_per_month",
+   "fieldtype": "Float",
+   "label": "Paid Holidays / Month",
+   "default": "2"
+  },
+  {
+   "fieldname": "national_holidays_per_year",
+   "fieldtype": "Float",
+   "label": "National Holidays / Year",
+   "default": "10"
+  },
+  {
+   "fieldname": "working_hours_per_day",
+   "fieldtype": "Float",
+   "label": "Shift Hours / Day",
+   "default": "8"
+  },
+  {
+   "fieldname": "lunch_hours_per_day",
+   "fieldtype": "Float",
+   "label": "Lunch Break (hrs, paid, inside shift)",
+   "default": "1"
+  },
+  {
    "fieldname": "rates_section",
    "fieldtype": "Section Break",
-   "label": "Rates & Working Time"
+   "label": "Legacy Hourly Rates (fallback only — superseded by salaries)",
+   "collapsible": 1
   },
   {
    "fieldname": "carpenter_rate",
    "fieldtype": "Currency",
-   "label": "Carpenter Rate (per hour)",
-   "default": "157"
+   "label": "Carpenter Rate (per hour) — legacy",
+   "default": "157",
+   "description": "Used only when no Carpenter Salary is set."
   },
   {
    "fieldname": "helper_rate",
    "fieldtype": "Currency",
-   "label": "Helper Rate (per hour)",
+   "label": "Helper Rate (per hour) — legacy",
    "default": "107"
   },
   {
    "fieldname": "design_rate",
    "fieldtype": "Currency",
-   "label": "Design Rate (per hour)",
+   "label": "Design Rate (per hour) — legacy",
    "default": "300"
   },
   {
@@ -61,18 +143,6 @@
    "fieldtype": "Currency",
    "label": "Monthly Rent",
    "default": "###"
-  },
-  {
-   "fieldname": "working_days_per_month",
-   "fieldtype": "Int",
-   "label": "Working Days / Month",
-   "default": "26"
-  },
-  {
-   "fieldname": "working_hours_per_day",
-   "fieldtype": "Float",
-   "label": "Working Hours / Day",
-   "default": "8"
   },
   {
    "fieldname": "factory_section",
@@ -94,22 +164,32 @@
   {
    "fieldname": "sheet_length_mm",
    "fieldtype": "Float",
-   "label": "Sheet Length (mm)",
-   "default": "2440",
-   "description": "Standard sheet size for whole-sheet material estimation"
+   "label": "Sheet Length (mm) — unused",
+   "hidden": 1
   },
   {
    "fieldname": "sheet_width_mm",
    "fieldtype": "Float",
-   "label": "Sheet Width (mm)",
-   "default": "1220"
+   "label": "Sheet Width (mm) — unused",
+   "hidden": 1
   },
   {
    "fieldname": "wastage_pct",
    "fieldtype": "Percent",
-   "label": "Sheet Wastage %",
-   "default": "12"
+   "label": "Sheet Wastage % — unused",
+   "hidden": 1
   },
+  {
+   "fieldname": "transport_section",
+   "fieldtype": "Section Break",
+   "label": "Transport Trip Rates (₹/trip)",
+   "description": "Inward: big tempo = ply + internal laminate + joinery hardware; separate trips for external laminate and client hardware. Outward = finished goods to site."
+  },
+  {"fieldname": "trip_rate_tempo", "fieldtype": "Currency", "label": "Big Tempo (ply / int-laminate / joinery)", "default": "1500"},
+  {"fieldname": "trip_rate_ext_lam", "fieldtype": "Currency", "label": "External Laminate Trip", "default": "500"},
+  {"fieldname": "column_break_transport", "fieldtype": "Column Break"},
+  {"fieldname": "trip_rate_client_hw", "fieldtype": "Currency", "label": "Client Hardware Trip", "default": "800"},
+  {"fieldname": "trip_rate_outward", "fieldtype": "Currency", "label": "Outward Delivery Trip", "default": "1500"},
   {
    "fieldname": "calculator_section",
    "fieldtype": "Section Break",

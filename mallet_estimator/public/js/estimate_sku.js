@@ -62,6 +62,7 @@ frappe.ui.form.on("Estimate SKU", {
         );
       });
     }
+    render_cost_breakup(frm);
     // V1: seed the execution design (actual materials) from the estimate lines.
     if (!frm.is_new() && (frm.doc.materials || []).length) {
       frm.add_custom_button(__("Build execution design"), () => {
@@ -112,4 +113,28 @@ function lock_qty(frm) {
     const gr = grid.grid_rows_by_docname[row.name];
     if (gr && gr.toggle_editable) gr.toggle_editable("qty", !LOCKED_PHASES.includes(row.operation));
   });
+}
+
+// C1: render the one-table cost breakup (built server-side as JSON on save).
+function render_cost_breakup(frm) {
+  const f = frm.get_field("cost_breakup_html");
+  if (!f || !f.$wrapper) return;
+  let d = null;
+  try { d = JSON.parse(frm.doc.cost_breakup || "null"); } catch (e) { d = null; }
+  if (!d || !(d.rows || []).length) { f.$wrapper.empty(); return; }
+  const money = (v) => format_currency(v || 0);
+  const rows = d.rows
+    .filter((r) => r[1])
+    .map((r) => `<tr><td>${frappe.utils.escape_html(r[0])}</td><td class="text-right">${money(r[1])}</td></tr>`)
+    .join("");
+  f.$wrapper.html(`
+    <table class="table table-bordered" style="font-size:12.5px;margin:0">
+      <thead><tr><th>Cost Component</th><th class="text-right">Amount</th></tr></thead>
+      <tbody>${rows}
+        <tr style="font-weight:700;border-top:2px solid var(--gray-600)"><td>Internal Cost (incl. transport)</td><td class="text-right">${money(d.internal)}</td></tr>
+        <tr><td>Client: Material</td><td class="text-right">${money(d.client_material)}</td></tr>
+        <tr><td>Client: Design &amp; Execution</td><td class="text-right">${money(d.client_design_exec)}</td></tr>
+        <tr style="font-weight:700"><td>Client Total (transport billed on the Estimate; GST extra)</td><td class="text-right">${money(d.client_total)}</td></tr>
+      </tbody>
+    </table>`);
 }

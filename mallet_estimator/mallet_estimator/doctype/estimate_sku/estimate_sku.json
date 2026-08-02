@@ -48,10 +48,24 @@
   "carp_min_total",
   "helper_min_total",
   "labor_cost",
+  "joinery_section",
+  "joinery_items",
+  "joinery_cost",
   "design_section",
+  "design_labor",
+  "design_cost",
   "design_hours",
   "design_flat",
-  "design_cost",
+  "transport_section",
+  "trips_tempo",
+  "trips_ext_lam",
+  "column_break_transport",
+  "trips_client_hw",
+  "trips_outward",
+  "transport_cost",
+  "breakup_section",
+  "cost_breakup",
+  "cost_breakup_html",
   "cost_section",
   "machine_cost",
   "rent_cost",
@@ -310,25 +324,83 @@
    "read_only": 1
   },
   {
+   "fieldname": "joinery_section",
+   "fieldtype": "Section Break",
+   "label": "Joinery Consumables (derived from Sheet Lamination)",
+   "collapsible": 1,
+   "description": "Fevicol + Abrotape auto-computed from the Sheet Lamination step quantity: 3 packets + 11 m tape per laminated sheet."
+  },
+  {
+   "fieldname": "joinery_items",
+   "fieldtype": "Table",
+   "label": "Joinery Consumables",
+   "options": "Estimate Consumable"
+  },
+  {
+   "fieldname": "joinery_cost",
+   "fieldtype": "Currency",
+   "label": "Joinery Consumables Cost",
+   "read_only": 1
+  },
+  {
    "fieldname": "design_section",
    "fieldtype": "Section Break",
-   "label": "Design"
+   "label": "Design Labor"
+  },
+  {
+   "fieldname": "design_labor",
+   "fieldtype": "Table",
+   "label": "Design Steps",
+   "options": "Estimate Labor",
+   "description": "The designer's pipeline (site measurement → 3D plan → SKP → SKU → 7Views → estimate/part PDFs), priced at the Design Desk workstation rate."
   },
   {
    "fieldname": "design_hours",
    "fieldtype": "Float",
-   "label": "Design Hours"
+   "label": "Design Hours (legacy)",
+   "hidden": 1
   },
   {
    "fieldname": "design_flat",
    "fieldtype": "Currency",
-   "label": "Flat Design Charge"
+   "label": "Flat Design Charge (legacy)",
+   "hidden": 1
   },
   {
    "fieldname": "design_cost",
    "fieldtype": "Currency",
    "label": "Design Cost",
    "read_only": 1
+  },
+  {
+   "fieldname": "transport_section",
+   "fieldtype": "Section Break",
+   "label": "Transport (standalone view — consolidated on the Estimate)",
+   "collapsible": 1,
+   "description": "Inward trips: big tempo ₹/trip (ply + internal laminate + joinery), external laminate trip, client-hardware trip; plus outward delivery. Rates live in Estimate Settings. Multiple SKUs share trips — the Estimate consolidates."
+  },
+  {"fieldname": "trips_tempo", "fieldtype": "Int", "label": "Tempo Trips (ply/int-lam/joinery)"},
+  {"fieldname": "trips_ext_lam", "fieldtype": "Int", "label": "External Laminate Trips"},
+  {"fieldname": "column_break_transport", "fieldtype": "Column Break"},
+  {"fieldname": "trips_client_hw", "fieldtype": "Int", "label": "Client Hardware Trips"},
+  {"fieldname": "trips_outward", "fieldtype": "Int", "label": "Outward (delivery) Trips"},
+  {"fieldname": "transport_cost", "fieldtype": "Currency", "label": "Transport Cost", "read_only": 1},
+  {
+   "fieldname": "breakup_section",
+   "fieldtype": "Section Break",
+   "label": "Cost Breakup"
+  },
+  {
+   "fieldname": "cost_breakup",
+   "fieldtype": "Code",
+   "label": "Cost Breakup (JSON)",
+   "hidden": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "cost_breakup_html",
+   "fieldtype": "HTML",
+   "label": "Cost Breakup"
   },
   {
    "fieldname": "cost_section",

@@ -36,12 +36,13 @@ VENDOR_NAMES = tuple(MANUFACTURERS)
 # The real vendors, and which material kinds each is allowed to supply. Drives the
 # Item Supplier rows so a PO only offers a supplier who actually sells that item.
 SUPPLIER_SCOPE = {
-    "SAI Ply":        {"sheet", "laminate", "edge", "hardware"},
-    "Shanti":         {"sheet", "laminate", "edge", "hardware"},
+    # J1 — "all hardware or ply suppliers supply Fevicol and abrotape" → joinery.
+    "SAI Ply":        {"sheet", "laminate", "edge", "hardware", "joinery"},
+    "Shanti":         {"sheet", "laminate", "edge", "hardware", "joinery"},
     "EdgeIndia":      {"edge"},
     "Vibrant Ply":    {"sheet", "laminate"},
-    "Sun Tradelink":  {"hardware"},
-    "Lotus Hardware": {"hardware"},
+    "Sun Tradelink":  {"hardware", "joinery"},
+    "Lotus Hardware": {"hardware", "joinery"},
     "Lotus Paint":    {"paint"},
 }
 
@@ -62,15 +63,31 @@ KIND_SPEC = {
     "laminate":    {"group": "Laminate",          "stock_uom": "Sheet", "purchase_uom": "Sheet", "conv": 1},
     "edge":        {"group": "Edge Banding",      "stock_uom": "Meter", "purchase_uom": "Roll",  "conv": EDGE_ROLL_METERS},
     "hardware":    {"group": "Hardware",          "stock_uom": "Nos",   "purchase_uom": "Nos",   "conv": 1},
+    "joinery":     {"group": "Joinery Hardware",  "stock_uom": "Nos",   "purchase_uom": "Nos",   "conv": 1},
     "paint":       {"group": "Paint",             "stock_uom": "Litre", "purchase_uom": "Litre", "conv": 1},
     "solidwood":   {"group": "Solid Wood",        "stock_uom": "Nos",   "purchase_uom": "Nos",   "conv": 1},
     "dimensional": {"group": "Dimensional Lumber", "stock_uom": "Nos",  "purchase_uom": "Nos",   "conv": 1},
 }
-ITEM_GROUPS = [spec["group"] for spec in KIND_SPEC.values()]
+# C1 — hardware splits into two shopper-facing groups: what the CLIENT selects
+# (hinges/rails/handles/locks/lifts) vs the JOINERY the shop consumes
+# (screws/minifix/shelf supports/fevicol/abrotape).
+CLIENT_HW_GROUP = "Client Hardware"
+JOINERY_GROUP = "Joinery Hardware"
+_JOINERY_TOKENS = ("SCREW", "MINIFIX", "SHELFSUPPORT", "FEVICOL", "ABROTAPE")
+ITEM_GROUPS = [spec["group"] for spec in KIND_SPEC.values()] + [CLIENT_HW_GROUP]
+
+
+def hardware_group(code):
+    """C1 — which group a HWD_/JH_ item belongs to: joinery consumables vs
+    client-selectable hardware."""
+    up = str(code or "").upper()
+    if up.startswith("JH_") or any(t in up for t in _JOINERY_TOKENS):
+        return JOINERY_GROUP
+    return CLIENT_HW_GROUP
 
 # Raw-material code families. Used to tell a genuine material apart from a
 # finished article or a real Product, so re-homing never misfiles a non-material.
-MATERIAL_PREFIXES = ("SG_LAM", "LAM_", "DL_", "SG_", "EB_", "HWD_", "SW_", "DIM_", "DM_", "PT_", "PAINT")
+MATERIAL_PREFIXES = ("SG_LAM", "LAM_", "DL_", "SG_", "EB_", "HWD_", "JH_", "SW_", "DIM_", "DM_", "PT_", "PAINT")
 
 
 def is_material_code(code):
@@ -90,6 +107,8 @@ def kind_for_code(code):
         return "edge"
     if up.startswith("HWD_"):
         return "hardware"
+    if up.startswith("JH_"):
+        return "joinery"
     if up.startswith("PT_") or up.startswith("PAINT"):
         return "paint"
     if up.startswith("SW_"):
@@ -532,13 +551,16 @@ def ensure_material_item(name, kind=None, thickness=0, dims=None):
     kind = kind or kind_for_code(name)
     spec = KIND_SPEC.get(kind, KIND_SPEC["hardware"])
     code = item_code_for(name, thickness, kind)
+    # C1 — hardware/joinery items land in their shopper-facing group.
+    group = hardware_group(code) if kind in ("hardware", "joinery") else spec["group"]
 
     if not frappe.db.exists("Item", code):
         meta = frappe.get_meta("Item")
         item = frappe.new_doc("Item")
         item.item_code = code
         item.item_name = (name or code)[:140]
-        item.item_group = spec["group"] if frappe.db.exists("Item Group", spec["group"]) else _fallback_group()
+        item.item_group = group if frappe.db.exists("Item Group", group) else \
+            (spec["group"] if frappe.db.exists("Item Group", spec["group"]) else _fallback_group())
         item.stock_uom = spec["stock_uom"] if frappe.db.exists("UOM", spec["stock_uom"]) else "Nos"
         item.is_stock_item = 1
         item.is_purchase_item = 1
@@ -710,8 +732,48 @@ CUSTOM_FIELDS = {
         {"fieldname": "mallet_mfr_part_no", "fieldtype": "Data", "label": "Manufacturer Part No",
          "insert_after": "mallet_sourcing_sb",
          "description": "OEM catalogue code (e.g. Hafele H-311.01.357) — carried onto purchase orders."},
+        # T1 — the item's GST rate. Estimation rates are keyed EX-tax; the
+        # estimator grosses up by this % so estimates show the landed (post-tax)
+        # material cost. ITC makes the actual net cost lower — deliberate cushion.
+        {"fieldname": "mallet_gst_pct", "fieldtype": "Percent", "label": "GST %",
+         "insert_after": "mallet_mfr_part_no", "default": "18",
+         "description": "GST charged on purchase. Estimation = ex-tax rate x (1 + GST%) = landed cost."},
     ]
 }
+
+DEFAULT_GST_PCT = 18.0
+
+
+def item_gst_pct(item_code):
+    """T1 — the item's GST %, defaulting to 18 when unset/absent."""
+    if not frappe.get_meta("Item").has_field("mallet_gst_pct"):
+        return DEFAULT_GST_PCT
+    v = frappe.db.get_value("Item", item_code, "mallet_gst_pct")
+    return float(v) if v not in (None, 0, "") else DEFAULT_GST_PCT
+
+
+def landed_rate(item_code):
+    """T1 — (landed_rate, base_rate, gst_pct, source): the estimation rate grossed
+    up by the item's GST% — the post-tax cost the estimate carries."""
+    base, source = material_rate(item_code)
+    gst = item_gst_pct(item_code)
+    return base * (1 + gst / 100.0), base, gst, source
+
+
+def material_bucket(item_code, oc_code=None):
+    """C1 — classify a material line into the user's cost-breakup buckets."""
+    code = str(oc_code or item_code or "")
+    kind = kind_for_code(code)
+    up = code.upper()
+    if kind == "sheet":
+        return "Ply V1 (visible grade)" if "_V1" in up else "Ply V0 (structure grade)"
+    if kind == "laminate":
+        return "Laminate External" if ("_V1" in up or "_EX" in up) else "Laminate Internal"
+    if kind == "edge":
+        return "Edge Banding External" if "_EX" in up else "Edge Banding Internal"
+    if kind in ("hardware", "joinery"):
+        return "Joinery Hardware" if hardware_group(code) == JOINERY_GROUP else "Client Hardware"
+    return "Other Material"
 
 
 def ensure_inventory_masters():
