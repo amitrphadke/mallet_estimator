@@ -182,7 +182,9 @@
   {
    "fieldname": "article_image",
    "fieldtype": "Attach Image",
-   "label": "Article Image (SketchUp \u2014 shown on client estimate)"
+   "label": "Isometric View (auto-filled from 7 Views PDF)",
+   "read_only": 1,
+   "description": "Extracted from the 'IsoView' page of the 7 Views PDF above \u2014 no manual upload. Shown on the client estimate."
   },
   {
    "fieldname": "material_section",
