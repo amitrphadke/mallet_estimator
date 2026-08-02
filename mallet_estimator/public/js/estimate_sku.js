@@ -7,7 +7,7 @@ const LOCKED_PHASES = ["Sheet Lamination", "Sheet Tape Removal", "Sheet Cutting"
 
 frappe.ui.form.on("Estimate SKU", {
   refresh(frm) {
-    setTimeout(() => lock_qty(frm), 300);
+    setTimeout(() => { lock_qty(frm); lock_material_rows(frm); }, 300);
     // I1: cache the live Workstation Net Hour Rates so Phase Cost updates instantly
     // as you edit Qty / Min / Operation — no save needed.
     if (!frm.is_new()) {
@@ -106,12 +106,42 @@ frappe.ui.form.on("Estimate Labor", {
 });
 
 // I3: Material + Labor cost totals update INSTANTLY as rows are edited — no save.
+// Imported rows are locked (the PDF is the source); MANUAL rows (extra hardware
+// like a bed hydraulic lift) are editable and survive re-imports.
 frappe.ui.form.on("Estimate Material", {
+  materials_add: (frm, cdt, cdn) => {
+    frappe.model.set_value(cdt, cdn, "is_manual", 1);
+    lock_material_rows(frm);
+  },
+  item: (frm, cdt, cdn) => {
+    const row = locals[cdt][cdn];
+    if (!row || !row.item || !row.is_manual) return;
+    frm.call("get_landed_rate", { item_code: row.item }).then((r) => {
+      const m = (r && r.message) || {};
+      if (m.uom) frappe.model.set_value(cdt, cdn, "uom", m.uom);
+      frappe.model.set_value(cdt, cdn, "unit_cost", m.rate || 0).then(() => {
+        if (!row.qty) frappe.model.set_value(cdt, cdn, "qty", 1);
+        recompute_material(frm, cdt, cdn);
+      });
+    });
+  },
   qty: (frm, cdt, cdn) => recompute_material(frm, cdt, cdn),
   unit_cost: (frm, cdt, cdn) => recompute_material(frm, cdt, cdn),
   customer_supplied: (frm, cdt, cdn) => recompute_material(frm, cdt, cdn),
   materials_remove: (frm) => update_live_totals(frm),
 });
+
+// Imported rows can't be hand-edited; manual rows can.
+function lock_material_rows(frm) {
+  const grid = frm.fields_dict.materials && frm.fields_dict.materials.grid;
+  if (!grid || !grid.grid_rows_by_docname) return;
+  (frm.doc.materials || []).forEach((row) => {
+    const gr = grid.grid_rows_by_docname[row.name];
+    if (!gr || !gr.toggle_editable) return;
+    ["item", "qty", "unit_cost", "description"].forEach((f) =>
+      gr.toggle_editable(f, !!row.is_manual));
+  });
+}
 
 function recompute_material(frm, cdt, cdn) {
   const row = locals[cdt][cdn];

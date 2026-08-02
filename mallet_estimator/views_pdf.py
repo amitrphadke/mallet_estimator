@@ -124,41 +124,14 @@ def extract_outer_dims(content):
     return {"w": w, "d": d, "h": h}
 
 
-def annotate_dims(image_data, dims_text):
-    """Stamp the outer dimensions onto the ISO render (bottom-left) so the image
-    itself carries them. Returns new PNG bytes, or the original data if Pillow
-    can't process it."""
-    try:
-        from PIL import Image, ImageDraw
-        img = Image.open(io.BytesIO(image_data)).convert("RGB")
-        draw = ImageDraw.Draw(img)
-        pad = max(img.width // 100, 6)
-        # readable at any size: default font scaled by drawing on a strip
-        strip_h = max(img.height // 18, 28)
-        draw.rectangle([0, img.height - strip_h, img.width, img.height], fill=(47, 82, 51))
-        try:
-            from PIL import ImageFont
-            font = ImageFont.load_default(size=int(strip_h * 0.55))
-        except Exception:
-            font = None
-        draw.text((pad, img.height - strip_h + pad // 2), dims_text, fill=(255, 255, 255), font=font)
-        out = io.BytesIO()
-        img.save(out, format="PNG")
-        return out.getvalue()
-    except Exception:
-        return image_data
-
-
 def attach_iso_image(doc, views_pdf_content, dims=None):
-    """Extract the IsoView render, stamp the outer dims on it when known, and
-    attach it as a File. Returns the file_url (or None)."""
+    """Extract the IsoView render and attach it as a File — the PLAIN image, no
+    annotation (user 2026-08-02: the stamped dims were wrong; outer W/D/H live in
+    their own fields instead). Returns the file_url (or None)."""
     result = extract_iso_image(views_pdf_content)
     if not result:
         return None
     filename, data = result
-    if dims and all(dims.get(k) for k in ("w", "d", "h")):
-        data = annotate_dims(data, f"W {dims['w']:g} x D {dims['d']:g} x H {dims['h']:g} mm")
-        filename = "iso_view.png"
     f = frappe.get_doc({
         "doctype": "File",
         "file_name": f"{doc.name}_{filename}",

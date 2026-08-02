@@ -172,14 +172,15 @@ class EstimateSKU(Document):
                         self.set(field, dims[key])
             except Exception:
                 frappe.log_error(frappe.get_traceback(), f"dims extract {self.name}")
-            stamp = {"w": self.outer_w, "d": self.outer_d, "h": self.outer_h}
-            url = views_pdf.attach_iso_image(self, content, dims=stamp)
+            # Plain render only — no annotation on the image (dims live in fields).
+            url = views_pdf.attach_iso_image(self, content)
             if url:
                 self.article_image = url
             else:
                 frappe.msgprint(_("No 'IsoView' page found in the 7 Views PDF — attach an Article Image manually."),
                                 indicator="orange")
-            if not all(stamp.values()) and not all(dims.get(k) for k in ("w", "d", "h")):
+            if not all((self.outer_w, self.outer_d, self.outer_h)) \
+                    and not all(dims.get(k) for k in ("w", "d", "h")):
                 frappe.msgprint(_("Outer dimensions could not be read from the 7 Views PDF — key in Outer Width/Depth/Height."),
                                 indicator="orange")
         except Exception:
@@ -215,14 +216,23 @@ class EstimateSKU(Document):
                 frappe.msgprint(_("Could not parse hardware from the Part List PDF — using the estimate PDF's generic hardware."),
                                 indicator="orange")
 
+        # Manually added rows (extra hardware like a bed hydraulic lift) survive
+        # every re-import — only imported rows are rebuilt.
+        manual_rows = [m.as_dict() for m in (self.materials or []) if m.get("is_manual")]
         self.set("materials", [])
         unpriced = []
+        deferred_hw = []
         # Sheets, laminate and edge banding come from the estimate PDF (its nesting
         # is authoritative); hardware comes from the part list designations when
         # attached (falling back to the PDF's generic groups).
         for m in materials:
             if m.get("kind") == "hardware" and hardware:
-                continue  # replaced by designation-level part-list hardware below
+                # Preferred source is the part list; but NEVER silently drop an
+                # estimate-PDF hardware the part-list parse didn't cover — decide
+                # after the designation lines are in (fixes: new hardware in the
+                # estimate PDF missing from the SKU).
+                deferred_hw.append(m)
+                continue
             qty = m["qty"] or 0
             desc = _pdf_desc(m)
             if m.get("kind") == "edge":
@@ -246,6 +256,30 @@ class EstimateSKU(Document):
                 f"{h['code']} — {h['qty']} nos{cat}", unpriced,
                 dims={"category": h.get("category")},
             )
+        # Estimate-PDF hardware the part list didn't cover (a new fitting whose
+        # designation the parser missed, or a category with no part rows) is added
+        # as a fallback line instead of vanishing.
+        covered = {(h.get("category") or "").strip() for h in hardware} \
+            | {h["code"] for h in hardware}
+        for m in deferred_hw:
+            if m["name"] in covered:
+                continue
+            self._add_material_line(
+                m["name"], "hardware", 0, m["qty"] or 0,
+                f"{_pdf_desc(m)} — from estimate PDF (not matched in part list)", unpriced,
+            )
+
+        # Re-append the preserved manual rows (re-priced at the current landed rate
+        # only if no rate was keyed).
+        for r in manual_rows:
+            self.append("materials", {
+                "item": r.get("item"), "material": r.get("material"),
+                "description": r.get("description"), "qty": r.get("qty") or 0,
+                "uom": r.get("uom"), "unit_cost": r.get("unit_cost") or 0,
+                "line_cost": (r.get("qty") or 0) * (r.get("unit_cost") or 0),
+                "customer_supplied": r.get("customer_supplied") or 0,
+                "is_manual": 1,
+            })
 
         self.unpriced_materials = ", ".join(unpriced)
         if unpriced:
@@ -347,7 +381,8 @@ class EstimateSKU(Document):
                 "carp_min": mins,
                 "in_factory": t.get("in_factory", 0),
                 "is_misc": t.get("is_misc", 0),
-                "qty": 1,
+                # No files attached -> no default quantities (they fill on import).
+                "qty": 1 if self.estimate_pdf else 0,
             })
 
     def ensure_design_steps(self):
@@ -373,7 +408,7 @@ class EstimateSKU(Document):
                 "workstation": ws or "Design Desk",
                 "carp_min": mins,
                 "in_factory": t.get("in_factory", 1),
-                "qty": 1,
+                "qty": 1 if self.estimate_pdf else 0,
             })
 
     # --- derived consumables + transport (J1 / C1) -------------------------
@@ -557,6 +592,12 @@ class EstimateSKU(Document):
             n += 1
         self.save(ignore_permissions=True)
         return {"steps": n}
+
+    @frappe.whitelist()
+    def get_landed_rate(self, item_code):
+        """Landed (post-tax) rate + stock UOM for a manually added material row."""
+        landed, _base, _gst, _src = inventory.landed_rate(item_code)
+        return {"rate": landed, "uom": frappe.db.get_value("Item", item_code, "stock_uom")}
 
     @frappe.whitelist()
     def workstation_net_rates(self):

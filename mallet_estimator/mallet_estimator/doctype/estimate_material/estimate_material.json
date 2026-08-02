@@ -16,7 +16,8 @@
   "dims_section",
   "length",
   "width",
-  "thickness"
+  "thickness",
+  "is_manual"
  ],
  "fields": [
   {
@@ -26,16 +27,14 @@
    "in_list_view": 1,
    "columns": 3,
    "label": "Material Item",
-   "description": "The ERPNext stock Item — cost comes from its valuation / price.",
-   "read_only": 1
+   "description": "The ERPNext stock Item — cost comes from its valuation / price."
   },
   {
    "fieldname": "description",
    "fieldtype": "Data",
    "in_list_view": 1,
    "columns": 3,
-   "label": "Description",
-   "read_only": 1
+   "label": "Description"
   },
   {
    "fieldname": "qty",
@@ -44,8 +43,7 @@
    "columns": 1,
    "label": "Qty",
    "default": "1",
-   "read_only": 1,
-   "description": "Derived from the Material Estimate PDF — re-import to change."
+   "description": "Imported rows are locked (PDF is the source); manually added rows are editable."
   },
   {
    "fieldname": "uom",
@@ -61,8 +59,7 @@
    "fieldtype": "Currency",
    "in_list_view": 1,
    "columns": 1,
-   "label": "Rate",
-   "read_only": 1
+   "label": "Rate"
   },
   {
    "fieldname": "line_cost",
@@ -113,6 +110,13 @@
    "fetch_from": "item.mallet_thickness_mm",
    "fetch_if_empty": 1,
    "read_only": 1
+  },
+  {
+   "fieldname": "is_manual",
+   "fieldtype": "Check",
+   "label": "Manual Row",
+   "hidden": 1,
+   "default": "0"
   }
  ],
  "istable": 1,
