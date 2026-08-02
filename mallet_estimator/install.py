@@ -192,8 +192,17 @@ def _strip_invalid_costs(ws):
     if not ws.meta.has_field("workstation_costs"):
         return False
     rows = ws.get("workstation_costs") or []
-    ok = set(WS_COMPONENTS) | set(LEGACY_WS_COMPONENTS)
-    valid = [r for r in rows if r.operating_component in ok]
+
+    def _ok(comp):
+        if comp in WS_COMPONENTS:
+            return True
+        # A legacy component (pre-OPS3 folded "Wages"/"Machinery") is only valid
+        # while its master still exists — a dangling link is exactly what B1
+        # crashed on, so those rows are stripped.
+        return comp in LEGACY_WS_COMPONENTS and \
+            frappe.db.exists("Workstation Operating Component", comp)
+
+    valid = [r for r in rows if _ok(r.operating_component)]
     if len(valid) != len(rows):
         ws.set("workstation_costs", valid)
         return True

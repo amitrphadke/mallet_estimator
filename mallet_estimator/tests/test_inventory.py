@@ -98,7 +98,8 @@ class TestMaterialItem(MalletTestCase):
         )
         it = frappe.get_doc("Item", code)
         self.assertEqual(it.item_code, "HWD_AH_SC_0_TEST")
-        self.assertEqual(it.item_group, "Hardware")
+        # C1 split hardware into Client/Joinery groups; a hinge is client-selectable.
+        self.assertIn(it.item_group, ("Client Hardware", "Hardware"))
         self.assertEqual(it.stock_uom, "Nos")
         self.assertEqual(it.is_stock_item, 1)
         self.assertEqual(it.get("mallet_sheet_length_mm"), 80)
