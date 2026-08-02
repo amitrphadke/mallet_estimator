@@ -14,6 +14,14 @@ class TestEstimateSKU(MalletTestCase):
     def setUpClass(cls):
         super().setUpClass()
         install.seed_settings()
+        # Cost figures are sensitive (###) — repo defaults are zero, so key
+        # SYNTHETIC rates here for the pricing assertions.
+        s = frappe.get_single("Estimate Settings")
+        s.carpenter_rate = 100
+        s.helper_rate = 50
+        s.monthly_rent = 10000
+        s.flags.ignore_permissions = True
+        s.save()
         install.ensure_rooms()
         inventory.ensure_inventory_masters()
         install.ensure_manufacturing_masters()
