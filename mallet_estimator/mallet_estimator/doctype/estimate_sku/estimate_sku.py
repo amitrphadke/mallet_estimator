@@ -46,7 +46,19 @@ def get_default_item_group():
 
 
 class EstimateSKU(Document):
+    ATTACH_FIELDS = ("estimate_pdf", "partlist_pdf", "views_pdf", "parts_csv", "article_image")
+
+    def before_validate(self):
+        """A file removed from the Attachments sidebar leaves the attach field
+        pointing at nothing, and core validation then blocks EVERY save with
+        'Uploaded file not found'. Silently drop dangling references instead."""
+        for f in self.ATTACH_FIELDS:
+            url = self.get(f)
+            if url and not frappe.db.exists("File", {"file_url": url}):
+                self.set(f, None)
+
     def validate(self):
+        self.wipe_on_cleared_files()
         self.ensure_steps()
         self.ensure_design_steps()
         self.ensure_step_remarks()
@@ -56,6 +68,54 @@ class EstimateSKU(Document):
         self.derive_joinery()
         self.compute_costs()
         self.build_cost_breakup()
+
+    def wipe_on_cleared_files(self):
+        """Clearing a source PDF wipes what was derived from it, so the SKU never
+        carries stale imported data."""
+        if not self.is_new() and self.has_value_changed("estimate_pdf") and not self.estimate_pdf:
+            self.set("materials", [])
+            self.set("joinery_items", [])
+            self.set("parts", [])
+            self.unpriced_materials = ""
+            self.import_drivers = ""
+        if not self.is_new() and self.has_value_changed("views_pdf") and not self.views_pdf:
+            self.article_image = None
+
+    def on_update(self):
+        if self.create_item:
+            self.sync_item()
+        self.refresh_project_estimates()
+        self._gc_orphan_files()
+
+    def _gc_orphan_files(self):
+        """B8 — removing a file from an attach field also removes it from the
+        Attachments sidebar: delete File docs attached to this SKU whose URL no
+        attach field references any more (repeat ISO extracts included)."""
+        keep = {self.get(f) for f in self.ATTACH_FIELDS if self.get(f)}
+        for fd in frappe.get_all(
+            "File", filters={"attached_to_doctype": self.doctype, "attached_to_name": self.name},
+            fields=["name", "file_url"],
+        ):
+            if fd.file_url not in keep:
+                try:
+                    frappe.delete_doc("File", fd.name, force=True, ignore_permissions=True)
+                except Exception:
+                    frappe.log_error(frappe.get_traceback(), f"gc file {fd.name}")
+
+    @frappe.whitelist()
+    def reset_files(self):
+        """Start over: remove EVERY attached file (and its File docs) plus all
+        data derived from them — materials, joinery, parts, execution design,
+        drivers. Identity, labor/design step templates and settings stay."""
+        for f in self.ATTACH_FIELDS:
+            self.set(f, None)
+        for table in ("materials", "joinery_items", "parts", "execution_materials"):
+            if self.meta.has_field(table):
+                self.set(table, [])
+        self.unpriced_materials = ""
+        self.import_drivers = ""
+        self.save(ignore_permissions=True)  # on_update GC deletes the File docs
+        return {"ok": True}
 
     def on_trash(self):
         """Delink from DRAFT estimates so the SKU can actually be deleted (a
@@ -237,11 +297,6 @@ class EstimateSKU(Document):
             op = op_phase(row)
             if op in estimate_pdf.LOCKED_OPERATIONS and op in q:
                 row.qty = q[op]
-
-    def on_update(self):
-        if self.create_item:
-            self.sync_item()
-        self.refresh_project_estimates()
 
     def refresh_project_estimates(self):
         """Keep any DRAFT Estimate of this SKU's Project in sync, so a SKU added

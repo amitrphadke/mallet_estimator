@@ -26,14 +26,16 @@
    "in_list_view": 1,
    "columns": 3,
    "label": "Material Item",
-   "description": "The ERPNext stock Item — cost comes from its valuation / price."
+   "description": "The ERPNext stock Item — cost comes from its valuation / price.",
+   "read_only": 1
   },
   {
    "fieldname": "description",
    "fieldtype": "Data",
    "in_list_view": 1,
    "columns": 3,
-   "label": "Description"
+   "label": "Description",
+   "read_only": 1
   },
   {
    "fieldname": "qty",
@@ -41,7 +43,9 @@
    "in_list_view": 1,
    "columns": 1,
    "label": "Qty",
-   "default": "1"
+   "default": "1",
+   "read_only": 1,
+   "description": "Derived from the Material Estimate PDF — re-import to change."
   },
   {
    "fieldname": "uom",
@@ -49,21 +53,24 @@
    "options": "UOM",
    "in_list_view": 1,
    "columns": 1,
-   "label": "UOM"
+   "label": "UOM",
+   "read_only": 1
   },
   {
    "fieldname": "unit_cost",
    "fieldtype": "Currency",
    "in_list_view": 1,
    "columns": 1,
-   "label": "Rate"
+   "label": "Rate",
+   "read_only": 1
   },
   {
    "fieldname": "line_cost",
    "fieldtype": "Currency",
    "in_list_view": 1,
    "columns": 1,
-   "label": "Amount"
+   "label": "Amount",
+   "read_only": 1
   },
   {
    "fieldname": "customer_supplied",

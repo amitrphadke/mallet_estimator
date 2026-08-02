@@ -63,6 +63,19 @@ frappe.ui.form.on("Estimate SKU", {
       });
     }
     render_cost_breakup(frm);
+    // Start over: remove every attached file + all data derived from them.
+    if (!frm.is_new()) {
+      frm.add_custom_button(__("Remove all files (start over)"), () => {
+        frappe.confirm(
+          __("Remove ALL attached files and every line derived from them (materials, joinery, parts, execution design)? Steps and identity stay."),
+          () =>
+            frm.call("reset_files").then(() => {
+              frappe.show_alert({ message: __("SKU cleared — attach fresh PDFs to re-import"), indicator: "green" }, 5);
+              frm.reload_doc();
+            })
+        );
+      }, __("Files"));
+    }
     // V1: seed the execution design (actual materials) from the estimate lines.
     if (!frm.is_new() && (frm.doc.materials || []).length) {
       frm.add_custom_button(__("Build execution design"), () => {
