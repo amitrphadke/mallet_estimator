@@ -109,7 +109,10 @@ class EstimateSKU(Document):
         drivers. Identity, labor/design step templates and settings stay."""
         for f in self.ATTACH_FIELDS:
             self.set(f, None)
-        for table in ("materials", "joinery_items", "parts", "execution_materials"):
+        # Labor + design steps wipe too — ensure_steps re-seeds the fresh
+        # 17-step / 7-step templates during the save below.
+        for table in ("materials", "joinery_items", "parts", "execution_materials",
+                      "labor", "design_labor"):
             if self.meta.has_field(table):
                 self.set(table, [])
         self.unpriced_materials = ""
@@ -223,10 +226,15 @@ class EstimateSKU(Document):
             qty = m["qty"] or 0
             desc = _pdf_desc(m)
             if m.get("kind") == "edge":
-                # The estimate PDF counts edge banding in ROLLS; we stock/cost it
-                # per METER (50 m per roll).
-                qty = qty * inventory.EDGE_ROLL_METERS
-                desc = f"{desc} — {m['qty']:g} roll(s) × {inventory.EDGE_ROLL_METERS:g} m"[:140]
+                # Edge banding is bought AND charged to the client in whole ROLLS
+                # (50 m each) — the PDF's roll count is the line qty; the rate is
+                # the per-meter rate x 50 = per-roll.
+                desc = f"{desc} — whole roll(s) of {inventory.EDGE_ROLL_METERS:g} m"[:140]
+                self._add_material_line(
+                    m["name"], "edge", m.get("thickness") or 0, qty, desc, unpriced,
+                    uom="Roll", rate_factor=inventory.EDGE_ROLL_METERS,
+                )
+                continue
             self._add_material_line(
                 m["name"], m.get("kind"), m.get("thickness") or 0, qty,
                 desc, unpriced,
@@ -270,16 +278,21 @@ class EstimateSKU(Document):
                     "laminated": p.get("laminated", 0),
                 })
 
-    def _add_material_line(self, name, kind, thickness, qty, desc, unpriced, dims=None):
+    def _add_material_line(self, name, kind, thickness, qty, desc, unpriced, dims=None,
+                           uom=None, rate_factor=1):
         """Create/link the ERPNext stock Item and append a costed material row.
         T1: the unit cost is the LANDED (post-tax) rate — ex-tax estimation rate
-        grossed up by the item's GST % — so estimates never underquote taxes."""
+        grossed up by the item's GST % — so estimates never underquote taxes.
+        `uom`/`rate_factor` override the line unit (e.g. edge banding: qty in
+        Rolls at per-meter rate x 50)."""
         code, rate, source = inventory.ensure_material_item(name, kind=kind, thickness=thickness, dims=dims)
         landed, _base, _gst, _src = inventory.landed_rate(code)
+        landed = (landed or 0) * (rate_factor or 1)
+        line_uom = uom or inventory.stock_uom_for(kind)
         self.append("materials", {
             "item": code, "material": name, "description": (desc or name)[:140],
-            "qty": qty, "uom": inventory.stock_uom_for(kind),
-            "unit_cost": landed, "line_cost": qty * (landed or 0),
+            "qty": qty, "uom": line_uom if frappe.db.exists("UOM", line_uom) else None,
+            "unit_cost": landed, "line_cost": qty * landed,
         })
         if source == "unset":
             unpriced.append(code)
@@ -547,11 +560,18 @@ class EstimateSKU(Document):
 
     @frappe.whitelist()
     def workstation_net_rates(self):
-        """{workstation_name: Net Hour Rate} (+ __default__) so the form can price
-        Phase Cost live as you edit Qty / Min / Operation — no save needed (I1)."""
+        """{workstation_name: Net Hour Rate} (+ __default__ and __markups__) so the
+        form can price Phase Cost AND the SKU totals live as you edit — no save
+        needed (I1/I3). The save remains the authoritative computation."""
         settings = frappe.get_single("Estimate Settings")
         rates = live_workstation_rates(settings)
         out = {name: (r.get("net_hr") or 0) for name, r in rates.items()}
+        out["__markups__"] = {
+            "material": float(settings.markup_material or 0),
+            "labor": float(settings.markup_labor or 0),
+            "overhead": float(settings.markup_overhead or 0),
+            "design": float(settings.markup_design or 0),
+        }
         out["__default__"] = out.get(DEFAULT_WORKSTATION, 0)
         return out
 

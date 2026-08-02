@@ -74,3 +74,34 @@ frappe.ui.form.on("Estimate", {
     }
   },
 });
+
+// I3: transport + GST totals update INSTANTLY as trip rows are edited — no save.
+frappe.ui.form.on("Estimate Transport Trip", {
+  qty: (frm, cdt, cdn) => recompute_trip(frm, cdt, cdn),
+  rate: (frm, cdt, cdn) => recompute_trip(frm, cdt, cdn),
+  transport_items_remove: (frm) => update_estimate_totals(frm),
+});
+
+frappe.ui.form.on("Estimate", {
+  gst_pct: (frm) => update_estimate_totals(frm),
+});
+
+function recompute_trip(frm, cdt, cdn) {
+  const row = locals[cdt][cdn];
+  if (!row) return;
+  frappe.model.set_value(cdt, cdn, "amount", (row.qty || 0) * (row.rate || 0))
+    .then(() => update_estimate_totals(frm));
+}
+
+function update_estimate_totals(frm) {
+  const transport = (frm.doc.transport_items || []).reduce((s, t) => s + (t.amount || 0), 0);
+  const skus_client = (frm.doc.skus || []).reduce((s, r) => s + (r.client_total || 0), 0);
+  const skus_internal = (frm.doc.skus || []).reduce((s, r) => s + (r.internal_cost || 0), 0);
+  const client = skus_client + transport;
+  const gst = client * ((frm.doc.gst_pct == null ? 18 : frm.doc.gst_pct) / 100);
+  frm.set_value("total_transport", transport);
+  frm.set_value("total_client", client);
+  frm.set_value("total_internal", skus_internal + transport);
+  frm.set_value("total_gst", gst);
+  frm.set_value("total_with_gst", client + gst);
+}

@@ -120,11 +120,27 @@ function recompute_material(frm, cdt, cdn) {
   frappe.model.set_value(cdt, cdn, "line_cost", cost).then(() => update_live_totals(frm));
 }
 
+// I3: EVERY total live — material, joinery, labor, design, internal and the
+// client trio — recomputed client-side on each edit. The save stays authoritative
+// (client-side folds full phase cost under the labor markup; identical when the
+// labor and overhead markups match).
 function update_live_totals(frm) {
   const mat = (frm.doc.materials || []).reduce((s, m) => s + (m.line_cost || 0), 0);
-  const lab = (frm.doc.labor || []).reduce((s, r) => s + (r.op_cost || 0), 0);
+  const joi = (frm.doc.joinery_items || []).reduce((s, j) => s + (j.amount || 0), 0);
+  const lab = (frm.doc.labor || []).reduce(
+    (s, r) => s + ((r.is_misc && !frm.doc.include_misc) ? 0 : (r.op_cost || 0)), 0);
+  const des = (frm.doc.design_labor || []).reduce((s, r) => s + (r.op_cost || 0), 0);
+  const mk = (frm._ws_net && frm._ws_net.__markups__) || { material: 0, labor: 0, overhead: 0, design: 0 };
+  const cm = (mat + joi) * (1 + (mk.material || 0) / 100);
+  const cde = lab * (1 + (mk.labor || 0) / 100) + des * (1 + (mk.design || 0) / 100);
   frm.set_value("material_cost", mat);
+  if (frm.get_field("joinery_cost")) frm.set_value("joinery_cost", joi);
   frm.set_value("labor_cost", lab);
+  frm.set_value("design_cost", des);
+  frm.set_value("internal_cost", mat + joi + lab + des);
+  frm.set_value("client_material", cm);
+  frm.set_value("client_design_exec", cde);
+  frm.set_value("client_total", cm + cde);
 }
 
 // Live Total Min = Qty x Min/Unit, and live Phase Cost = crew-hours x the
@@ -184,3 +200,8 @@ function render_cost_breakup(frm) {
     </table>
     <p class="text-muted" style="font-size:11.5px;margin:6px 0 0">${esc(d.note || "")}</p>`);
 }
+
+// include_misc toggle re-prices instantly too.
+frappe.ui.form.on("Estimate SKU", {
+  include_misc: (frm) => update_live_totals(frm),
+});
