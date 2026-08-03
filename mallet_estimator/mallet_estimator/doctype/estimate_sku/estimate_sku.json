@@ -346,7 +346,8 @@
    "fieldtype": "Table",
    "label": "Design Steps",
    "options": "Estimate Labor",
-   "description": "The designer's pipeline (site measurement → 3D plan → SKP → SKU → 7Views → estimate/part PDFs), priced at the Design Desk workstation rate."
+   "description": "The designer's pipeline (site measurement → 3D plan → SKP → SKU → 7Views → estimate/part PDFs), priced at the Design Desk rate. Only Qty and Remarks are editable — std times live on the Operation masters.",
+   "cannot_add_rows": 1
   },
   {
    "fieldname": "design_hours",

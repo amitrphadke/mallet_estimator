@@ -7,7 +7,7 @@ const LOCKED_PHASES = ["Sheet Lamination", "Sheet Tape Removal", "Sheet Cutting"
 
 frappe.ui.form.on("Estimate SKU", {
   refresh(frm) {
-    setTimeout(() => lock_qty(frm), 300);
+    setTimeout(() => { lock_qty(frm); lock_design_columns(frm); }, 300);
     // I1: cache the live Workstation Net Hour Rates so Phase Cost updates instantly
     // as you edit Qty / Min / Operation — no save needed.
     if (!frm.is_new()) {
@@ -195,6 +195,17 @@ function recompute_total(frm, cdt, cdn) {
   } else {
     update_live_totals(frm);
   }
+}
+
+// Design steps: only Qty + Remarks are editable — the pipeline itself (operation,
+// workstation, min/unit) is fixed by the Operation masters. Grid-level lock so the
+// shared Estimate Labor doctype stays editable on the Process Steps table.
+function lock_design_columns(frm) {
+  const g = frm.fields_dict.design_labor && frm.fields_dict.design_labor.grid;
+  if (!g || !g.update_docfield_property) return;
+  ["operation", "workstation", "carp_min", "in_factory", "is_misc", "phase"].forEach((f) => {
+    try { g.update_docfield_property(f, "read_only", 1); } catch (e) { /* field absent */ }
+  });
 }
 
 function lock_qty(frm) {
