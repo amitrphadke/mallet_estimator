@@ -63,6 +63,7 @@ class EstimateSKU(Document):
         self.ensure_design_steps()
         self.ensure_step_remarks()
         self.maybe_import()
+        self.refresh_material_rates()
         self.compute_code()
         self.enforce_locked_qty()
         self.derive_joinery()
@@ -404,6 +405,27 @@ class EstimateSKU(Document):
         if source == "unset":
             unpriced.append(code)
 
+    def refresh_material_rates(self):
+        """The price list is the only rate authority — until the Estimate is
+        quoted (rates_frozen), every save re-reads each material line's rate,
+        so a price keyed AFTER import (the red 'not quotable' flow) takes
+        effect without a re-import. Edge banding lines (Roll UOM) stay at the
+        per-metre rate x roll length. Quantities, descriptions and manual rows
+        are untouched; the unpriced flag clears itself as items get priced."""
+        if self._frozen() or not self.materials:
+            return
+        unpriced = []
+        for row in self.materials:
+            if not row.item:
+                continue
+            rate, source = inventory.material_rate(row.item)
+            factor = inventory.EDGE_ROLL_METERS if (row.uom or "") == "Roll" else 1
+            row.unit_cost = (rate or 0) * factor
+            row.line_cost = (row.qty or 0) * row.unit_cost
+            if source == "unset" and row.item not in unpriced:
+                unpriced.append(row.item)
+        self.unpriced_materials = ", ".join(unpriced)
+
     def enforce_locked_qty(self):
         """Locked operations (sheet lamination/tape/cutting, edge banding) always
         take their computed qty from the last import — they can't be hand-edited."""
@@ -714,12 +736,32 @@ class EstimateSKU(Document):
         that pre-dates a workstation-rate or Operation-time change."""
         before = self.client_total or 0
         before_std = [row.std_min for row in (self.labor or [])]
+        before_rates = [row.unit_cost for row in (self.materials or [])]
+        self.refresh_material_rates()
         self.compute_costs()
         after_std = [row.std_min for row in (self.labor or [])]
-        if abs((self.client_total or 0) - before) > 0.005 or before_std != after_std:
+        after_rates = [row.unit_cost for row in (self.materials or [])]
+        if abs((self.client_total or 0) - before) > 0.005 or before_std != after_std \
+                or before_rates != after_rates:
             self.save(ignore_permissions=True)
             return {"changed": True, "client_total": self.client_total}
         return {"changed": False, "client_total": self.client_total}
+
+    @frappe.whitelist()
+    def refresh_rates(self):
+        """Materials > Refresh rates: pull the CURRENT price-list rate onto
+        every material line (imported AND manual) without re-parsing the PDFs.
+        The everyday flow after pricing red-flagged items on the Estimation
+        (Assumed) list. save() runs the full validate chain, which does the
+        actual refresh + recosting."""
+        if self._frozen():
+            frappe.throw(_("Rates are frozen (quoted) — amend/cancel the Estimate first."))
+        before = [(row.item, row.unit_cost) for row in (self.materials or [])]
+        self.save(ignore_permissions=True)
+        after = [(row.item, row.unit_cost) for row in (self.materials or [])]
+        changed = sum(1 for b, a in zip(before, after)
+                      if abs((b[1] or 0) - (a[1] or 0)) > 0.005)
+        return {"changed": changed, "unpriced": self.unpriced_materials or ""}
 
     # --- ERPNext Item ------------------------------------------------------
     def sync_item(self):

@@ -67,6 +67,38 @@ frappe.ui.form.on("Estimate SKU", {
     if (!frm.is_new()) {
       frm.add_custom_button(__("Add material row"), () => add_material_dialog(frm), __("Materials"));
     }
+    // Pull the current price-list rate onto every material line — the everyday
+    // flow after pricing red-flagged items on the Estimation (Assumed) list.
+    // No re-parse of the PDFs; qty and manual rows stay as they are.
+    if (!frm.is_new() && !frm.doc.rates_frozen && (frm.doc.materials || []).length) {
+      frm.add_custom_button(
+        __("Refresh rates from price list"),
+        () => {
+          const run = () =>
+            frm.call("refresh_rates").then((r) => {
+              const m = (r && r.message) || {};
+              frappe.show_alert(
+                {
+                  message: m.changed
+                    ? __("Updated {0} line rate(s) from the price list", [m.changed])
+                    : __("Rates already match the price list"),
+                  indicator: m.changed ? "green" : "blue",
+                },
+                5
+              );
+              if (m.unpriced) {
+                frappe.show_alert(
+                  { message: __("Still unpriced: {0}", [m.unpriced]), indicator: "red" },
+                  8
+                );
+              }
+              frm.reload_doc();
+            });
+          frm.is_dirty() ? frm.save().then(run) : run();
+        },
+        __("Materials")
+      );
+    }
     // Start over: remove every attached file + all data derived from them.
     if (!frm.is_new()) {
       frm.add_custom_button(__("Remove all files (start over)"), () => {
