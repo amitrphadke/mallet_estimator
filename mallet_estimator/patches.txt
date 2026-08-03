@@ -31,3 +31,5 @@ mallet_estimator.patches.seed_salary_calendar
 mallet_estimator.patches.estimation_ui_cleanup
 # T2 — supplier-row dedupe + native GST masters (accounts, item tax template on groups).
 mallet_estimator.patches.tax_supplier_hygiene
+# S9v2 — real laminates on lines; drop slot-map doctype + orphan decor items.
+mallet_estimator.patches.real_laminates

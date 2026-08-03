@@ -66,7 +66,6 @@ class EstimateSKU(Document):
         self.compute_code()
         self.enforce_locked_qty()
         self.derive_joinery()
-        self.refresh_decor_rates()
         self.compute_costs()
         self.build_cost_breakup()
 
@@ -232,14 +231,21 @@ class EstimateSKU(Document):
         # Manually added rows (extra hardware like a bed hydraulic lift) survive
         # every re-import — only imported rows are rebuilt.
         manual_rows = [m.as_dict() for m in (self.materials or []) if m.get("is_manual")]
-        # S9 — décor slot map from the material Descriptions (est + part list).
+        # S9v2 — REAL laminates straight on the lines: parse the material
+        # Descriptions (est + part list) into an SKU-wide slot→décor map; the
+        # placeholder's trailing letters get replaced by the first letter's décor
+        # short code (SG_LAM_V1_16mm_b_a + b=Virgo Mica 6534 → SG_LAM_V1_16mm_VM6534).
+        slot_decors = {}
         try:
             pl_text = views_pdf._pdf_text(pl_content) if self.partlist_pdf else ""
             est_text = estimate_pdf.read_pdf_text(_file_content(self.estimate_pdf))
             brands = frappe.get_all("Manufacturer", pluck="name")
-            self.refresh_decor_slots(est_text + "\n" + pl_text, brands)
+            for d in decor.extract_slot_map(est_text + "\n" + pl_text, brands):
+                slot_decors.setdefault(d["slot"], d)  # slots are SKU-wide; first wins
         except Exception:
-            frappe.log_error(frappe.get_traceback(), f"decor slots {self.name}")
+            frappe.log_error(frappe.get_traceback(), f"decor parse {self.name}")
+        slot_shorts = {k: decor.short_code(v) for k, v in slot_decors.items() if decor.short_code(v)}
+        self._slot_decors, self._slot_shorts = slot_decors, slot_shorts
 
         self.set("materials", [])
         unpriced = []
@@ -248,6 +254,15 @@ class EstimateSKU(Document):
         # is authoritative); hardware comes from the part list designations when
         # attached (falling back to the PDF's generic groups).
         for m in materials:
+            if m.get("kind") == "laminate":
+                real, letter = decor.substitute_real_code(m["name"], slot_shorts)
+                if letter:
+                    meta = self._slot_decors.get(letter)
+                    self._add_material_line(
+                        real, "laminate", m.get("thickness") or 0, m["qty"] or 0,
+                        f"{real} — real laminate for {m['name']}", unpriced, decor_meta=meta,
+                    )
+                    continue
             if m.get("kind") == "hardware" and hardware:
                 # Preferred source is the part list; but NEVER silently drop an
                 # estimate-PDF hardware the part-list parse didn't cover — decide
@@ -262,10 +277,12 @@ class EstimateSKU(Document):
                     continue  # authoritative rows come from the part list below
                 # Fallback (no part list): the estimate PDF's roll count. Bought
                 # AND charged in whole ROLLS (50 m each) at per-meter rate x 50.
+                real_eb, eb_ltr = decor.substitute_real_code(m["name"], slot_shorts)
                 desc = f"{desc} — whole roll(s) of {inventory.EDGE_ROLL_METERS:g} m"[:140]
                 self._add_material_line(
-                    m["name"], "edge", m.get("thickness") or 0, qty, desc, unpriced,
+                    real_eb, "edge", m.get("thickness") or 0, qty, desc, unpriced,
                     uom="Roll", rate_factor=inventory.EDGE_ROLL_METERS,
+                    decor_meta=self._slot_decors.get(eb_ltr) if eb_ltr else None,
                 )
                 continue
             self._add_material_line(
@@ -280,6 +297,7 @@ class EstimateSKU(Document):
         import math
         pdf_edge_rolls = {m["name"]: (m["qty"] or 0) for m in materials if m.get("kind") == "edge"}
         for e in pl_edges:
+            e["code"], _ltr = decor.substitute_real_code(e["code"], slot_shorts)
             if e.get("meters"):
                 rolls = max(1, math.ceil(e["meters"] / inventory.EDGE_ROLL_METERS))
                 desc = (f"{e['code']} — {e['meters']:g} m banding on {e['parts']} part edge(s) "
@@ -365,7 +383,7 @@ class EstimateSKU(Document):
                 })
 
     def _add_material_line(self, name, kind, thickness, qty, desc, unpriced, dims=None,
-                           uom=None, rate_factor=1):
+                           uom=None, rate_factor=1, decor_meta=None):
         """Append a costed material row. A NEW code auto-creates its Item
         STRUCTURE (group, UOM, dims — zero manual setup), but the rate is NEVER
         invented: the unit cost is the STOCK PRICE LIST rate EXACTLY (no
@@ -374,6 +392,8 @@ class EstimateSKU(Document):
         Re-import. `uom`/`rate_factor` adapt the unit (edge banding: Rolls at
         per-meter rate x 50)."""
         code, rate, source = inventory.ensure_material_item(name, kind=kind, thickness=thickness, dims=dims)
+        if decor_meta:
+            inventory.enrich_decor_item(code, decor_meta)
         rate = (rate or 0) * (rate_factor or 1)
         line_uom = uom or inventory.stock_uom_for(kind)
         self.append("materials", {
@@ -465,43 +485,6 @@ class EstimateSKU(Document):
             })
 
     # --- derived consumables + transport (J1 / C1) -------------------------
-    def refresh_decor_slots(self, combined_text, brands=None):
-        """S9 — rebuild the slot map from the PDFs' description sub-lines. A row
-        whose décor item the user re-pointed (differs from its auto item) keeps
-        the manual choice; removed placeholders drop off."""
-        if not self.meta.has_field("decor_slots"):
-            return
-        defs = decor.extract_slot_map(combined_text, brands)
-        existing = {(r.placeholder, r.slot): r for r in (self.get("decor_slots") or [])}
-        self.set("decor_slots", [])
-        for d in defs:
-            try:
-                auto_item = inventory.ensure_decor_item(
-                    d["placeholder"], d.get("brand"), d.get("catalogue"), d.get("name"),
-                    d.get("raw"), year=d.get("year"), title=d.get("title"))
-            except Exception:
-                frappe.log_error(frappe.get_traceback(), f"decor item {d.get('raw')}")
-                auto_item = None
-            prev = existing.get((d["placeholder"], d["slot"]))
-            chosen = auto_item
-            if prev and prev.decor_item and prev.decor_item != (prev.get("auto_item") or auto_item):
-                chosen = prev.decor_item  # manual re-point wins
-            rate = inventory.material_rate(chosen)[0] if chosen else 0
-            self.append("decor_slots", {
-                "placeholder": d["placeholder"], "slot": d["slot"],
-                "title": (d.get("title") or "")[:60],
-                "decor_item": chosen, "auto_item": auto_item,
-                "decor_rate": rate, "raw_text": (d.get("raw") or "")[:140],
-            })
-
-    def refresh_decor_rates(self):
-        """Slot rates always mirror the price list (unless quoted/frozen)."""
-        if self._frozen():
-            return
-        for r in self.get("decor_slots") or []:
-            if r.decor_item:
-                r.decor_rate = inventory.material_rate(r.decor_item)[0]
-
     def derive_joinery(self):
         """J1 — Fevicol + Abrotape derived from the Sheet Lamination step qty:
         3 packets + 11 m tape per laminated sheet, as stocked Joinery Hardware
@@ -649,32 +632,18 @@ class EstimateSKU(Document):
         one row each, defaulting the chosen item to the generic. The designer then
         swaps in the real client-selected item + actual rate/vendor; variance is
         tracked automatically. Re-running reseeds from the current estimate."""
-        # S9 — a mapped slot substitutes the REAL décor item automatically.
-        slot_by_placeholder = {}
-        for r in self.get("decor_slots") or []:
-            if not r.decor_item:
-                continue
-            cur = slot_by_placeholder.get(r.placeholder)
-            own = decor.material_slots(r.placeholder)
-            if cur is None or (r.slot in own and cur.slot not in own):
-                slot_by_placeholder[r.placeholder] = r
+        # Lines already carry the REAL items (laminates included) — execution
+        # starts as the estimate; swap items only where the client changes a pick.
         self.set("execution_materials", [])
         for m in self.materials or []:
             if getattr(m, "customer_supplied", 0):
                 continue  # client-supplied — not costed either side
             est_amt = (m.qty or 0) * (m.unit_cost or 0)
-            slot = slot_by_placeholder.get(m.material)
-            chosen = slot.decor_item if slot else m.item
-            actual_rate = (slot.decor_rate or 0) if slot else m.unit_cost
-            if slot and str(m.material or "").upper().startswith("EB_"):
-                # edge lines are in ROLLS; décor rates are per metre
-                actual_rate = (slot.decor_rate or 0) * inventory.EDGE_ROLL_METERS
             self.append("execution_materials", {
                 "est_material": m.material or m.item,
                 "est_qty": m.qty, "est_rate": m.unit_cost, "est_amount": est_amt,
-                "chosen_item": chosen, "actual_qty": m.qty, "actual_rate": actual_rate,
-                "actual_amount": (m.qty or 0) * (actual_rate or 0),
-                "variance": (m.qty or 0) * (actual_rate or 0) - est_amt,
+                "chosen_item": m.item, "actual_qty": m.qty, "actual_rate": m.unit_cost,
+                "actual_amount": est_amt, "variance": 0,
             })
         self.save(ignore_permissions=True)
         return {"rows": len(self.execution_materials)}

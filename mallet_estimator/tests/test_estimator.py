@@ -173,12 +173,25 @@ class TestDecor(unittest.TestCase):
         self.assertEqual(out["b"]["brand"], "Merino")
         self.assertEqual(out["c"]["catalogue"], "6575")
 
-    def test_item_codes(self):
+    def test_real_code_substitution(self):
+        # S9v2 — the user's exact convention: trailing letters replaced by the
+        # FIRST letter's décor short code; one PO code per laminate.
         from mallet_estimator import decor
-        self.assertEqual(decor.decor_item_code("SG_LAM_V1_16mm_b_a", "Merino", "1834", "x"),
-                         "LAMINATE_MERINO_1834")
-        self.assertTrue(decor.decor_item_code("EB_PVC_EX_c", None, None,
-                        "YS_6534_MOONLIT_BED_Laminate").startswith("EBD_"))
+        ss = {"b": "VM6534", "a": "GE1834"}
+        self.assertEqual(decor.substitute_real_code("SG_LAM_V0_a_a", ss)[0], "SG_LAM_V0_GE1834")
+        self.assertEqual(decor.substitute_real_code("SG_LAM_V1_16mm_a_b", ss)[0], "SG_LAM_V1_16mm_GE1834")
+        self.assertEqual(decor.substitute_real_code("SG_LAM_V1_16mm_b_a", ss)[0], "SG_LAM_V1_16mm_VM6534")
+        self.assertEqual(decor.substitute_real_code("EB_PVC_EX_b", ss)[0], "EB_PVC_EX_VM6534")
+        # no description -> the placeholder itself stays the item
+        self.assertEqual(decor.substitute_real_code("SG_LAM_V0_12mm_a_a", {}), ("SG_LAM_V0_12mm_a_a", None))
+        # ply codes are untouched by design (no substitution is ever called on them)
+
+    def test_short_codes(self):
+        from mallet_estimator import decor
+        self.assertEqual(decor.short_code({"brand": "Virgo Mica", "catalogue": "6534"}), "VM6534")
+        self.assertEqual(decor.short_code({"brand": "Merino", "catalogue": "1834"}), "ME1834")
+        self.assertEqual(decor.short_code({"short": "GE", "brand": "Greenlam", "catalogue": "1834"}), "GE")
+        self.assertTrue(decor.short_code({"raw": "YS_6534_MOONLIT"}))
 
     def test_extract_from_pdf_text(self):
         from mallet_estimator import decor

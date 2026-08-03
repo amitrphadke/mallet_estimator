@@ -16,7 +16,7 @@ import re
 
 _SLOT_DEF_RE = re.compile(r"^\s*([a-z])\s*=\s*([^;\n]+)", re.M)
 _INLINE_SLOT_RE = re.compile(r"\b([a-z])\s*=\s*([^;\n]+)")
-_LABEL_RE = re.compile(r"^\s*(brand|code|name|year)\s*=\s*(.+)$", re.I)
+_LABEL_RE = re.compile(r"^\s*(brand|code|name|year|short)\s*=\s*(.+)$", re.I)
 _PLACEHOLDER_RE = re.compile(r"^\s*(SG_LAM_[A-Za-z0-9_]+|SG_PLY_[A-Za-z0-9_]+|EB_[A-Za-z0-9_]+)")
 _CODE_TOKEN_RE = re.compile(r"^[0-9][0-9A-Za-z\-]*$")
 
@@ -110,6 +110,7 @@ def parse_description(desc, placeholder_code, brands=None):
             year = block.get("year", "")
             out[current_slot] = {
                 "brand": block.get("brand"), "catalogue": block.get("code"),
+                "short": block.get("short"),
                 "name": name, "year": year, "title": current_title,
                 "raw": " ".join(x for x in (block.get("brand"), block.get("code"), name,
                                             f"({year})" if year else "") if x),
@@ -201,10 +202,53 @@ def extract_slot_map(pdf_text, brands=None):
     return results
 
 
-def decor_item_code(placeholder, brand, catalogue, raw):
-    """LAMINATE_/EBD_ + BRAND + catalogue (or a slug of the raw text). One item per
-    real-world décor — reused across projects/SKUs."""
-    prefix = "EBD" if str(placeholder or "").upper().startswith("EB") else "LAMINATE"
-    if brand and catalogue:
-        return f"{prefix}_{_slug(brand).upper()}_{catalogue}"
-    return f"{prefix}_{_slug(raw)[:50]}"
+
+def trailing_slots(code):
+    """The trailing slot letters of a placeholder, INCLUDING 'a':
+    SG_LAM_V1_16mm_b_a → ['b','a'];  SG_LAM_V0_a_a → ['a','a'];
+    EB_PVC_EX_c → ['c'];  SG_LAM_V1_16mm_VM6534 → [] (already real)."""
+    tokens = str(code or "").split("_")
+    out = []
+    for t in reversed(tokens):
+        if len(t) == 1 and t.isalpha() and t.islower():
+            out.append(t)
+        else:
+            break
+    return list(reversed(out))
+
+
+def short_code(parsed):
+    """The décor SHORT code that replaces the slot letters in a real item name:
+    explicit Short= label wins; else brand initials (multi-word: 'Virgo Mica' →
+    VM; single word: first two letters, 'Merino' → ME) + catalogue number; else
+    a slug of the raw text (legacy)."""
+    if not parsed:
+        return None
+    if parsed.get("short"):
+        return _slug(parsed["short"]).upper()
+    brand, cat = parsed.get("brand"), parsed.get("catalogue")
+    if brand and cat:
+        words = brand.split()
+        ini = "".join(w[0] for w in words).upper() if len(words) > 1 else brand[:2].upper()
+        return f"{ini}{cat}"
+    return _slug(parsed.get("raw"))[:20] or None
+
+
+def substitute_real_code(code, slot_shorts):
+    """Turn a laminate/edge PLACEHOLDER into the REAL item code by replacing the
+    trailing slot letters with the FIRST letter's décor short code (the pair only
+    indicates which side gets what — the purchase is ONE laminate):
+        SG_LAM_V1_16mm_b_a + {b: VM6534} → SG_LAM_V1_16mm_VM6534
+        SG_LAM_V0_a_a      + {a: GE1834} → SG_LAM_V0_GE1834
+        EB_PVC_EX_b        + {b: VM6534} → EB_PVC_EX_VM6534
+    Returns (real_code, slot_letter) — or (code, None) when no décor is defined
+    for the first letter (the placeholder itself stays the item)."""
+    letters = trailing_slots(code)
+    if not letters:
+        return code, None
+    first = letters[0]
+    short = slot_shorts.get(first)
+    if not short:
+        return code, None
+    base = "_".join(str(code).split("_")[: -len(letters)])
+    return f"{base}_{short}", first
