@@ -234,7 +234,6 @@ class EstimateSKU(Document):
         self.set("materials", [])
         unpriced = []
         deferred_hw = []
-        self._missing_items = []
         # Sheets, laminate and edge banding come from the estimate PDF (its nesting
         # is authoritative); hardware comes from the part list designations when
         # attached (falling back to the PDF's generic groups).
@@ -319,21 +318,14 @@ class EstimateSKU(Document):
                 "is_manual": 1,
             })
 
-        if self._missing_items:
-            frappe.msgprint(
-                _("These materials are NOT in the stock module, so they were NOT "
-                  "added to the estimate. Create the Item (with a rate on the "
-                  "Estimation (Assumed) price list) and Re-import:<br><b>{0}</b>")
-                .format(", ".join(sorted(set(self._missing_items)))),
-                title=_("Items missing in stock"), indicator="red",
-            )
         self.unpriced_materials = ", ".join(unpriced)
         if unpriced:
             frappe.msgprint(
-                _("These materials have no price in ERPNext yet — set a Purchase/valuation "
-                  "or standard rate on the Item so the estimate can cost them:<br><b>{0}</b>")
+                _("UNPRICED lines entered at ₹0 — this estimate is NOT quotable "
+                  "yet. Key each rate on the <b>Estimation (Assumed)</b> price "
+                  "list (the only rate authority) and Re-import:<br><b>{0}</b>")
                 .format(", ".join(unpriced)),
-                title=_("Materials need a price"), indicator="orange",
+                title=_("Materials need a price"), indicator="red",
             )
 
         # Edge Banding operation qty: banded-edge count from the part list when
@@ -364,18 +356,14 @@ class EstimateSKU(Document):
 
     def _add_material_line(self, name, kind, thickness, qty, desc, unpriced, dims=None,
                            uom=None, rate_factor=1):
-        """Append a costed material row. The unit cost is the STOCK PRICE LIST
-        rate EXACTLY (Estimation (Assumed) → valuation → …) — no gross-up, no
-        line-level alteration; GST is charged at document level. An item that is
-        NOT in the stock module is NOT allowed onto the line — it lands in the
-        missing list for the user to create + price first. `uom`/`rate_factor`
-        adapt the unit (edge banding: Rolls at per-meter rate x 50)."""
-        code = inventory.item_code_for(name, thickness, kind)
-        if not frappe.db.exists("Item", code):
-            self._missing_items.append(code)
-            return
-        inventory.attach_scope_suppliers(code, kind)
-        rate, source = inventory.material_rate(code)
+        """Append a costed material row. A NEW code auto-creates its Item
+        STRUCTURE (group, UOM, dims — zero manual setup), but the rate is NEVER
+        invented: the unit cost is the STOCK PRICE LIST rate EXACTLY (no
+        gross-up; GST at document level). An unpriced item enters at 0 and is
+        flagged LOUDLY — key its rate on the Estimation (Assumed) list once and
+        Re-import. `uom`/`rate_factor` adapt the unit (edge banding: Rolls at
+        per-meter rate x 50)."""
+        code, rate, source = inventory.ensure_material_item(name, kind=kind, thickness=thickness, dims=dims)
         rate = (rate or 0) * (rate_factor or 1)
         line_uom = uom or inventory.stock_uom_for(kind)
         self.append("materials", {
@@ -485,9 +473,7 @@ class EstimateSKU(Document):
             ("JH_Fevicol", 3 * sheets, "Nos", f"3 packets × {sheets:g} laminated sheet(s)"),
             ("JH_Abrotape", 11 * sheets, "Meter", f"11 m × {sheets:g} laminated sheet(s) — 20 m rolls"),
         ):
-            if not frappe.db.exists("Item", code):
-                continue  # stock-only rule applies to derived consumables too
-            rate, _src = inventory.material_rate(code)
+            code, rate, _src = inventory.ensure_material_item(code, kind="joinery")
             self.append("joinery_items", {
                 "item": code, "description": note, "qty": qty,
                 "uom": uom if frappe.db.exists("UOM", uom) else None,
