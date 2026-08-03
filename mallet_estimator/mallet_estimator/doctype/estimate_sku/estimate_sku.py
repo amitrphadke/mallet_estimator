@@ -104,6 +104,8 @@ class EstimateSKU(Document):
 
     @frappe.whitelist()
     def reset_files(self):
+        if self._frozen():
+            frappe.throw(_("Rates are frozen (quoted) — amend/cancel the Estimate first."))
         """Start over: remove EVERY attached file (and its File docs) plus all
         data derived from them — materials, joinery, parts, execution design,
         drivers. Identity, labor/design step templates and settings stay."""
@@ -140,12 +142,17 @@ class EstimateSKU(Document):
             if not (row.remark or "").strip():
                 row.remark = STEP_REMARKS.get(op_phase(row), "")
 
+    def _frozen(self):
+        return bool(self.get("rates_frozen"))
+
     def maybe_import(self):
         """When an estimation input PDF is attached (or changed), import the
         material quantities + operation quantities automatically on save — no
         button. The Parts CSV, if attached, gives the edge-banding part count and
         the QR part list."""
         self.maybe_extract_iso()
+        if self._frozen():
+            return  # quoted — rates are locked, no re-imports
         if not self.estimate_pdf:
             return
         if self.materials and not self.has_value_changed("estimate_pdf") \
@@ -227,6 +234,7 @@ class EstimateSKU(Document):
         self.set("materials", [])
         unpriced = []
         deferred_hw = []
+        self._missing_items = []
         # Sheets, laminate and edge banding come from the estimate PDF (its nesting
         # is authoritative); hardware comes from the part list designations when
         # attached (falling back to the PDF's generic groups).
@@ -311,6 +319,14 @@ class EstimateSKU(Document):
                 "is_manual": 1,
             })
 
+        if self._missing_items:
+            frappe.msgprint(
+                _("These materials are NOT in the stock module, so they were NOT "
+                  "added to the estimate. Create the Item (with a rate on the "
+                  "Estimation (Assumed) price list) and Re-import:<br><b>{0}</b>")
+                .format(", ".join(sorted(set(self._missing_items)))),
+                title=_("Items missing in stock"), indicator="red",
+            )
         self.unpriced_materials = ", ".join(unpriced)
         if unpriced:
             frappe.msgprint(
@@ -348,19 +364,24 @@ class EstimateSKU(Document):
 
     def _add_material_line(self, name, kind, thickness, qty, desc, unpriced, dims=None,
                            uom=None, rate_factor=1):
-        """Create/link the ERPNext stock Item and append a costed material row.
-        T1: the unit cost is the LANDED (post-tax) rate — ex-tax estimation rate
-        grossed up by the item's GST % — so estimates never underquote taxes.
-        `uom`/`rate_factor` override the line unit (e.g. edge banding: qty in
-        Rolls at per-meter rate x 50)."""
-        code, rate, source = inventory.ensure_material_item(name, kind=kind, thickness=thickness, dims=dims)
-        landed, _base, _gst, _src = inventory.landed_rate(code)
-        landed = (landed or 0) * (rate_factor or 1)
+        """Append a costed material row. The unit cost is the STOCK PRICE LIST
+        rate EXACTLY (Estimation (Assumed) → valuation → …) — no gross-up, no
+        line-level alteration; GST is charged at document level. An item that is
+        NOT in the stock module is NOT allowed onto the line — it lands in the
+        missing list for the user to create + price first. `uom`/`rate_factor`
+        adapt the unit (edge banding: Rolls at per-meter rate x 50)."""
+        code = inventory.item_code_for(name, thickness, kind)
+        if not frappe.db.exists("Item", code):
+            self._missing_items.append(code)
+            return
+        inventory.attach_scope_suppliers(code, kind)
+        rate, source = inventory.material_rate(code)
+        rate = (rate or 0) * (rate_factor or 1)
         line_uom = uom or inventory.stock_uom_for(kind)
         self.append("materials", {
             "item": code, "material": name, "description": (desc or name)[:140],
             "qty": qty, "uom": line_uom if frappe.db.exists("UOM", line_uom) else None,
-            "unit_cost": landed, "line_cost": qty * landed,
+            "unit_cost": rate, "line_cost": qty * rate,
         })
         if source == "unset":
             unpriced.append(code)
@@ -464,16 +485,13 @@ class EstimateSKU(Document):
             ("JH_Fevicol", 3 * sheets, "Nos", f"3 packets × {sheets:g} laminated sheet(s)"),
             ("JH_Abrotape", 11 * sheets, "Meter", f"11 m × {sheets:g} laminated sheet(s) — 20 m rolls"),
         ):
-            try:
-                item_code, _rate, _src = inventory.ensure_material_item(code, kind="joinery")
-                landed, _base, _gst, _s = inventory.landed_rate(item_code)
-            except Exception:
-                frappe.log_error(frappe.get_traceback(), f"derive_joinery {code}")
-                item_code, landed = None, 0
+            if not frappe.db.exists("Item", code):
+                continue  # stock-only rule applies to derived consumables too
+            rate, _src = inventory.material_rate(code)
             self.append("joinery_items", {
-                "item": item_code, "description": note, "qty": qty,
+                "item": code, "description": note, "qty": qty,
                 "uom": uom if frappe.db.exists("UOM", uom) else None,
-                "unit_cost": landed, "amount": qty * (landed or 0),
+                "unit_cost": rate, "amount": qty * (rate or 0),
                 "derived_from": "Sheet Lamination",
             })
 
@@ -629,9 +647,11 @@ class EstimateSKU(Document):
 
     @frappe.whitelist()
     def get_landed_rate(self, item_code):
-        """Landed (post-tax) rate + stock UOM for a manually added material row."""
-        landed, _base, _gst, _src = inventory.landed_rate(item_code)
-        return {"rate": landed, "uom": frappe.db.get_value("Item", item_code, "stock_uom")}
+        """Stock price-list rate + UOM for a manually added material row — the
+        rate is NEVER hand-altered; it comes from the price list (version history
+        lives there)."""
+        rate, _src = inventory.material_rate(item_code)
+        return {"rate": rate, "uom": frappe.db.get_value("Item", item_code, "stock_uom")}
 
     @frappe.whitelist()
     def workstation_net_rates(self):
@@ -652,6 +672,8 @@ class EstimateSKU(Document):
 
     @frappe.whitelist()
     def reimport(self):
+        if self._frozen():
+            frappe.throw(_("Rates are frozen (quoted) — amend/cancel the Estimate first."))
         """Force a re-import from the attached OpenCutList PDF + Parts CSV,
         bypassing the change-detection guard — rebuilds the material lines at the
         CURRENT import logic (e.g. designation-level hardware). Returns a summary."""
@@ -666,6 +688,8 @@ class EstimateSKU(Document):
 
     @frappe.whitelist()
     def recompute(self):
+        if self.get("rates_frozen"):
+            return {"changed": False}  # quoted — never silently re-price
         """Re-price every step at the CURRENT Workstation Net Hour Rates (and
         refresh each step's master Std Time) and save only if something actually
         moved. Called on form load so Phase Cost / Std (master) never show a value

@@ -297,12 +297,15 @@ def set_actual_buying_rate(item_code, rate):
 
 
 def _ensure_item_supplier(item_code, supplier, part_no=None):
-    """Record a vendor on the Item's supplier list (native Item Supplier), idempotent."""
+    """Record a vendor on the Item's supplier list (native Item Supplier),
+    idempotent — the dedupe compares case-insensitively so a casing difference
+    can never append duplicates again."""
+    supplier = supplier_docname(supplier) or supplier
     item = frappe.get_doc("Item", item_code)
     if not item.meta.has_field("supplier_items"):
         return
     for s in item.get("supplier_items") or []:
-        if s.supplier == supplier:
+        if (s.supplier or "").lower() == (supplier or "").lower():
             if part_no and not s.supplier_part_no:
                 s.supplier_part_no = part_no
                 item.save(ignore_permissions=True)
@@ -393,13 +396,15 @@ def suppliers_for_kind(kind):
 
 
 def supplier_docname(name):
-    """Resolve a vendor's human name to its Supplier docname (they differ when the
-    site names Suppliers by series, not by name). None if the vendor isn't set up."""
+    """Resolve a vendor's human name to its STORED Supplier docname. Case matters:
+    frappe.db.exists returns the QUERIED string, and MySQL matches
+    case-insensitively — so 'SAI Ply' 'exists' even when the doc is 'Sai Ply'.
+    Using the queried casing broke Item Supplier dedupe (rows piled up on every
+    import). Always return the docname as stored in the DB."""
     if not name:
         return None
-    if frappe.db.exists("Supplier", name):
-        return name
-    return frappe.db.get_value("Supplier", {"supplier_name": name}, "name")
+    return frappe.db.get_value("Supplier", {"name": name}, "name") \
+        or frappe.db.get_value("Supplier", {"supplier_name": name}, "name")
 
 
 def attach_scope_suppliers(item_code, kind):

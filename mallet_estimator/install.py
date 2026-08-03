@@ -55,6 +55,97 @@ def ensure_project_customization():
 
 
 GST_TEMPLATE_TITLE = "Mallet GST 18% (Intra-State)"
+GST_SALES_TEMPLATE_TITLE = "Mallet Output GST 18% (Intra-State)"
+ITEM_TAX_TEMPLATE = "GST 18%"
+
+
+def ensure_gst_masters():
+    """Native GST end-to-end (T2): tax ACCOUNTS (input + output CGST/SGST),
+    an ITEM TAX TEMPLATE ('GST 18%') applied on every material Item Group (so
+    each item inherits its rate on POs/invoices item-wise), and SALES +
+    PURCHASE taxes templates for the document-level charge. Idempotent; skips
+    cleanly when the chart of accounts has no Duties-and-Taxes group yet."""
+    company = _company_for_tax()
+    if not company or not frappe.db.exists("DocType", "Item Tax Template"):
+        return {"skipped": "no company / doctype"}
+    abbr = frappe.db.get_value("Company", company, "abbr")
+    result = {"accounts": 0, "item_tax_template": 0, "groups": 0, "sales_template": 0, "errors": []}
+
+    parent = frappe.db.get_value(
+        "Account", {"company": company, "account_name": ["like", "%Duties and Taxes%"], "is_group": 1}, "name"
+    )
+    if not parent:
+        result["errors"].append("no 'Duties and Taxes' group account — set up the chart of accounts first")
+        return result
+
+    def acc(name):
+        existing = frappe.db.get_value(
+            "Account", {"company": company, "account_name": name, "is_group": 0}, "name")
+        if existing:
+            return existing
+        try:
+            a = frappe.new_doc("Account")
+            a.account_name = name
+            a.parent_account = parent
+            a.company = company
+            a.account_type = "Tax"
+            a.insert(ignore_permissions=True)
+            result["accounts"] += 1
+            return a.name
+        except Exception as exc:
+            result["errors"].append(f"Account {name}: {exc}")
+            return None
+
+    in_cgst, in_sgst = acc("Input Tax CGST"), acc("Input Tax SGST")
+    out_cgst, out_sgst = acc("Output Tax CGST"), acc("Output Tax SGST")
+
+    # Item Tax Template — matched item-wise on both cycles (input + output heads).
+    if not frappe.db.exists("Item Tax Template", {"title": ITEM_TAX_TEMPLATE, "company": company}):
+        try:
+            t = frappe.new_doc("Item Tax Template")
+            t.title = ITEM_TAX_TEMPLATE
+            t.company = company
+            for a in (in_cgst, in_sgst, out_cgst, out_sgst):
+                if a:
+                    t.append("taxes", {"tax_type": a, "tax_rate": 9})
+            t.insert(ignore_permissions=True)
+            result["item_tax_template"] = 1
+        except Exception as exc:
+            result["errors"].append(f"Item Tax Template: {exc}")
+    itt = frappe.db.get_value("Item Tax Template", {"title": ITEM_TAX_TEMPLATE, "company": company}, "name")
+
+    # Apply on every material Item Group (items inherit — nothing per-item to key).
+    if itt:
+        for grp in inventory.ITEM_GROUPS:
+            try:
+                if not frappe.db.exists("Item Group", grp):
+                    continue
+                g = frappe.get_doc("Item Group", grp)
+                if g.meta.has_field("taxes") and not (g.get("taxes") or []):
+                    g.append("taxes", {"item_tax_template": itt})
+                    g.save(ignore_permissions=True)
+                    result["groups"] += 1
+            except Exception as exc:
+                result["errors"].append(f"Item Group {grp}: {exc}")
+
+    # Sales (output) document template — used on Quotation / Sales Invoice.
+    if out_cgst and out_sgst and frappe.db.exists("DocType", "Sales Taxes and Charges Template") \
+            and not frappe.db.exists("Sales Taxes and Charges Template",
+                                     {"title": GST_SALES_TEMPLATE_TITLE, "company": company}):
+        try:
+            st = frappe.new_doc("Sales Taxes and Charges Template")
+            st.title = GST_SALES_TEMPLATE_TITLE
+            st.company = company
+            for a, d in ((out_cgst, "CGST @ 9%"), (out_sgst, "SGST @ 9%")):
+                st.append("taxes", {"charge_type": "On Net Total", "account_head": a,
+                                    "rate": 9, "description": d})
+            st.insert(ignore_permissions=True)
+            result["sales_template"] = 1
+        except Exception as exc:
+            result["errors"].append(f"Sales template: {exc}")
+
+    frappe.db.commit()
+    return result
 
 
 def ensure_gst_purchase_template():
@@ -122,6 +213,7 @@ def after_install():
     _safe(ensure_pricing_masters)
     _safe(ensure_project_customization)
     _safe(ensure_gst_purchase_template)
+    _safe(ensure_gst_masters)
     _safe(ensure_manufacturing_masters)
     _safe(ensure_print_format)
     _safe(ensure_workspace)
@@ -349,7 +441,7 @@ def setup():
     result = ensure_manufacturing_masters()
     result["inventory"] = inv
     result["warehouses"] = wh
-    for fn in (ensure_project_customization, ensure_gst_purchase_template, ensure_print_format, ensure_workspace):
+    for fn in (ensure_project_customization, ensure_gst_purchase_template, ensure_gst_masters, ensure_print_format, ensure_workspace):
         try:
             fn()
         except Exception as exc:
@@ -454,6 +546,13 @@ def verify_setup():
     miss_sup = [s for s in inventory.SUPPLIER_SCOPE if not inventory.supplier_docname(s)]
     chk("Suppliers", not miss_sup, ("missing: " + ", ".join(miss_sup)) if miss_sup else f"{len(inventory.SUPPLIER_SCOPE)} vendors ✓")
     chk("Paint category", frappe.db.exists("Item Group", "Paint"), "Paint item group")
+
+    # T2 — native GST: item tax template applied on the material groups.
+    itt = frappe.db.get_value("Item Tax Template", {"title": ITEM_TAX_TEMPLATE}, "name")
+    grp_applied = bool(itt) and bool(frappe.db.exists("Item Tax Template Detail", {"parenttype": "Item Group"}))
+    chk("Item tax template", bool(itt), ITEM_TAX_TEMPLATE if itt else "missing — needs Duties and Taxes accounts")
+    chk("Groups carry GST template", grp_applied or not itt,
+        "applied on material groups" if grp_applied else "not applied yet")
 
     n_unpriced = frappe.db.count("Item", {
         "item_group": ["in", inventory.ITEM_GROUPS], "disabled": 0, "valuation_rate": 0,

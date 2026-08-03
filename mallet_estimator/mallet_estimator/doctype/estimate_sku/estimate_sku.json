@@ -65,6 +65,7 @@
   "cost_breakup",
   "cost_breakup_html",
   "cost_section",
+  "rates_frozen",
   "machine_cost",
   "rent_cost",
   "overhead_cost",
@@ -477,6 +478,13 @@
    "label": "Client: SKU Total",
    "read_only": 1,
    "bold": 1
+  },
+  {
+   "fieldname": "rates_frozen",
+   "fieldtype": "Check",
+   "label": "Rates Frozen (quoted)",
+   "read_only": 1,
+   "description": "Set when this SKU's Estimate is submitted/quoted — material re-imports and re-pricing are locked; price-list changes no longer affect this estimate."
   }
  ],
  "links": [],

@@ -29,3 +29,5 @@ mallet_estimator.patches.cost_model_rework
 mallet_estimator.patches.seed_salary_calendar
 # Fix batch 2026-08-02: clear grid/user-settings caches (CSV remnants), UI cleanup.
 mallet_estimator.patches.estimation_ui_cleanup
+# T2 — supplier-row dedupe + native GST masters (accounts, item tax template on groups).
+mallet_estimator.patches.tax_supplier_hygiene

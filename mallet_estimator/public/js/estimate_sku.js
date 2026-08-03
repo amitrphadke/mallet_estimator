@@ -138,8 +138,10 @@ function lock_material_rows(frm) {
   (frm.doc.materials || []).forEach((row) => {
     const gr = grid.grid_rows_by_docname[row.name];
     if (!gr || !gr.toggle_editable) return;
-    ["item", "qty", "unit_cost", "description"].forEach((f) =>
+    // rate is NEVER hand-editable (it comes from the price list, history there)
+    ["item", "qty", "description"].forEach((f) =>
       gr.toggle_editable(f, !!row.is_manual));
+    gr.toggle_editable("unit_cost", false);
   });
 }
 

@@ -59,7 +59,9 @@
    "fieldtype": "Currency",
    "in_list_view": 1,
    "columns": 1,
-   "label": "Rate"
+   "label": "Rate",
+   "read_only": 1,
+   "description": "Always the stock price-list rate (Estimation (Assumed)) — change it THERE; history stays in the price list."
   },
   {
    "fieldname": "line_cost",

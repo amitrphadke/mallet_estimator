@@ -4,6 +4,20 @@ from frappe.model.document import Document
 
 
 class Estimate(Document):
+    def on_submit(self):
+        """Approving the estimate FREEZES every SKU's rates — later price-list
+        changes never alter what was quoted (the price list keeps the history)."""
+        for row in self.skus or []:
+            if row.estimate_sku:
+                frappe.db.set_value("Estimate SKU", row.estimate_sku, "rates_frozen", 1,
+                                    update_modified=False)
+
+    def on_cancel(self):
+        for row in self.skus or []:
+            if row.estimate_sku:
+                frappe.db.set_value("Estimate SKU", row.estimate_sku, "rates_frozen", 0,
+                                    update_modified=False)
+
     def validate(self):
         # Only a draft (docstatus 0) re-pulls SKUs. Once submitted (approved) the
         # SKU list and totals are frozen as the baseline; changes go via Amend.
@@ -130,6 +144,13 @@ class Estimate(Document):
                 "rate": s.client_total,
                 "description": s.description or s.article_name,
             })
+        # Native output-GST template on the quotation when seeded.
+        from mallet_estimator.install import GST_SALES_TEMPLATE_TITLE
+        st = frappe.db.get_value("Sales Taxes and Charges Template",
+                                 {"title": GST_SALES_TEMPLATE_TITLE}, "name")
+        if st:
+            quo.taxes_and_charges = st
+            quo.run_method("set_taxes")
         quo.insert(ignore_permissions=True)
         self.db_set("quotation", quo.name)
         return quo.name
