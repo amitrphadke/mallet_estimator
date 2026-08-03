@@ -217,7 +217,9 @@
    "fieldname": "materials",
    "fieldtype": "Table",
    "label": "Material Lines",
-   "options": "Estimate Material"
+   "options": "Estimate Material",
+   "cannot_add_rows": 1,
+   "description": "Imported from the PDFs (read-only). Use 'Add material row' for extras like a hydraulic lift — priced from the stock price list."
   },
   {
    "fieldname": "unpriced_materials",

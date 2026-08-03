@@ -7,7 +7,7 @@ const LOCKED_PHASES = ["Sheet Lamination", "Sheet Tape Removal", "Sheet Cutting"
 
 frappe.ui.form.on("Estimate SKU", {
   refresh(frm) {
-    setTimeout(() => { lock_qty(frm); lock_material_rows(frm); }, 300);
+    setTimeout(() => lock_qty(frm), 300);
     // I1: cache the live Workstation Net Hour Rates so Phase Cost updates instantly
     // as you edit Qty / Min / Operation — no save needed.
     if (!frm.is_new()) {
@@ -63,6 +63,10 @@ frappe.ui.form.on("Estimate SKU", {
       });
     }
     render_cost_breakup(frm);
+    // Manual extras (e.g. hydraulic lift) — dialog keeps imported rows untouchable.
+    if (!frm.is_new()) {
+      frm.add_custom_button(__("Add material row"), () => add_material_dialog(frm), __("Materials"));
+    }
     // Start over: remove every attached file + all data derived from them.
     if (!frm.is_new()) {
       frm.add_custom_button(__("Remove all files (start over)"), () => {
@@ -105,44 +109,45 @@ frappe.ui.form.on("Estimate Labor", {
   carp_min: (frm, cdt, cdn) => recompute_total(frm, cdt, cdn),
 });
 
-// I3: Material + Labor cost totals update INSTANTLY as rows are edited — no save.
-// Imported rows are locked (the PDF is the source); MANUAL rows (extra hardware
-// like a bed hydraulic lift) are editable and survive re-imports.
+// I3: totals update instantly. Imported material rows are FULLY read-only (the
+// PDFs are the source); extra hardware goes through the Add-material dialog —
+// priced from the stock price list, flagged is_manual so it survives re-imports.
 frappe.ui.form.on("Estimate Material", {
-  materials_add: (frm, cdt, cdn) => {
-    frappe.model.set_value(cdt, cdn, "is_manual", 1);
-    lock_material_rows(frm);
-  },
-  item: (frm, cdt, cdn) => {
-    const row = locals[cdt][cdn];
-    if (!row || !row.item || !row.is_manual) return;
-    frm.call("get_landed_rate", { item_code: row.item }).then((r) => {
-      const m = (r && r.message) || {};
-      if (m.uom) frappe.model.set_value(cdt, cdn, "uom", m.uom);
-      frappe.model.set_value(cdt, cdn, "unit_cost", m.rate || 0).then(() => {
-        if (!row.qty) frappe.model.set_value(cdt, cdn, "qty", 1);
-        recompute_material(frm, cdt, cdn);
-      });
-    });
-  },
-  qty: (frm, cdt, cdn) => recompute_material(frm, cdt, cdn),
-  unit_cost: (frm, cdt, cdn) => recompute_material(frm, cdt, cdn),
   customer_supplied: (frm, cdt, cdn) => recompute_material(frm, cdt, cdn),
   materials_remove: (frm) => update_live_totals(frm),
 });
 
-// Imported rows can't be hand-edited; manual rows can.
-function lock_material_rows(frm) {
-  const grid = frm.fields_dict.materials && frm.fields_dict.materials.grid;
-  if (!grid || !grid.grid_rows_by_docname) return;
-  (frm.doc.materials || []).forEach((row) => {
-    const gr = grid.grid_rows_by_docname[row.name];
-    if (!gr || !gr.toggle_editable) return;
-    // rate is NEVER hand-editable (it comes from the price list, history there)
-    ["item", "qty", "description"].forEach((f) =>
-      gr.toggle_editable(f, !!row.is_manual));
-    gr.toggle_editable("unit_cost", false);
+function add_material_dialog(frm) {
+  const d = new frappe.ui.Dialog({
+    title: __("Add material row (manual)"),
+    fields: [
+      { fieldname: "item", fieldtype: "Link", options: "Item", label: __("Item"), reqd: 1,
+        description: __("Must exist in stock with a rate on the Estimation (Assumed) price list.") },
+      { fieldname: "qty", fieldtype: "Float", label: __("Qty"), default: 1, reqd: 1 },
+    ],
+    primary_action_label: __("Add"),
+    primary_action(values) {
+      frm.call("get_landed_rate", { item_code: values.item }).then((r) => {
+        const m = (r && r.message) || {};
+        const row = frm.add_child("materials", {
+          item: values.item, material: values.item, description: values.item,
+          qty: values.qty || 1, uom: m.uom || null,
+          unit_cost: m.rate || 0, line_cost: (values.qty || 1) * (m.rate || 0),
+          is_manual: 1,
+        });
+        frm.refresh_field("materials");
+        update_live_totals(frm);
+        if (!(m.rate || 0)) {
+          frappe.msgprint({
+            message: __("{0} has NO rate on the price list — the line entered at 0. Key its rate on Estimation (Assumed) and re-add.", [values.item]),
+            indicator: "red",
+          });
+        }
+        d.hide();
+      });
+    },
   });
+  d.show();
 }
 
 function recompute_material(frm, cdt, cdn) {
