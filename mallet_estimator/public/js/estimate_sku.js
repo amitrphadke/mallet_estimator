@@ -72,6 +72,11 @@ frappe.ui.form.on("Estimate SKU", {
     if (!frm.is_new()) {
       frm.add_custom_button(__("Add material row"), () => add_material_dialog(frm), __("Materials"));
     }
+    // Margin text boxes: decide how much to make on each total; global
+    // (Estimate Settings), reprices every SKU/Estimate on open/save.
+    if (!frm.is_new() && !frm.doc.rates_frozen) {
+      frm.add_custom_button(__("Set margins %"), () => margins_dialog(frm));
+    }
     // Pull the current price-list rate onto every material line — the everyday
     // flow after pricing red-flagged items on the Estimation (Assumed) list.
     // No re-parse of the PDFs; qty and manual rows stay as they are.
@@ -178,6 +183,38 @@ frappe.ui.form.on("Estimate Material", {
   customer_supplied: (frm, cdt, cdn) => recompute_material(frm, cdt, cdn),
   materials_remove: (frm) => update_live_totals(frm),
 });
+
+// Margin text boxes (global Estimate Settings): decide the % to make on each
+// total. Saving reprices this doc immediately and every other on open/save.
+function margins_dialog(frm) {
+  frappe.call("mallet_estimator.mallet_estimator.doctype.estimate_sku.estimate_sku.get_margins").then((r) => {
+    const m = (r && r.message) || {};
+    const d = new frappe.ui.Dialog({
+      title: __("Margins — % you make on each total"),
+      fields: [
+        { fieldname: "material", fieldtype: "Percent", label: __("Material margin %"), default: m.material,
+          description: __("Keep low — client can supply material") },
+        { fieldname: "labor", fieldtype: "Percent", label: __("Labor margin %"), default: m.labor,
+          description: __("Conversion carries the profit") },
+        { fieldname: "overhead", fieldtype: "Percent", label: __("Overhead margin %"), default: m.overhead },
+        { fieldname: "design", fieldtype: "Percent", label: __("Design margin %"), default: m.design },
+      ],
+      primary_action_label: __("Apply"),
+      primary_action(values) {
+        d.hide();
+        frappe.call("mallet_estimator.mallet_estimator.doctype.estimate_sku.estimate_sku.set_margins", values).then(() => {
+          frappe.show_alert({ message: __("Margins applied — repricing"), indicator: "green" }, 4);
+          if (frm.doc.doctype === "Estimate SKU") {
+            frm.call("recompute").then(() => frm.reload_doc());
+          } else {
+            frm.call("refresh_skus").then(() => frm.reload_doc());
+          }
+        });
+      },
+    });
+    d.show();
+  });
+}
 
 function add_material_dialog(frm) {
   const d = new frappe.ui.Dialog({

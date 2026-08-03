@@ -36,6 +36,32 @@ def operation_defaults(op_name):
     return mins, ws
 
 
+MARGIN_FIELDS = ("material", "labor", "overhead", "design")
+
+
+@frappe.whitelist()
+def get_margins():
+    """The four margin (markup) percentages from Estimate Settings — the text
+    boxes the user tunes to decide how much to make on each total."""
+    s = frappe.get_single("Estimate Settings")
+    return {f: float(s.get(f"markup_{f}") or 0) for f in MARGIN_FIELDS}
+
+
+@frappe.whitelist()
+def set_margins(material=None, labor=None, overhead=None, design=None):
+    """Write the margin percentages back to Estimate Settings (values live in
+    the DB only — repo defaults stay 0, they are business-sensitive). Every
+    open/save reprices from these, so the change takes effect immediately."""
+    s = frappe.get_single("Estimate Settings")
+    for f, v in (("material", material), ("labor", labor),
+                 ("overhead", overhead), ("design", design)):
+        if v is not None and v != "":
+            s.set(f"markup_{f}", float(v))
+    s.flags.ignore_permissions = True
+    s.save()
+    return get_margins()
+
+
 def build_bifurcation(amounts, gst_pct=18.0):
     """The Material / Labor / Design / Overhead / Transport / Taxes line items
     (client side): [{label, amount, pct (of pre-tax total), gst, gross}] +

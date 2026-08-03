@@ -100,6 +100,14 @@ class Estimate(Document):
         self._sqft_sum = 0.0
         for name in names:
             s = frappe.get_doc("Estimate SKU", name)
+            # Reprice at the CURRENT margins/workstation rates before reading —
+            # stored totals can pre-date a margin change (frozen SKUs keep the
+            # values they were quoted at).
+            if not s.get("rates_frozen"):
+                try:
+                    s.compute_costs()
+                except Exception:
+                    frappe.log_error(frappe.get_traceback(), f"estimate reprice {name}")
             self._client_material_sum += float(s.client_material or 0)
             blk = s.facial_sqft_block() or {}
             self._sqft_sum += float(blk.get("sqft") or 0)

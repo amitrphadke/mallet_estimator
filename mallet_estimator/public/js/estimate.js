@@ -8,6 +8,11 @@ frappe.ui.form.on("Estimate", {
 
     render_estimate_bifurcation(frm);
 
+    // Margin text boxes — same global margins as on the SKU form.
+    if (draft && !frm.is_new()) {
+      frm.add_custom_button(__("Set margins %"), () => estimate_margins_dialog(frm));
+    }
+
     // Scale mode: design the WHOLE estimate as one SKU (shared sheets, one-go
     // cutting) — creates a combined Estimate SKU pre-filled with every member
     // SKU's dims + facial sqft and their ISO renders; attach the whole-project
@@ -116,6 +121,32 @@ function recompute_trip(frm, cdt, cdn) {
   if (!row) return;
   frappe.model.set_value(cdt, cdn, "amount", (row.qty || 0) * (row.rate || 0))
     .then(() => update_estimate_totals(frm));
+}
+
+// Margin text boxes (global Estimate Settings) — decide the % made on each
+// total; applying re-pulls the SKUs so the aggregated bifurcation reprices.
+function estimate_margins_dialog(frm) {
+  frappe.call("mallet_estimator.mallet_estimator.doctype.estimate_sku.estimate_sku.get_margins").then((r) => {
+    const m = (r && r.message) || {};
+    const d = new frappe.ui.Dialog({
+      title: __("Margins — % you make on each total"),
+      fields: [
+        { fieldname: "material", fieldtype: "Percent", label: __("Material margin %"), default: m.material },
+        { fieldname: "labor", fieldtype: "Percent", label: __("Labor margin %"), default: m.labor },
+        { fieldname: "overhead", fieldtype: "Percent", label: __("Overhead margin %"), default: m.overhead },
+        { fieldname: "design", fieldtype: "Percent", label: __("Design margin %"), default: m.design },
+      ],
+      primary_action_label: __("Apply"),
+      primary_action(values) {
+        d.hide();
+        frappe.call("mallet_estimator.mallet_estimator.doctype.estimate_sku.estimate_sku.set_margins", values).then(() => {
+          frappe.show_alert({ message: __("Margins applied — repricing all SKUs"), indicator: "green" }, 4);
+          frm.call("refresh_skus").then(() => frm.reload_doc());
+        });
+      },
+    });
+    d.show();
+  });
 }
 
 // Same bifurcation table as on each SKU, aggregated (built server-side on save).
