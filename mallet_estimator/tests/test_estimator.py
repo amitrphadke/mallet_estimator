@@ -134,3 +134,53 @@ class TestCodes(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestDecor(unittest.TestCase):
+    def test_bcn_standard(self):
+        from mallet_estimator import decor
+        v = decor.parse_slot_value("Merino 1834 Moonlit Gray")
+        self.assertEqual((v["brand"], v["catalogue"], v["name"]), ("Merino", "1834", "Moonlit Gray"))
+        v = decor.parse_slot_value("RT 6575")  # alias + name optional
+        self.assertEqual((v["brand"], v["catalogue"], v["name"]), ("Royal Touch", "6575", ""))
+        v = decor.parse_slot_value("Royal Touch 6575 Black Marmor")
+        self.assertEqual(v["brand"], "Royal Touch")
+
+    def test_legacy_freeform(self):
+        from mallet_estimator import decor
+        v = decor.parse_slot_value("YS_6534_MOONLIT_BED_Laminate")
+        self.assertIsNone(v["brand"])
+        self.assertEqual(v["raw"], "YS_6534_MOONLIT_BED_Laminate")
+
+    def test_material_slots(self):
+        from mallet_estimator import decor
+        self.assertEqual(decor.material_slots("SG_PLY_V2_b_c"), ["b", "c"])
+        self.assertEqual(decor.material_slots("SG_LAM_V1_16mm_b_a"), ["b"])
+        self.assertEqual(decor.material_slots("EB_PVC_EX_c"), ["c"])
+        self.assertEqual(decor.material_slots("SG_PLY_V0_a_a"), [])
+
+    def test_multi_slot_description(self):
+        from mallet_estimator import decor
+        out = decor.parse_description("b=Merino 6534; c=RT 6575 Black Marmor", "SG_PLY_V2_b_c")
+        self.assertEqual(out["b"]["brand"], "Merino")
+        self.assertEqual(out["c"]["catalogue"], "6575")
+
+    def test_item_codes(self):
+        from mallet_estimator import decor
+        self.assertEqual(decor.decor_item_code("SG_LAM_V1_16mm_b_a", "Merino", "1834", "x"),
+                         "LAMD_MERINO_1834")
+        self.assertTrue(decor.decor_item_code("EB_PVC_EX_c", None, None,
+                        "YS_6534_MOONLIT_BED_Laminate").startswith("EBD_"))
+
+    def test_extract_from_pdf_text(self):
+        from mallet_estimator import decor
+        text = ("SG_LAM_V1_16mm_b_a / 1 mm\n"
+                "b=Merino 1834 Moonlit Gray\n"
+                "3 4.16 m²8.92 m² - -12 Rs34 Rs\n"
+                "EB_PVC_EX_b / 1 mm x 22 mm\n"
+                "b=RT 6575\n")
+        out = decor.extract_slot_map(text)
+        self.assertEqual(len(out), 2)
+        self.assertEqual(out[0]["placeholder"], "SG_LAM_V1_16mm_b_a")
+        self.assertEqual(out[0]["brand"], "Merino")
+        self.assertEqual(out[1]["brand"], "Royal Touch")

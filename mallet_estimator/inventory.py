@@ -931,3 +931,54 @@ def ensure_warehouses(company=None):
 
     frappe.db.commit()
     return result
+
+
+def ensure_decor_item(placeholder, brand, catalogue, name, raw):
+    """S9 — create/enrich the REAL décor Item behind a placeholder slot:
+    LAMD_* (Laminate group, sheet, dye-lot batch) or EBD_* (Edge Banding group,
+    metre/roll). One item per real-world décor, reused across projects. Structure
+    only — the rate is keyed once on the price list (middle-path rule). Returns
+    the item_code."""
+    from mallet_estimator import decor
+    code = decor.decor_item_code(placeholder, brand, catalogue, raw)
+    is_edge = code.startswith("EBD_")
+    kind = "edge" if is_edge else "laminate"
+    spec = KIND_SPEC[kind]
+    display = " ".join(x for x in (brand, catalogue, name) if x) or raw
+
+    if not frappe.db.exists("Item", code):
+        meta = frappe.get_meta("Item")
+        item = frappe.new_doc("Item")
+        item.item_code = code
+        item.item_name = display[:140]
+        item.item_group = spec["group"] if frappe.db.exists("Item Group", spec["group"]) else _fallback_group()
+        item.stock_uom = spec["stock_uom"] if frappe.db.exists("UOM", spec["stock_uom"]) else "Nos"
+        item.is_stock_item = 1
+        item.is_purchase_item = 1
+        if not is_edge:
+            _set(item, meta, "has_batch_no", 1)
+            _set(item, meta, "create_new_batch", 1)
+            _set(item, meta, "batch_number_series", f"{code}-.####")
+        _add_uom(item, item.stock_uom, 1)
+        pu = spec.get("purchase_uom")
+        if pu and pu != item.stock_uom and frappe.db.exists("UOM", pu):
+            item.purchase_uom = pu
+            _add_uom(item, pu, spec["conv"])
+        if not is_edge and frappe.db.exists("UOM", "Square Meter"):
+            _add_uom(item, "Square Meter", SHEET_AREA_SQM)
+        item.description = f"Décor: {display} (slot item — the real laminate/banding behind an OCL placeholder)"
+        if brand and frappe.db.exists("Manufacturer", brand):
+            _set(item, meta, "default_item_manufacturer", brand)
+            if catalogue:
+                _set(item, meta, "default_manufacturer_part_no", catalogue)
+        if brand and frappe.db.exists("Brand", brand):
+            _set(item, meta, "brand", brand)
+        item.insert(ignore_permissions=True)
+    else:
+        # enrich manufacturer/brand when a later description adds it
+        if brand and frappe.db.exists("Manufacturer", brand) \
+                and not frappe.db.get_value("Item", code, "default_item_manufacturer"):
+            frappe.db.set_value("Item", code, "default_item_manufacturer", brand, update_modified=False)
+
+    attach_scope_suppliers(code, kind)
+    return code
