@@ -93,3 +93,20 @@ class TestPartlistEdges(MalletTestCase):
         self.assertEqual(len(edges), 2)
         self.assertEqual(edges[0], {"code": "EB_PVC_EX_b", "parts": 21, "meters": 20.41})
         self.assertEqual(edges[1], {"code": "EB_PVC_IN_a", "parts": 27, "meters": 24.13})
+
+    def test_parse_edges_qty_only_layout(self):
+        # BED-style export: no length columns — the row ends in the parts count;
+        # a following part-table number ("1 1944 m…") must NOT leak in as meters.
+        from mallet_estimator import views_pdf
+        text = (
+            " EB_PVC_EX_b / 1 mm x 22 mm 36\n"
+            " EB_PVC_IN_a / 1 mm x 22 mm\n"
+            "b=YS_6534_MOONLIT_BED_Laminate\n"
+            "1 1944 m0.47 m²0.00 m³\n"
+            "2 1944 m0.47 m²0.00 m³\n"
+            "3 1944 m0.47 m²0.00 m³\n"
+        )
+        edges = views_pdf.parse_partlist_edges_text(text)
+        self.assertEqual(edges[0], {"code": "EB_PVC_EX_b", "parts": 36, "meters": None})
+        self.assertEqual(edges[1]["code"], "EB_PVC_IN_a")
+        self.assertIsNone(edges[1]["meters"])  # garbage 1944 m rejected

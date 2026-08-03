@@ -257,14 +257,25 @@ class EstimateSKU(Document):
             )
         # Edge banding from the PART LIST Summary (authoritative: real banding
         # meters; the estimate PDF's edge section can be wrong/missing). Purchase
-        # + client charge = whole 50 m rolls covering those meters.
+        # + client charge = whole 50 m rolls covering those meters. Some exports
+        # omit the length column — then fall back to the estimate PDF's roll count
+        # for that code, else 1 roll flagged for verification.
         import math
+        pdf_edge_rolls = {m["name"]: (m["qty"] or 0) for m in materials if m.get("kind") == "edge"}
         for e in pl_edges:
-            rolls = max(1, math.ceil((e["meters"] or 0) / inventory.EDGE_ROLL_METERS)) if e["meters"] else 1
-            desc = (f"{e['code']} — {e['meters']:g} m banding on {e['parts']} part edge(s) "
-                    f"→ {rolls} whole roll(s) of {inventory.EDGE_ROLL_METERS:g} m")[:140]
+            if e.get("meters"):
+                rolls = max(1, math.ceil(e["meters"] / inventory.EDGE_ROLL_METERS))
+                desc = (f"{e['code']} — {e['meters']:g} m banding on {e['parts']} part edge(s) "
+                        f"→ {rolls} whole roll(s) of {inventory.EDGE_ROLL_METERS:g} m")
+            elif pdf_edge_rolls.get(e["code"]):
+                rolls = int(pdf_edge_rolls[e["code"]])
+                desc = (f"{e['code']} — {e['parts']} part edge(s); rolls from estimate PDF "
+                        f"({rolls} × {inventory.EDGE_ROLL_METERS:g} m)")
+            else:
+                rolls = 1
+                desc = f"{e['code']} — {e['parts']} part edge(s); length unknown — VERIFY roll count"
             self._add_material_line(
-                e["code"], "edge", 0, rolls, desc, unpriced,
+                e["code"], "edge", 0, rolls, desc[:140], unpriced,
                 uom="Roll", rate_factor=inventory.EDGE_ROLL_METERS,
             )
 

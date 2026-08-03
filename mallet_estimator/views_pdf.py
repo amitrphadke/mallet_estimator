@@ -80,11 +80,17 @@ def parse_partlist_hardware(content):
     return parse_partlist_text(_pdf_text(content))
 
 
+_MAX_EDGE_METERS = 1000.0  # sanity cap — a part-length (mm) misread fails this
+_EDGE_TRAIL_QTY_RE = re.compile(r"(\d+)\s*$")
+
+
 def parse_partlist_edges_text(text):
     """Edge banding from the Parts List PDF's Summary: [{code, parts, meters}].
-    The 'Σ Rough Length' meters are the REAL banding need (the estimate PDF's
-    edge section can be wrong/missing); parts = banded-edge count."""
-    out, pending = [], None
+    Column layouts VARY by export: with length columns the row (or a line just
+    below a wrapped spec) carries '<parts> <len> m…'; without them the row ends
+    in just the parts count and meters is None (resolved by the caller). A
+    bounded look-ahead + a sanity cap keep part-table numbers from leaking in."""
+    out, pending, lookahead = [], None, 0
     for line in text.splitlines():
         line = line.strip()
         if not line:
@@ -93,17 +99,31 @@ def parse_partlist_edges_text(text):
         if m:
             code, rest = m.group(1), m.group(2)
             nums = _EDGE_NUMS_RE.search(rest)
-            if nums:
+            if nums and float(nums.group(2)) <= _MAX_EDGE_METERS:
                 out.append({"code": code, "parts": int(nums.group(1)), "meters": float(nums.group(2))})
                 pending = None
             else:
-                pending = code  # numbers wrapped below (spec sub-line in between)
+                trail = _EDGE_TRAIL_QTY_RE.search(rest)
+                if trail and "mm" not in rest[trail.start():]:
+                    # qty-only layout: "EB_x / 1 mm x 22 mm 27"
+                    out.append({"code": code, "parts": int(trail.group(1)), "meters": None})
+                    pending = None
+                else:
+                    pending, lookahead = code, 0  # numbers may wrap below the spec line
             continue
         if pending:
-            nums = _EDGE_NUMS_RE.search(line)
-            if nums:
+            lookahead += 1
+            nums = re.match(r"^\s*(\d+)\s+([0-9.]+)\s*m", line)
+            if nums and float(nums.group(2)) <= _MAX_EDGE_METERS and int(nums.group(1)) <= 500:
                 out.append({"code": pending, "parts": int(nums.group(1)), "meters": float(nums.group(2))})
                 pending = None
+            elif lookahead >= 3:
+                # give up cleanly: record the code with unknown meters rather than
+                # swallowing a part-table number
+                out.append({"code": pending, "parts": 0, "meters": None})
+                pending = None
+    if pending:
+        out.append({"code": pending, "parts": 0, "meters": None})
     return out
 
 
