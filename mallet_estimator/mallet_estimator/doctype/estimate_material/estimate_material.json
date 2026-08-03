@@ -27,14 +27,16 @@
    "in_list_view": 1,
    "columns": 3,
    "label": "Material Item",
-   "description": "The ERPNext stock Item — cost comes from its valuation / price."
+   "description": "The ERPNext stock Item — cost comes from its valuation / price.",
+   "read_only": 1
   },
   {
    "fieldname": "description",
    "fieldtype": "Data",
    "in_list_view": 1,
    "columns": 3,
-   "label": "Description"
+   "label": "Description",
+   "read_only": 1
   },
   {
    "fieldname": "qty",
@@ -43,7 +45,8 @@
    "columns": 1,
    "label": "Qty",
    "default": "1",
-   "description": "Imported rows are locked (PDF is the source); manually added rows are editable."
+   "description": "Imported from the PDFs — not editable. Add extra hardware via the 'Add material row' button.",
+   "read_only": 1
   },
   {
    "fieldname": "uom",

@@ -134,3 +134,104 @@ class TestCodes(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestDecor(unittest.TestCase):
+    def test_bcn_standard(self):
+        from mallet_estimator import decor
+        v = decor.parse_slot_value("Merino 1834 Moonlit Gray")
+        self.assertEqual((v["brand"], v["catalogue"], v["name"]), ("Merino", "1834", "Moonlit Gray"))
+        v = decor.parse_slot_value("RT 6575")  # alias + name optional
+        self.assertEqual((v["brand"], v["catalogue"], v["name"]), ("Royal Touch", "6575", ""))
+        v = decor.parse_slot_value("Royal Touch 6575 Black Marmor")
+        self.assertEqual(v["brand"], "Royal Touch")
+        # multi-word maker + initials alias, straight from the maker list
+        v = decor.parse_slot_value("Virgo Mica 1834 Grey")
+        self.assertEqual((v["brand"], v["catalogue"], v["name"]), ("Virgo Mica", "1834", "Grey"))
+        v = decor.parse_slot_value("VM 1834")
+        self.assertEqual(v["brand"], "Virgo Mica")
+        # a NEW maker supplied via the live list is recognised without code changes
+        v = decor.parse_slot_value("Greenlam 204 Teak", brands=["Greenlam", "Merino"])
+        self.assertEqual(v["brand"], "Greenlam")
+
+    def test_legacy_freeform(self):
+        from mallet_estimator import decor
+        v = decor.parse_slot_value("YS_6534_MOONLIT_BED_Laminate")
+        self.assertIsNone(v["brand"])
+        self.assertEqual(v["raw"], "YS_6534_MOONLIT_BED_Laminate")
+
+    def test_material_slots(self):
+        from mallet_estimator import decor
+        self.assertEqual(decor.material_slots("SG_PLY_V2_b_c"), ["b", "c"])
+        self.assertEqual(decor.material_slots("SG_LAM_V1_16mm_b_a"), ["b"])
+        self.assertEqual(decor.material_slots("EB_PVC_EX_c"), ["c"])
+        self.assertEqual(decor.material_slots("SG_PLY_V0_a_a"), [])
+
+    def test_multi_slot_description(self):
+        from mallet_estimator import decor
+        out = decor.parse_description("b=Merino 6534; c=RT 6575 Black Marmor", "SG_PLY_V2_b_c")
+        self.assertEqual(out["b"]["brand"], "Merino")
+        self.assertEqual(out["c"]["catalogue"], "6575")
+
+    def test_item_codes(self):
+        from mallet_estimator import decor
+        self.assertEqual(decor.decor_item_code("SG_LAM_V1_16mm_b_a", "Merino", "1834", "x"),
+                         "LAMINATE_MERINO_1834")
+        self.assertTrue(decor.decor_item_code("EB_PVC_EX_c", None, None,
+                        "YS_6534_MOONLIT_BED_Laminate").startswith("EBD_"))
+
+    def test_extract_from_pdf_text(self):
+        from mallet_estimator import decor
+        text = ("SG_LAM_V1_16mm_b_a / 1 mm\n"
+                "b=Merino 1834 Moonlit Gray\n"
+                "3 4.16 m²8.92 m² - -12 Rs34 Rs\n"
+                "EB_PVC_EX_b / 1 mm x 22 mm\n"
+                "b=RT 6575\n")
+        out = decor.extract_slot_map(text)
+        self.assertEqual(len(out), 2)
+        self.assertEqual(out[0]["placeholder"], "SG_LAM_V1_16mm_b_a")
+        self.assertEqual(out[0]["brand"], "Merino")
+        self.assertEqual(out[1]["brand"], "Royal Touch")
+
+
+class TestDecorBlocks(unittest.TestCase):
+    BLOCK = ("b = External Laminate\n"
+             "Brand = Virgo Mica\n"
+             "Code = 1834\n"
+             "Name = Moonlight\n"
+             "Year = 2025-26\n"
+             "a = Internal Laminate\n"
+             "Brand = Serplex\n"
+             "Code = 1834\n"
+             "Name = Fabric\n")
+
+    def test_labelled_block(self):
+        from mallet_estimator import decor
+        out = decor.parse_description(self.BLOCK, "SG_LAM_V1_16mm_b_a",
+                                      brands=["Virgo Mica", "Serplex"])
+        self.assertEqual(out["b"]["brand"], "Virgo Mica")
+        self.assertEqual(out["b"]["year"], "2025-26")
+        self.assertEqual(out["b"]["title"], "External Laminate")
+        self.assertEqual(out["a"]["brand"], "Serplex")
+        self.assertEqual(out["a"]["name"], "Fabric")
+
+    def test_unknown_maker_accepted_when_labelled(self):
+        from mallet_estimator import decor
+        out = decor.parse_description("b = Ext\nBrand = Greenlam\nCode = 204\n",
+                                      "SG_LAM_V1_16mm_b_a")
+        self.assertEqual(out["b"]["brand"], "Greenlam")  # explicit label = intent
+
+    def test_initials_canonicalize_in_block(self):
+        from mallet_estimator import decor
+        out = decor.parse_description("b = Ext\nBrand = VM\nCode = 1834\n",
+                                      "SG_LAM_V1_16mm_b_a", brands=["Virgo Mica"])
+        self.assertEqual(out["b"]["brand"], "Virgo Mica")
+
+    def test_extract_block_from_pdf_text(self):
+        from mallet_estimator import decor
+        text = ("SG_LAM_V1_16mm_b_a / 1 mm\n" + self.BLOCK +
+                "3 4.16 m²8.92 m² - -12 Rs34 Rs\n")
+        out = decor.extract_slot_map(text, brands=["Virgo Mica", "Serplex"])
+        slots = {(e["placeholder"], e["slot"]) for e in out}
+        self.assertIn(("SG_LAM_V1_16mm_b_a", "b"), slots)
+        self.assertIn(("SG_LAM_V1_16mm_b_a", "a"), slots)

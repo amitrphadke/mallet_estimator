@@ -31,6 +31,7 @@
   "partlist_pdf",
   "views_pdf",
   "materials",
+  "decor_slots",
   "unpriced_materials",
   "material_cost",
   "import_drivers",
@@ -217,7 +218,9 @@
    "fieldname": "materials",
    "fieldtype": "Table",
    "label": "Material Lines",
-   "options": "Estimate Material"
+   "options": "Estimate Material",
+   "cannot_add_rows": 1,
+   "description": "Imported from the PDFs (read-only). Use 'Add material row' for extras like a hydraulic lift — priced from the stock price list."
   },
   {
    "fieldname": "unpriced_materials",
@@ -344,7 +347,8 @@
    "fieldtype": "Table",
    "label": "Design Steps",
    "options": "Estimate Labor",
-   "description": "The designer's pipeline (site measurement → 3D plan → SKP → SKU → 7Views → estimate/part PDFs), priced at the Design Desk workstation rate."
+   "description": "The designer's pipeline (site measurement → 3D plan → SKP → SKU → 7Views → estimate/part PDFs), priced at the Design Desk rate. Only Qty and Remarks are editable — std times live on the Operation masters.",
+   "cannot_add_rows": 1
   },
   {
    "fieldname": "design_hours",
@@ -485,6 +489,14 @@
    "label": "Rates Frozen (quoted)",
    "read_only": 1,
    "description": "Set when this SKU's Estimate is submitted/quoted — material re-imports and re-pricing are locked; price-list changes no longer affect this estimate."
+  },
+  {
+   "fieldname": "decor_slots",
+   "fieldtype": "Table",
+   "label": "Décor Slot Map (b/c → real laminate & edge banding)",
+   "options": "Estimate Slot Map",
+   "cannot_add_rows": 1,
+   "description": "Auto-filled from the OCL material Descriptions (B-C-N: 'b = Merino 1834 Moonlit Gray'). The real décor items (LAMINATE_/EBD_) drive the execution BOM and POs — repoint a slot when the client changes their pick. The estimate stays at the placeholder ceiling."
   }
  ],
  "links": [],
