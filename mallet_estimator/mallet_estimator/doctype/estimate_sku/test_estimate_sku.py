@@ -44,6 +44,9 @@ class TestEstimateSKU(MalletTestCase):
 
     def _new_sku(self, **over):
         code, _, _ = inventory.ensure_material_item("SG_PLY_SKUTEST", kind="sheet", thickness=16)
+        # Rates live ONLY on the price list — every save re-reads them, so a
+        # unit_cost passed in the row dict would be overwritten anyway.
+        inventory.set_assumed_rate(code, 100)
         doc = frappe.get_doc({
             "doctype": "Estimate SKU",
             "project": self.project,
