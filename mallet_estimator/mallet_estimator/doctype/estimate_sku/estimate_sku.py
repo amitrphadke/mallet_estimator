@@ -36,6 +36,32 @@ def operation_defaults(op_name):
     return mins, ws
 
 
+def build_bifurcation(amounts, gst_pct=18.0):
+    """The Material / Labor / Design / Overhead / Transport / Taxes line items
+    (client side): [{label, amount, pct (of pre-tax total), gst, gross}] +
+    pre-tax / taxes / grand-total rows. Transport stays its own line — it is
+    the shared cost across SKUs, recovered at cost."""
+    rows = [
+        ("Material (incl. joinery consumables)", amounts.get("client_material") or 0),
+        ("Labor (carpentry wages)", amounts.get("client_labor") or 0),
+        ("Design", amounts.get("client_design") or 0),
+        ("Factory Overhead", amounts.get("client_overhead") or 0),
+        ("Transport (shared across SKUs, at cost)", amounts.get("transport") or 0),
+    ]
+    pre_tax = sum(a for _, a in rows)
+    out = [{
+        "label": label, "amount": amt,
+        "pct": (amt / pre_tax * 100.0) if pre_tax else 0,
+        "gst": amt * gst_pct / 100.0,
+        "gross": amt * (1 + gst_pct / 100.0),
+    } for label, amt in rows]
+    taxes = sum(r["gst"] for r in out)
+    return {
+        "rows": out, "pre_tax": pre_tax, "taxes": taxes,
+        "grand_total": pre_tax + taxes, "gst_pct": gst_pct,
+    }
+
+
 def get_default_item_group():
     return (
         frappe.db.get_single_value("Stock Settings", "item_group")
@@ -98,8 +124,10 @@ class EstimateSKU(Document):
         keep = {self.get(f) for f in self.ATTACH_FIELDS if self.get(f)}
         for fd in frappe.get_all(
             "File", filters={"attached_to_doctype": self.doctype, "attached_to_name": self.name},
-            fields=["name", "file_url"],
+            fields=["name", "file_url", "file_name"],
         ):
+            if str(fd.file_name or "").startswith("member_"):
+                continue  # a combined SKU's member ISO renders live here on purpose
             if fd.file_url not in keep:
                 try:
                     frappe.delete_doc("File", fd.name, force=True, ignore_permissions=True)
@@ -641,6 +669,16 @@ class EstimateSKU(Document):
         # Profit: what the client pays (SKU total + transport recovered at cost on
         # the Estimate) minus every rupee it cost to make.
         profit = client_total + transport - internal
+        # The clear Material / Labor / Design / Overhead / Transport / Taxes
+        # bifurcation (client side, transport kept separate as the shared cost):
+        # each line carries its % of the pre-tax total and its own GST.
+        bif = build_bifurcation({
+            "client_material": float(self.client_material or 0),
+            "client_labor": float(r.get("client_labor") or 0),
+            "client_design": float(r.get("client_design") or 0),
+            "client_overhead": float(r.get("client_overhead") or 0),
+            "transport": transport,
+        }, gst_pct)
         self.cost_breakup = json.dumps({
             "groups": groups,
             "internal": internal,
@@ -654,8 +692,27 @@ class EstimateSKU(Document):
             "gst_pct": gst_pct,
             "gst_amount": gst_amount,
             "client_total_with_gst": client_total + gst_amount,
+            "bifurcation": bif,
+            "sqft": self.facial_sqft_block(),
             "note": "Transport is billed on the Estimate (trips shared across SKUs).",
         })
+
+    def facial_sqft_block(self):
+        """Facial area per the interior-design convention: the product of the two
+        GREATEST outer dimensions (mm) → sq ft, with the client per-sqft rates
+        (all pre-tax). None when outer dims aren't keyed yet."""
+        dims = sorted([float(self.get(f) or 0) for f in ("outer_w", "outer_d", "outer_h")], reverse=True)
+        if not (dims[0] and dims[1]):
+            return None
+        sqft = dims[0] * dims[1] / 92903.04  # mm² per sq ft
+        if not sqft:
+            return None
+        return {
+            "sqft": sqft,
+            "material_per_sqft": float(self.client_material or 0) / sqft,
+            "labor_per_sqft": float(self.client_design_exec or 0) / sqft,
+            "total_per_sqft": float(self.client_total or 0) / sqft,
+        }
 
     # --- naming ------------------------------------------------------------
     def customer_display_name(self):

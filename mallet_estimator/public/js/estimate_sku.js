@@ -143,8 +143,33 @@ frappe.ui.form.on("Estimate Labor", {
   labor_add: (frm) => lock_qty(frm),
   labor_remove: (frm) => update_live_totals(frm),
   qty: (frm, cdt, cdn) => recompute_total(frm, cdt, cdn),
-  carp_min: (frm, cdt, cdn) => recompute_total(frm, cdt, cdn),
+  carp_min: (frm, cdt, cdn) => {
+    show_min_unit_benefit(frm, cdt, cdn);
+    recompute_total(frm, cdt, cdn);
+  },
 });
+
+// Scale insight: changing Min/Unit vs the Operation master's Std Time shows the
+// benefit instantly (e.g. sheet cutting 40 → 30 min when cutting two SKUs'
+// sheets in one go): minutes saved x qty, priced at the workstation rate.
+function show_min_unit_benefit(frm, cdt, cdn) {
+  const row = locals[cdt][cdn];
+  const std = +(row.std_min || 0);
+  const cur = +(row.carp_min || 0);
+  const qty = +(row.qty || 0);
+  if (!std || !qty || cur === std) return;
+  const mins = (std - cur) * qty;
+  const rates = frm._ws_net || {};
+  const rate = rates[row.workstation] || rates.__default__ || 0;
+  const rupees = (mins / 60) * rate;
+  const gain = mins > 0;
+  frappe.show_alert({
+    message: gain
+      ? __("{0}: saving {1} min vs Std ({2}/unit) ≈ {3}", [row.operation, Math.round(mins), std, format_currency(rupees)])
+      : __("{0}: {1} min MORE than Std ({2}/unit) ≈ {3} extra", [row.operation, Math.round(-mins), std, format_currency(-rupees)]),
+    indicator: gain ? "green" : "orange",
+  }, 6);
+}
 
 // I3: totals update instantly. Imported material rows are FULLY read-only (the
 // PDFs are the source); extra hardware goes through the Add-material dialog —
@@ -298,7 +323,40 @@ function render_cost_breakup(frm) {
         <tr style="font-weight:700"><td>Client Total incl. GST</td><td class="text-right">${money(d.client_total_with_gst)}</td></tr>` : ""}
       </tbody>
     </table>
+    ${render_bifurcation(d.bifurcation, d.sqft)}
     <p class="text-muted" style="font-size:11.5px;margin:6px 0 0">${esc(d.note || "")}</p>`);
+}
+
+// The clear Material / Labor / Design / Overhead / Transport / Taxes table —
+// amount, % of the pre-tax total, that line's GST, and its gross. Plus the
+// facial-sqft rates (two greatest outer dims) when the dims are keyed.
+function render_bifurcation(b, sqft) {
+  if (!b || !(b.rows || []).length) return "";
+  const money = (v) => format_currency(v || 0);
+  const esc = frappe.utils.escape_html;
+  const rows = b.rows.map((r) => `
+      <tr><td>${esc(r.label)}</td>
+        <td class="text-right">${money(r.amount)}</td>
+        <td class="text-right">${(r.pct || 0).toFixed(1)}%</td>
+        <td class="text-right">${money(r.gst)}</td>
+        <td class="text-right">${money(r.gross)}</td></tr>`).join("");
+  const sq = sqft ? `
+      <tr style="background:var(--subtle-fg, #f4f5f6)"><td colspan="5" style="font-weight:700">Per square foot (facial area: ${(sqft.sqft || 0).toFixed(2)} sq ft — two greatest outer dims)</td></tr>
+      <tr><td>Material / sq ft</td><td class="text-right">${money(sqft.material_per_sqft)}</td><td colspan="3"></td></tr>
+      <tr><td>Labor (design &amp; execution) / sq ft</td><td class="text-right">${money(sqft.labor_per_sqft)}</td><td colspan="3"></td></tr>
+      <tr style="font-weight:700"><td>SKU / sq ft (pre-tax)</td><td class="text-right">${money(sqft.total_per_sqft)}</td><td colspan="3"></td></tr>` : `
+      <tr><td colspan="5" class="text-muted">Per-sqft rates need the outer W/D/H — key them (or attach the 7 Views PDF).</td></tr>`;
+  return `
+    <h6 style="margin:14px 0 4px">Bifurcation — client pricing</h6>
+    <table class="table table-bordered" style="font-size:12.5px;margin:0">
+      <thead><tr><th>Component</th><th class="text-right">Amount</th><th class="text-right">% of pre-tax</th><th class="text-right">GST ${b.gst_pct || 18}%</th><th class="text-right">Incl. GST</th></tr></thead>
+      <tbody>${rows}
+        <tr style="font-weight:700;border-top:2px solid var(--gray-600)"><td>Total before taxes</td><td class="text-right">${money(b.pre_tax)}</td><td class="text-right">100%</td><td class="text-right">${money(b.taxes)}</td><td class="text-right">${money(b.grand_total)}</td></tr>
+        <tr style="font-weight:700"><td>Taxes (GST ${b.gst_pct || 18}%)</td><td class="text-right">${money(b.taxes)}</td><td colspan="3"></td></tr>
+        <tr style="font-weight:700"><td>Grand Total incl. GST</td><td class="text-right">${money(b.grand_total)}</td><td colspan="3"></td></tr>
+        ${sq}
+      </tbody>
+    </table>`;
 }
 
 // include_misc toggle re-prices instantly too.

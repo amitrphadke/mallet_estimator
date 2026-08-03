@@ -6,6 +6,31 @@ frappe.ui.form.on("Estimate", {
     const draft = frm.doc.docstatus === 0;
     const approved = frm.doc.docstatus === 1;
 
+    render_estimate_bifurcation(frm);
+
+    // Scale mode: design the WHOLE estimate as one SKU (shared sheets, one-go
+    // cutting) — creates a combined Estimate SKU pre-filled with every member
+    // SKU's dims + facial sqft and their ISO renders; attach the whole-project
+    // estimate PDF + part list there.
+    if (!frm.is_new() && (frm.doc.skus || []).length) {
+      frm.add_custom_button(__("Create combined SKU (scale mode)"), () => {
+        frappe.confirm(
+          __("Create ONE combined SKU carrying every member SKU's details and facial area? It is excluded from estimate totals until you switch over."),
+          () =>
+            frm.call("create_combined_sku").then((r) => {
+              const m = (r && r.message) || {};
+              if (m.name) {
+                frappe.show_alert({
+                  message: __("Combined SKU {0}: {1} member(s), {2} sq ft facial area", [m.name, m.members, (m.sqft || 0).toFixed(2)]),
+                  indicator: "green",
+                }, 6);
+                frappe.set_route("Form", "Estimate SKU", m.name);
+              }
+            })
+        );
+      });
+    }
+
     // --- Draft: pull in SKUs added after this estimate was created ----------
     if (draft && !frm.is_new()) {
       frm.add_custom_button(__("Refresh SKUs"), () => {
@@ -91,6 +116,40 @@ function recompute_trip(frm, cdt, cdn) {
   if (!row) return;
   frappe.model.set_value(cdt, cdn, "amount", (row.qty || 0) * (row.rate || 0))
     .then(() => update_estimate_totals(frm));
+}
+
+// Same bifurcation table as on each SKU, aggregated (built server-side on save).
+function render_estimate_bifurcation(frm) {
+  const f = frm.get_field("cost_breakup_html");
+  if (!f || !f.$wrapper) return;
+  let d = null;
+  try { d = JSON.parse(frm.doc.cost_breakup || "null"); } catch (e) { d = null; }
+  const b = d && d.bifurcation;
+  if (!b || !(b.rows || []).length) { f.$wrapper.empty(); return; }
+  const money = (v) => format_currency(v || 0);
+  const esc = frappe.utils.escape_html;
+  const rows = b.rows.map((r) => `
+      <tr><td>${esc(r.label)}</td>
+        <td class="text-right">${money(r.amount)}</td>
+        <td class="text-right">${(r.pct || 0).toFixed(1)}%</td>
+        <td class="text-right">${money(r.gst)}</td>
+        <td class="text-right">${money(r.gross)}</td></tr>`).join("");
+  const sq = d.sqft ? `
+      <tr style="background:var(--subtle-fg, #f4f5f6)"><td colspan="5" style="font-weight:700">Per square foot (total facial area: ${(d.sqft.sqft || 0).toFixed(2)} sq ft across all SKUs)</td></tr>
+      <tr><td>Material / sq ft</td><td class="text-right">${money(d.sqft.material_per_sqft)}</td><td colspan="3"></td></tr>
+      <tr><td>Labor (design &amp; execution) / sq ft</td><td class="text-right">${money(d.sqft.labor_per_sqft)}</td><td colspan="3"></td></tr>
+      <tr style="font-weight:700"><td>Estimate / sq ft (pre-tax, excl. transport)</td><td class="text-right">${money(d.sqft.total_per_sqft)}</td><td colspan="3"></td></tr>` : "";
+  f.$wrapper.html(`
+    <h6 style="margin:8px 0 4px">Bifurcation — all SKUs combined</h6>
+    <table class="table table-bordered" style="font-size:12.5px;margin:0">
+      <thead><tr><th>Component</th><th class="text-right">Amount</th><th class="text-right">% of pre-tax</th><th class="text-right">GST ${b.gst_pct || 18}%</th><th class="text-right">Incl. GST</th></tr></thead>
+      <tbody>${rows}
+        <tr style="font-weight:700;border-top:2px solid var(--gray-600)"><td>Total before taxes</td><td class="text-right">${money(b.pre_tax)}</td><td class="text-right">100%</td><td class="text-right">${money(b.taxes)}</td><td class="text-right">${money(b.grand_total)}</td></tr>
+        <tr style="font-weight:700"><td>Taxes (GST ${b.gst_pct || 18}%)</td><td class="text-right">${money(b.taxes)}</td><td colspan="3"></td></tr>
+        <tr style="font-weight:700"><td>Grand Total incl. GST</td><td class="text-right">${money(b.grand_total)}</td><td colspan="3"></td></tr>
+        ${sq}
+      </tbody>
+    </table>`);
 }
 
 function update_estimate_totals(frm) {

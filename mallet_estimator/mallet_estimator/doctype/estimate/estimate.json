@@ -38,6 +38,8 @@
   "gst_pct",
   "total_gst",
   "total_with_gst",
+  "cost_breakup",
+  "cost_breakup_html",
   "quotation",
   "amended_from"
  ],
@@ -237,6 +239,18 @@
    "label": "Grand Total (incl. GST)",
    "read_only": 1,
    "bold": 1
+  },
+  {
+   "fieldname": "cost_breakup",
+   "fieldtype": "Code",
+   "label": "Cost Breakup (JSON)",
+   "hidden": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "cost_breakup_html",
+   "fieldtype": "HTML",
+   "label": "Cost Bifurcation"
   },
   {
    "fieldname": "quotation",
