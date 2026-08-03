@@ -28,6 +28,7 @@ class TestMasters(MalletTestCase):
         install.seed_settings()
         inventory.ensure_inventory_masters()
         install.ensure_project_customization()
+        install.ensure_gst_masters()
         install.ensure_manufacturing_masters()
         inventory.ensure_warehouses(_ensure_company())
 

@@ -547,12 +547,19 @@ def verify_setup():
     chk("Suppliers", not miss_sup, ("missing: " + ", ".join(miss_sup)) if miss_sup else f"{len(inventory.SUPPLIER_SCOPE)} vendors ✓")
     chk("Paint category", frappe.db.exists("Item Group", "Paint"), "Paint item group")
 
-    # T2 — native GST: item tax template applied on the material groups.
+    # T2 — native GST: item tax template applied on the material groups. A site
+    # whose chart of accounts has no Duties-and-Taxes group (bare CI) can't hold
+    # tax accounts — the checks report but never fail there.
     itt = frappe.db.get_value("Item Tax Template", {"title": ITEM_TAX_TEMPLATE}, "name")
+    has_tax_parent = bool(frappe.db.exists(
+        "Account", {"account_name": ["like", "%Duties and Taxes%"], "is_group": 1}))
     grp_applied = bool(itt) and bool(frappe.db.exists("Item Tax Template Detail", {"parenttype": "Item Group"}))
-    chk("Item tax template", bool(itt), ITEM_TAX_TEMPLATE if itt else "missing — needs Duties and Taxes accounts")
+    chk("Item tax template", bool(itt) or not has_tax_parent,
+        ITEM_TAX_TEMPLATE if itt else ("no Duties-and-Taxes accounts on this site" if not has_tax_parent
+                                       else "missing — run Create/refresh masters"))
     chk("Groups carry GST template", grp_applied or not itt,
-        "applied on material groups" if grp_applied else "not applied yet")
+        "applied on material groups" if grp_applied else
+        ("n/a — no template" if not itt else "TEMPLATE EXISTS but not applied — run Create/refresh masters"))
 
     n_unpriced = frappe.db.count("Item", {
         "item_group": ["in", inventory.ITEM_GROUPS], "disabled": 0, "valuation_rate": 0,
