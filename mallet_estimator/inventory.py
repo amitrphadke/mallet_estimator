@@ -612,9 +612,26 @@ def ensure_material_item(name, kind=None, thickness=0, dims=None):
 
     # S2 — attach the vendors allowed to supply this kind (idempotent).
     attach_scope_suppliers(code, kind)
+    apply_item_gst(code)
 
     rate, source = material_rate(code)
     return code, rate, source
+
+
+def apply_item_gst(code):
+    """T2b — stamp the standard GST Item Tax Template ON the Item itself. The
+    material groups carry it too (transactions inherit), but an explicit item
+    row makes the tax visible on the Item page and survives a re-homed group.
+    No-op when the template isn't set up (bare/CI sites) or already stamped."""
+    from mallet_estimator.install import ITEM_TAX_TEMPLATE
+    itt = frappe.db.get_value("Item Tax Template", {"title": ITEM_TAX_TEMPLATE}, "name")
+    if not itt or not frappe.db.exists("Item", code) \
+            or frappe.db.exists("Item Tax", {"parenttype": "Item", "parent": code}):
+        return False
+    item = frappe.get_doc("Item", code)
+    item.append("taxes", {"item_tax_template": itt})
+    item.save(ignore_permissions=True)
+    return True
 
 
 def ensure_catalogue_item(part_no, description=None, manufacturer=None, kind="hardware", item_group=None):
@@ -671,6 +688,7 @@ def ensure_catalogue_item(part_no, description=None, manufacturer=None, kind="ha
             item.save(ignore_permissions=True)
 
     attach_scope_suppliers(code, kind)
+    apply_item_gst(code)
     return code
 
 

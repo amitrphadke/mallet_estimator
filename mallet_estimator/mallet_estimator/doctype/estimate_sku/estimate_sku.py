@@ -78,6 +78,9 @@ class EstimateSKU(Document):
             self.set("joinery_items", [])
             self.set("parts", [])
             self.unpriced_materials = ""
+            # no design (estimate PDF) → no billable design work
+            for row in self.get("design_labor") or []:
+                row.qty = 0
             self.import_drivers = ""
         if not self.is_new() and self.has_value_changed("views_pdf") and not self.views_pdf:
             self.article_image = None
@@ -236,17 +239,27 @@ class EstimateSKU(Document):
         # Descriptions (est + part list) into an SKU-wide slot→décor map; the
         # placeholder's trailing letters get replaced by the first letter's décor
         # short code (SG_LAM_V1_16mm_b_a + b=Virgo Mica 6534 → SG_LAM_V1_16mm_VM6534).
-        slot_decors = {}
+        # Slots are SKU-wide but PER DOMAIN: the same letter can name a laminate
+        # on SG_ rows AND a different edge-band décor on EB_ rows (b = Virgo Mica
+        # 6534 laminate vs b = Rheau 2008 edge band). An EB_ row's own block wins
+        # for edge banding; otherwise it matches the laminate slot.
+        lam_decors, edge_decors = {}, {}
         try:
             pl_text = views_pdf._pdf_text(pl_content) if self.partlist_pdf else ""
             est_text = estimate_pdf.read_pdf_text(_file_content(self.estimate_pdf))
             brands = frappe.get_all("Manufacturer", pluck="name")
             for d in decor.extract_slot_map(est_text + "\n" + pl_text, brands):
-                slot_decors.setdefault(d["slot"], d)  # slots are SKU-wide; first wins
+                tgt = edge_decors if str(d["placeholder"]).startswith("EB_") else lam_decors
+                cur = tgt.get(d["slot"])
+                # first definition wins within a domain — unless it was truncated
+                # (no catalogue) and a later one is complete
+                if cur is None or (not cur.get("catalogue") and d.get("catalogue")):
+                    tgt[d["slot"]] = d
         except Exception:
             frappe.log_error(frappe.get_traceback(), f"decor parse {self.name}")
-        slot_shorts = {k: decor.short_code(v) for k, v in slot_decors.items() if decor.short_code(v)}
-        self._slot_decors, self._slot_shorts = slot_decors, slot_shorts
+        edge_decors = {**lam_decors, **edge_decors}
+        lam_shorts = {k: decor.short_code(v) for k, v in lam_decors.items() if decor.short_code(v)}
+        edge_shorts = {k: decor.short_code(v) for k, v in edge_decors.items() if decor.short_code(v)}
 
         self.set("materials", [])
         unpriced = []
@@ -256,9 +269,9 @@ class EstimateSKU(Document):
         # attached (falling back to the PDF's generic groups).
         for m in materials:
             if m.get("kind") == "laminate":
-                real, letter = decor.substitute_real_code(m["name"], slot_shorts)
+                real, letter = decor.substitute_real_code(m["name"], lam_shorts)
                 if letter:
-                    meta = self._slot_decors.get(letter)
+                    meta = lam_decors.get(letter)
                     self._add_material_line(
                         real, "laminate", m.get("thickness") or 0, m["qty"] or 0,
                         f"{real} — real laminate for {m['name']}", unpriced, decor_meta=meta,
@@ -278,12 +291,12 @@ class EstimateSKU(Document):
                     continue  # authoritative rows come from the part list below
                 # Fallback (no part list): the estimate PDF's roll count. Bought
                 # AND charged in whole ROLLS (50 m each) at per-meter rate x 50.
-                real_eb, eb_ltr = decor.substitute_real_code(m["name"], slot_shorts)
+                real_eb, eb_ltr = decor.substitute_real_code(m["name"], edge_shorts)
                 desc = f"{desc} — whole roll(s) of {inventory.EDGE_ROLL_METERS:g} m"[:140]
                 self._add_material_line(
                     real_eb, "edge", m.get("thickness") or 0, qty, desc, unpriced,
                     uom="Roll", rate_factor=inventory.EDGE_ROLL_METERS,
-                    decor_meta=self._slot_decors.get(eb_ltr) if eb_ltr else None,
+                    decor_meta=edge_decors.get(eb_ltr) if eb_ltr else None,
                 )
                 continue
             self._add_material_line(
@@ -298,7 +311,7 @@ class EstimateSKU(Document):
         import math
         pdf_edge_rolls = {m["name"]: (m["qty"] or 0) for m in materials if m.get("kind") == "edge"}
         for e in pl_edges:
-            e["code"], _ltr = decor.substitute_real_code(e["code"], slot_shorts)
+            e["code"], _ltr = decor.substitute_real_code(e["code"], edge_shorts)
             if e.get("meters"):
                 rolls = max(1, math.ceil(e["meters"] / inventory.EDGE_ROLL_METERS))
                 desc = (f"{e['code']} — {e['meters']:g} m banding on {e['parts']} part edge(s) "
@@ -313,6 +326,7 @@ class EstimateSKU(Document):
             self._add_material_line(
                 e["code"], "edge", 0, rolls, desc[:140], unpriced,
                 uom="Roll", rate_factor=inventory.EDGE_ROLL_METERS,
+                decor_meta=edge_decors.get(_ltr) if _ltr else None,
             )
 
         for h in hardware:
@@ -373,6 +387,12 @@ class EstimateSKU(Document):
                 row.carp_min = std["min_per_unit"]
         self.import_drivers = json.dumps(opq)
 
+        # A design exists the moment an estimate PDF does — design steps whose
+        # qty is still 0 become billable at 1 (user-set quantities stick).
+        for row in self.get("design_labor") or []:
+            if not float(row.qty or 0):
+                row.qty = 1
+
         if parts:
             self.set("parts", [])
             for p in parts:
@@ -426,18 +446,44 @@ class EstimateSKU(Document):
                 unpriced.append(row.item)
         self.unpriced_materials = ", ".join(unpriced)
 
+    def _hw_line_counts(self):
+        """Hardware quantities summed from the CURRENT material lines (imported
+        AND manual) by designation substring — HWD_MiniFix, HWD_Screw…"""
+        tot = {"minifix": 0, "screw": 0, "hinge": 0, "rail": 0, "handle": 0, "shelf": 0}
+        for m in self.materials or []:
+            code = str(m.item or m.material or "")
+            if not code.upper().startswith("HWD"):
+                continue
+            name = f"{m.item or ''} {m.material or ''}".lower()
+            for k in tot:
+                if k in name:
+                    tot[k] += m.qty or 0
+        return tot
+
     def enforce_locked_qty(self):
-        """Locked operations (sheet lamination/tape/cutting, edge banding) always
-        take their computed qty from the last import — they can't be hand-edited."""
+        """Locked operations always carry their COMPUTED qty — hand edits never
+        stick. Sheet ops + Edge Banding come from the last import's drivers;
+        Minifix Boring / Drilling / Install Hardware are live-derived from the
+        HWD_* material lines, so a manually added fitting (reviewable as a row)
+        moves its operation too."""
         if not self.import_drivers:
             return
         try:
             q = json.loads(self.import_drivers)
         except Exception:
-            return
+            q = {}
+        hw = self._hw_line_counts()
+        hw_qty = {
+            "Minifix Boring": hw["minifix"],
+            "Drilling": hw["screw"],
+            # Install Hardware covers ONLY hinges / drawer rails / handles / shelf supports.
+            "Install Hardware": hw["hinge"] + hw["rail"] + hw["handle"] + hw["shelf"],
+        }
         for row in self.labor:
             op = op_phase(row)
-            if op in estimate_pdf.LOCKED_OPERATIONS and op in q:
+            if op in hw_qty:
+                row.qty = hw_qty[op]
+            elif op in estimate_pdf.LOCKED_OPERATIONS and op in q:
                 row.qty = q[op]
 
     def refresh_project_estimates(self):
@@ -577,13 +623,21 @@ class EstimateSKU(Document):
         other = bucket("Other Material")
         if other:
             groups[0][1].append(["Other Material", other])
+        # Output GST shown per SKU too (the DOCUMENT charge stays on the
+        # Estimate/Quotation — this is the same 18% made visible per article).
+        gst_pct = 18.0
+        client_total = float(self.client_total or 0)
+        gst_amount = client_total * gst_pct / 100.0
         self.cost_breakup = json.dumps({
             "groups": groups,
             "internal": float(self.internal_cost or 0),
             "client_material": float(self.client_material or 0),
             "client_design_exec": float(self.client_design_exec or 0),
-            "client_total": float(self.client_total or 0),
-            "note": "Transport is billed on the Estimate (trips shared across SKUs); GST extra.",
+            "client_total": client_total,
+            "gst_pct": gst_pct,
+            "gst_amount": gst_amount,
+            "client_total_with_gst": client_total + gst_amount,
+            "note": "Transport is billed on the Estimate (trips shared across SKUs).",
         })
 
     # --- naming ------------------------------------------------------------

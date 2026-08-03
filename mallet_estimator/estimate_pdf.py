@@ -69,6 +69,12 @@ def parse_estimate_pdf(text):
             i = j
             continue
         i += 1
+    # A HWD_* designation is hardware no matter which PDF section it was listed
+    # under (some exports put modelled fittings in the veneer/laminate table) —
+    # without this it dodges the part-list dedupe and lands twice.
+    for m in out:
+        if str(m["name"]).upper().startswith("HWD"):
+            m["kind"] = "hardware"
     return out
 
 
@@ -124,5 +130,11 @@ def operation_quantities(materials, part_count):
     return q
 
 
-# Operations whose Qty is fully computed and must not be edited.
-LOCKED_OPERATIONS = {"Sheet Lamination", "Sheet Tape Removal", "Sheet Cutting", "Edge Banding"}
+# Operations whose Qty is fully computed and must not be edited (ops 1-6 + 9):
+# sheet ops + Edge Banding from the import drivers; Minifix Boring / Drilling /
+# Install Hardware live-derived from the HWD_* material lines. Extra work means
+# extra ROWS (reviewable), never a hand-edited qty on a computed step.
+LOCKED_OPERATIONS = {
+    "Sheet Lamination", "Sheet Tape Removal", "Sheet Cutting", "Edge Banding",
+    "Minifix Boring", "Drilling", "Install Hardware",
+}

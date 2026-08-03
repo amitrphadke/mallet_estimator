@@ -33,3 +33,5 @@ mallet_estimator.patches.estimation_ui_cleanup
 mallet_estimator.patches.tax_supplier_hygiene
 # S9v2 — real laminates on lines; drop slot-map doctype + orphan decor items.
 mallet_estimator.patches.real_laminates
+# T2b — stamp the GST item tax template on every material Item (not only groups).
+mallet_estimator.patches.item_gst_backfill

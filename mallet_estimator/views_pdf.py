@@ -88,6 +88,9 @@ def parse_partlist_hardware(content):
 
 _MAX_EDGE_METERS = 1000.0  # sanity cap — a part-length (mm) misread fails this
 _EDGE_TRAIL_QTY_RE = re.compile(r"(\d+)\s*$")
+# The décor description block (b = External edge band / Brand = … / Code = …)
+# sits BETWEEN the Summary code line and its numbers line in newer exports.
+_DECOR_LABEL_RE = re.compile(r"^\s*(?:[a-z]\s*=|(?:brand|code|name|year|short)\s*=)", re.I)
 
 
 def parse_partlist_edges_text(text):
@@ -118,6 +121,8 @@ def parse_partlist_edges_text(text):
                     pending, lookahead = code, 0  # numbers may wrap below the spec line
             continue
         if pending:
+            if _DECOR_LABEL_RE.match(line):
+                continue  # décor block between the code and its numbers — skip, don't count
             lookahead += 1
             nums = re.match(r"^\s*(\d+)\s+([0-9.]+)\s*m", line)
             lone = re.match(r"^\s*(\d{1,4})\s*$", line)

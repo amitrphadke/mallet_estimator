@@ -3,7 +3,12 @@
 // Process Steps are workstation-based: each step's cost = its Workstation's Net
 // Hour Rate x (Qty x Min/Unit / 60). The crew wage is inside the workstation rate,
 // so there are no carpenter/helper inputs here.
-const LOCKED_PHASES = ["Sheet Lamination", "Sheet Tape Removal", "Sheet Cutting", "Edge Banding"];
+// Ops 1-6 + 9: qty is fully computed (import drivers / HWD_* material lines) —
+// only Min/Unit stays editable. Extra work = extra reviewable rows.
+const LOCKED_PHASES = [
+  "Sheet Lamination", "Sheet Tape Removal", "Sheet Cutting", "Edge Banding",
+  "Minifix Boring", "Drilling", "Install Hardware",
+];
 
 frappe.ui.form.on("Estimate SKU", {
   refresh(frm) {
@@ -276,6 +281,9 @@ function render_cost_breakup(frm) {
         <tr><td>Client: Material</td><td class="text-right">${money(d.client_material)}</td></tr>
         <tr><td>Client: Design &amp; Execution</td><td class="text-right">${money(d.client_design_exec)}</td></tr>
         <tr style="font-weight:700"><td>Client Total</td><td class="text-right">${money(d.client_total)}</td></tr>
+        ${d.gst_amount != null ? `
+        <tr><td>Output GST ${d.gst_pct || 18}%</td><td class="text-right">${money(d.gst_amount)}</td></tr>
+        <tr style="font-weight:700"><td>Client Total incl. GST</td><td class="text-right">${money(d.client_total_with_gst)}</td></tr>` : ""}
       </tbody>
     </table>
     <p class="text-muted" style="font-size:11.5px;margin:6px 0 0">${esc(d.note || "")}</p>`);

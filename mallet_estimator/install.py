@@ -561,6 +561,25 @@ def verify_setup():
         "applied on material groups" if grp_applied else
         ("n/a — no template" if not itt else "TEMPLATE EXISTS but not applied — run Create/refresh masters"))
 
+    # T2b — EVERY material Item must resolve to the GST template: an explicit
+    # item-level row, or (at minimum) its group's row. Names the offenders.
+    if itt:
+        mat_groups = [g for g in inventory.ITEM_GROUPS if frappe.db.exists("Item Group", g)]
+        taxed_groups = {r.parent for r in frappe.get_all(
+            "Item Tax", filters={"parenttype": "Item Group"}, fields=["parent"])}
+        taxed_items = {r.parent for r in frappe.get_all(
+            "Item Tax", filters={"parenttype": "Item"}, fields=["parent"])}
+        untaxed = [
+            it.name for it in frappe.get_all(
+                "Item", filters={"item_group": ["in", mat_groups], "disabled": 0},
+                fields=["name", "item_group"])
+            if it.name not in taxed_items and it.item_group not in taxed_groups
+        ]
+        chk("Items carry GST", not untaxed,
+            ("NO tax template resolves for: " + ", ".join(untaxed[:12])
+             + ("…" if len(untaxed) > 12 else "")) if untaxed
+            else "every material item resolves to GST 18% ✓")
+
     n_unpriced = frappe.db.count("Item", {
         "item_group": ["in", inventory.ITEM_GROUPS], "disabled": 0, "valuation_rate": 0,
         "last_purchase_rate": 0, "standard_rate": 0,

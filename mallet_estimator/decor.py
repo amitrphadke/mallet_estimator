@@ -162,17 +162,25 @@ def extract_slot_map(pdf_text, brands=None):
         if not current:
             return
         for slot, parsed in parse_description("\n".join(desc_lines), current, brands).items():
-            key = (current, slot)
-            if key in seen:
-                continue
-            seen.add(key)
             parsed.setdefault("year", "")
             parsed.setdefault("title", None)
+            key = (current, slot)
+            if key in seen:
+                # The same slot described again (estimate PDF + part list): a
+                # page break can TRUNCATE one copy (brand without Code=) — the
+                # more complete description upgrades the earlier entry.
+                for r in results:
+                    if (r["placeholder"], r["slot"]) == key \
+                            and not r.get("catalogue") and parsed.get("catalogue"):
+                        r.update(parsed)
+                continue
+            seen.add(key)
             results.append({"placeholder": current, "slot": slot, **parsed})
 
     NOISE = re.compile(r"m\u00b2|m\u00b3|\bRs\b|\bQty\b|Designation|\d+\s*mm\b|^No\.|^Total|^\d[\d\s.,]*$", re.I)
     for line in pdf_text.splitlines():
-        line = re.sub(r"[\x00-\x1f\xa0]", " ", line).strip()
+        # same normalisation as views_pdf._norm_line: NULs / nbsp / icon glyphs
+        line = re.sub(r"[\x00-\x1f\xa0\ue000-\uf8ff]", " ", line).strip()
         if not line:
             continue
         m = _PLACEHOLDER_RE.match(line)
