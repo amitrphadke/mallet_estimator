@@ -28,7 +28,7 @@ CLIENT_SKU_GROUP = "Client SKU"  # finished articles per client project (archiva
 # Supplier prices — all native.
 #   MANUFACTURERS: maker -> the material kind they make (used to default the Item's
 #   manufacturer). BRAND_NAMES mirror the maker names.
-MANUFACTURERS = {"Hafele": "hardware", "Ebco": "hardware", "Merino": "laminate", "Royal Touch": "laminate", "Virgo Mica": "laminate"}
+MANUFACTURERS = {"Hafele": "hardware", "Ebco": "hardware", "Merino": "laminate", "Royal Touch": "laminate", "Virgo Mica": "laminate", "Serplex": "laminate"}
 BRAND_NAMES = tuple(MANUFACTURERS)
 # Back-compat: the 4 maker/brand names verify_setup still asserts.
 VENDOR_NAMES = tuple(MANUFACTURERS)
@@ -933,7 +933,7 @@ def ensure_warehouses(company=None):
     return result
 
 
-def ensure_decor_item(placeholder, brand, catalogue, name, raw):
+def ensure_decor_item(placeholder, brand, catalogue, name, raw, year=None, title=None):
     """S9 — create/enrich the REAL décor Item behind a placeholder slot:
     LAMD_* (Laminate group, sheet, dye-lot batch) or EBD_* (Edge Banding group,
     metre/roll). One item per real-world décor, reused across projects. Structure
@@ -945,6 +945,14 @@ def ensure_decor_item(placeholder, brand, catalogue, name, raw):
     kind = "edge" if is_edge else "laminate"
     spec = KIND_SPEC[kind]
     display = " ".join(x for x in (brand, catalogue, name) if x) or raw
+    # a labelled Brand is explicit intent — create the Manufacturer master when new
+    if brand and frappe.db.exists("DocType", "Manufacturer") and not frappe.db.exists("Manufacturer", brand):
+        try:
+            m = frappe.new_doc("Manufacturer")
+            m.short_name = brand
+            m.insert(ignore_permissions=True)
+        except Exception:
+            frappe.log_error(frappe.get_traceback(), f"decor manufacturer {brand}")
 
     if not frappe.db.exists("Item", code):
         meta = frappe.get_meta("Item")
@@ -966,7 +974,9 @@ def ensure_decor_item(placeholder, brand, catalogue, name, raw):
             _add_uom(item, pu, spec["conv"])
         if not is_edge and frappe.db.exists("UOM", "Square Meter"):
             _add_uom(item, "Square Meter", SHEET_AREA_SQM)
-        item.description = f"Décor: {display} (slot item — the real laminate/banding behind an OCL placeholder)"
+        extra = " ".join(x for x in ((title or ""), f"catalogue {year}" if year else "") if x)
+        item.description = f"Décor: {display}" + (f" — {extra}" if extra else "") \
+            + " (slot item — the real laminate/banding behind an OCL placeholder)"
         if brand and frappe.db.exists("Manufacturer", brand):
             _set(item, meta, "default_item_manufacturer", brand)
             if catalogue:

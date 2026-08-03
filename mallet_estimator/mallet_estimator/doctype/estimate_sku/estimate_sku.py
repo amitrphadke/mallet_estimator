@@ -477,7 +477,8 @@ class EstimateSKU(Document):
         for d in defs:
             try:
                 auto_item = inventory.ensure_decor_item(
-                    d["placeholder"], d.get("brand"), d.get("catalogue"), d.get("name"), d.get("raw"))
+                    d["placeholder"], d.get("brand"), d.get("catalogue"), d.get("name"),
+                    d.get("raw"), year=d.get("year"), title=d.get("title"))
             except Exception:
                 frappe.log_error(frappe.get_traceback(), f"decor item {d.get('raw')}")
                 auto_item = None
@@ -488,6 +489,7 @@ class EstimateSKU(Document):
             rate = inventory.material_rate(chosen)[0] if chosen else 0
             self.append("decor_slots", {
                 "placeholder": d["placeholder"], "slot": d["slot"],
+                "title": (d.get("title") or "")[:60],
                 "decor_item": chosen, "auto_item": auto_item,
                 "decor_rate": rate, "raw_text": (d.get("raw") or "")[:140],
             })
@@ -650,8 +652,12 @@ class EstimateSKU(Document):
         # S9 — a mapped slot substitutes the REAL décor item automatically.
         slot_by_placeholder = {}
         for r in self.get("decor_slots") or []:
-            if r.decor_item:
-                slot_by_placeholder.setdefault(r.placeholder, r)
+            if not r.decor_item:
+                continue
+            cur = slot_by_placeholder.get(r.placeholder)
+            own = decor.material_slots(r.placeholder)
+            if cur is None or (r.slot in own and cur.slot not in own):
+                slot_by_placeholder[r.placeholder] = r
         self.set("execution_materials", [])
         for m in self.materials or []:
             if getattr(m, "customer_supplied", 0):

@@ -14,7 +14,9 @@
 
 import re
 
-_SLOT_DEF_RE = re.compile(r"\b([b-z])\s*=\s*([^;\n]+)")
+_SLOT_DEF_RE = re.compile(r"^\s*([a-z])\s*=\s*([^;\n]+)", re.M)
+_INLINE_SLOT_RE = re.compile(r"\b([a-z])\s*=\s*([^;\n]+)")
+_LABEL_RE = re.compile(r"^\s*(brand|code|name|year)\s*=\s*(.+)$", re.I)
 _PLACEHOLDER_RE = re.compile(r"^\s*(SG_LAM_[A-Za-z0-9_]+|SG_PLY_[A-Za-z0-9_]+|EB_[A-Za-z0-9_]+)")
 _CODE_TOKEN_RE = re.compile(r"^[0-9][0-9A-Za-z\-]*$")
 
@@ -81,18 +83,67 @@ def material_slots(code):
 
 
 def parse_description(desc, placeholder_code, brands=None):
-    """Slot definitions from one material's description text. Explicit 'b=…'
-    entries win; prefixless legacy text maps to the material's FIRST slot."""
+    """Slot definitions from one material's description text. Two formats:
+
+    LABELLED BLOCK (clear titles; Year optional; also maps slot 'a'):
+        b = External Laminate
+        Brand = Virgo Mica
+        Code = 1834
+        Name = Moonlight
+        Year = 2025-26
+
+    COMPACT one-liner: 'b = Virgo Mica 1834 Moonlight' (maker must be known).
+    Prefixless legacy text still maps to the material's first slot."""
     out = {}
-    for slot, value in _SLOT_DEF_RE.findall(desc or ""):
-        parsed = parse_slot_value(value, brands)
-        if parsed:
-            out[slot] = parsed
+    lines = (desc or "").splitlines()
+    current_slot, current_title, block = None, None, {}
+
+    def close_block():
+        nonlocal current_slot, current_title, block
+        if block.get("brand"):
+            aliases = brand_aliases(brands)
+            block["brand"] = aliases.get(block["brand"].lower(), block["brand"])
+        if current_slot and block.get("brand") or current_slot and block.get("code"):
+            name = block.get("name", "")
+            year = block.get("year", "")
+            out[current_slot] = {
+                "brand": block.get("brand"), "catalogue": block.get("code"),
+                "name": name, "year": year, "title": current_title,
+                "raw": " ".join(x for x in (block.get("brand"), block.get("code"), name,
+                                            f"({year})" if year else "") if x),
+            }
+        current_slot, current_title, block = None, None, {}
+
+    for line in lines:
+        for seg in line.split(";"):
+            seg = seg.strip()
+            if not seg:
+                continue
+            lm = _LABEL_RE.match(seg)
+            if lm and current_slot:
+                block[lm.group(1).lower()] = lm.group(2).strip()
+                continue
+            sm = _INLINE_SLOT_RE.match(seg)
+            if sm and len(sm.group(1)) == 1:
+                close_block()
+                slot, value = sm.group(1), sm.group(2).strip()
+                parsed = parse_slot_value(value, brands)
+                if parsed and parsed.get("brand"):
+                    parsed["title"] = None
+                    parsed.setdefault("year", "")
+                    out[slot] = parsed          # compact form, maker recognised
+                else:
+                    current_slot, current_title = slot, value  # block header
+                continue
+    close_block()
+
     if not out and (desc or "").strip():
         slots = material_slots(placeholder_code)
         if slots:
             parsed = parse_slot_value(desc, brands)
             if parsed:
+                parsed.setdefault("year", "")
+                parsed.setdefault("title", None)
                 out[slots[0]] = parsed
     return out
 
@@ -112,6 +163,8 @@ def extract_slot_map(pdf_text, brands=None):
             if key in seen:
                 continue
             seen.add(key)
+            parsed.setdefault("year", "")
+            parsed.setdefault("title", None)
             results.append({"placeholder": current, "slot": slot, **parsed})
 
     NOISE = re.compile(r"m\u00b2|m\u00b3|\bRs\b|\bQty\b|Designation|\d+\s*mm\b|^No\.|^Total|^\d[\d\s.,]*$", re.I)
@@ -131,9 +184,13 @@ def extract_slot_map(pdf_text, brands=None):
             continue
         if current is None:
             continue
-        # table/summary debris ends the block; a description is at most the two
-        # lines right under the material row
-        if NOISE.search(line) or len(desc_lines) >= 2:
+        # labelled block / slot lines always belong to the description
+        if _LABEL_RE.match(line) or _INLINE_SLOT_RE.match(line):
+            desc_lines.append(line)
+            continue
+        # table/summary debris ends the block; unlabelled description text is at
+        # most the two lines right under the material row
+        if NOISE.search(line) or len([l for l in desc_lines if not _LABEL_RE.match(l)]) >= 2:
             flush()
             current, desc_lines = None, []
             continue

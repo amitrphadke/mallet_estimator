@@ -7,6 +7,7 @@
  "field_order": [
   "placeholder",
   "slot",
+  "title",
   "decor_item",
   "manufacturer",
   "decor_rate",
@@ -14,16 +15,71 @@
   "raw_text"
  ],
  "fields": [
-  {"fieldname": "placeholder", "fieldtype": "Data", "label": "Placeholder (OCL)", "read_only": 1, "in_list_view": 1, "columns": 2},
-  {"fieldname": "slot", "fieldtype": "Data", "label": "Slot", "read_only": 1, "in_list_view": 1, "columns": 1},
-  {"fieldname": "decor_item", "fieldtype": "Link", "options": "Item", "label": "Décor Item (real)", "in_list_view": 1, "columns": 2,
-   "description": "The real laminate/edge-band item (LAMD_/EBD_). Repoint when the client changes their pick."},
-  {"fieldname": "manufacturer", "fieldtype": "Data", "label": "Manufacturer", "read_only": 1, "in_list_view": 1, "columns": 1,
-   "fetch_from": "decor_item.default_item_manufacturer"},
-  {"fieldname": "decor_rate", "fieldtype": "Currency", "label": "Décor Rate", "read_only": 1, "in_list_view": 1, "columns": 1,
-   "description": "The décor item's price-list rate — key it on Estimation (Assumed)."},
-  {"fieldname": "auto_item", "fieldtype": "Data", "label": "Auto Item", "hidden": 1, "read_only": 1},
-  {"fieldname": "raw_text", "fieldtype": "Data", "label": "From Description", "read_only": 1}
+  {
+   "fieldname": "placeholder",
+   "fieldtype": "Data",
+   "label": "Placeholder (OCL)",
+   "read_only": 1,
+   "in_list_view": 1,
+   "columns": 2
+  },
+  {
+   "fieldname": "slot",
+   "fieldtype": "Data",
+   "label": "Slot",
+   "read_only": 1,
+   "in_list_view": 1,
+   "columns": 1
+  },
+  {
+   "fieldname": "decor_item",
+   "fieldtype": "Link",
+   "options": "Item",
+   "label": "Décor Item (real)",
+   "in_list_view": 1,
+   "columns": 2,
+   "description": "The real laminate/edge-band item (LAMD_/EBD_). Repoint when the client changes their pick."
+  },
+  {
+   "fieldname": "manufacturer",
+   "fieldtype": "Data",
+   "label": "Manufacturer",
+   "read_only": 1,
+   "in_list_view": 1,
+   "columns": 1,
+   "fetch_from": "decor_item.default_item_manufacturer"
+  },
+  {
+   "fieldname": "decor_rate",
+   "fieldtype": "Currency",
+   "label": "Décor Rate",
+   "read_only": 1,
+   "in_list_view": 1,
+   "columns": 1,
+   "description": "The décor item's price-list rate — key it on Estimation (Assumed)."
+  },
+  {
+   "fieldname": "auto_item",
+   "fieldtype": "Data",
+   "label": "Auto Item",
+   "hidden": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "raw_text",
+   "fieldtype": "Data",
+   "label": "From Description",
+   "read_only": 1
+  },
+  {
+   "fieldname": "title",
+   "fieldtype": "Data",
+   "label": "Title",
+   "read_only": 1,
+   "in_list_view": 1,
+   "columns": 1,
+   "description": "From the description block header, e.g. 'External Laminate'."
+  }
  ],
  "istable": 1,
  "links": [],

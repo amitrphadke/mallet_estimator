@@ -192,3 +192,46 @@ class TestDecor(unittest.TestCase):
         self.assertEqual(out[0]["placeholder"], "SG_LAM_V1_16mm_b_a")
         self.assertEqual(out[0]["brand"], "Merino")
         self.assertEqual(out[1]["brand"], "Royal Touch")
+
+
+class TestDecorBlocks(unittest.TestCase):
+    BLOCK = ("b = External Laminate\n"
+             "Brand = Virgo Mica\n"
+             "Code = 1834\n"
+             "Name = Moonlight\n"
+             "Year = 2025-26\n"
+             "a = Internal Laminate\n"
+             "Brand = Serplex\n"
+             "Code = 1834\n"
+             "Name = Fabric\n")
+
+    def test_labelled_block(self):
+        from mallet_estimator import decor
+        out = decor.parse_description(self.BLOCK, "SG_LAM_V1_16mm_b_a",
+                                      brands=["Virgo Mica", "Serplex"])
+        self.assertEqual(out["b"]["brand"], "Virgo Mica")
+        self.assertEqual(out["b"]["year"], "2025-26")
+        self.assertEqual(out["b"]["title"], "External Laminate")
+        self.assertEqual(out["a"]["brand"], "Serplex")
+        self.assertEqual(out["a"]["name"], "Fabric")
+
+    def test_unknown_maker_accepted_when_labelled(self):
+        from mallet_estimator import decor
+        out = decor.parse_description("b = Ext\nBrand = Greenlam\nCode = 204\n",
+                                      "SG_LAM_V1_16mm_b_a")
+        self.assertEqual(out["b"]["brand"], "Greenlam")  # explicit label = intent
+
+    def test_initials_canonicalize_in_block(self):
+        from mallet_estimator import decor
+        out = decor.parse_description("b = Ext\nBrand = VM\nCode = 1834\n",
+                                      "SG_LAM_V1_16mm_b_a", brands=["Virgo Mica"])
+        self.assertEqual(out["b"]["brand"], "Virgo Mica")
+
+    def test_extract_block_from_pdf_text(self):
+        from mallet_estimator import decor
+        text = ("SG_LAM_V1_16mm_b_a / 1 mm\n" + self.BLOCK +
+                "3 4.16 m²8.92 m² - -12 Rs34 Rs\n")
+        out = decor.extract_slot_map(text, brands=["Virgo Mica", "Serplex"])
+        slots = {(e["placeholder"], e["slot"]) for e in out}
+        self.assertIn(("SG_LAM_V1_16mm_b_a", "b"), slots)
+        self.assertIn(("SG_LAM_V1_16mm_b_a", "a"), slots)
