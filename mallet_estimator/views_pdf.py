@@ -34,6 +34,12 @@ def _pdf_text(content):
     return "\n".join((page.extract_text() or "") for page in reader.pages)
 
 
+def _norm_line(line):
+    """PDF text extraction leaks NULs / nbsp / icon glyphs into lines — normalise
+    to plain spaces so the row regexes match regardless of pypdf version."""
+    return re.sub(r"[\x00-\x1f\xa0\ue000-\uf8ff]", " ", line).strip()
+
+
 def parse_partlist_text(text):
     """Parse the hardware section of an OpenCutList Parts List PDF's text into
     [{code, qty, category}] — code is the canonical designation (no #N suffix),
@@ -42,7 +48,7 @@ def parse_partlist_text(text):
     category = None
     pending = None  # designation seen, qty wrapped onto a later line
     for line in text.splitlines():
-        line = line.strip()
+        line = _norm_line(line)
         if not line:
             continue
         g = _GROUP_RE.match(line)
@@ -92,7 +98,7 @@ def parse_partlist_edges_text(text):
     bounded look-ahead + a sanity cap keep part-table numbers from leaking in."""
     out, pending, lookahead = [], None, 0
     for line in text.splitlines():
-        line = line.strip()
+        line = _norm_line(line)
         if not line:
             continue
         m = _EDGE_ROW_RE.match(line)
