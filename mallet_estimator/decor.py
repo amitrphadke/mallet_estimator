@@ -18,13 +18,28 @@ _SLOT_DEF_RE = re.compile(r"\b([b-z])\s*=\s*([^;\n]+)")
 _PLACEHOLDER_RE = re.compile(r"^\s*(SG_LAM_[A-Za-z0-9_]+|SG_PLY_[A-Za-z0-9_]+|EB_[A-Za-z0-9_]+)")
 _CODE_TOKEN_RE = re.compile(r"^[0-9][0-9A-Za-z\-]*$")
 
-# Manufacturer aliases (case-insensitive) -> ERPNext Manufacturer name.
-BRAND_ALIASES = {
-    "merino": "Merino",
-    "royal touch": "Royal Touch",
-    "royaltouch": "Royal Touch",
-    "rt": "Royal Touch",
-}
+# Fallback maker names when the caller can't supply the live Manufacturer list
+# (pure/unit contexts). At runtime the list comes from ERPNext's Manufacturer
+# master — add a new maker there ONCE and the parser knows it (full name,
+# squashed name, or its initials: "RT" = Royal Touch, "VM" = Virgo Mica).
+DEFAULT_BRANDS = ("Merino", "Royal Touch", "Virgo Mica")
+
+
+def brand_aliases(brands=None):
+    """{alias(lower) -> canonical maker name} built from the maker list:
+    full name, name without spaces, and initials for multi-word names."""
+    out = {}
+    for b in (brands or DEFAULT_BRANDS):
+        b = (b or "").strip()
+        if not b:
+            continue
+        out[b.lower()] = b
+        squashed = b.replace(" ", "").lower()
+        out.setdefault(squashed, b)
+        words = b.split()
+        if len(words) > 1:
+            out.setdefault("".join(w[0] for w in words).lower(), b)
+    return out
 
 
 def _slug(text, maxlen=60):
@@ -32,21 +47,23 @@ def _slug(text, maxlen=60):
     return s[:maxlen]
 
 
-def parse_slot_value(value):
-    """Parse one slot's décor spec per B-C-N (Brand, Code, Name — name optional).
-    Returns {brand, catalogue, name, raw}; brand None when unrecognised (legacy
-    freeform keeps working via the raw text)."""
+def parse_slot_value(value, brands=None):
+    """Parse one slot's décor spec per M-C-N (Maker, Code, Name — name optional).
+    `brands` = the live Manufacturer list (falls back to DEFAULT_BRANDS). Returns
+    {brand, catalogue, name, raw}; brand None when unrecognised (legacy freeform
+    keeps working via the raw text)."""
     raw = (value or "").strip()
     tokens = raw.split()
     if not tokens:
         return None
-    # brand may be one token ("Merino", "RT") or two ("Royal Touch")
+    aliases = brand_aliases(brands)
+    # maker may span up to three tokens ("Virgo Mica", "Royal Touch") or be initials
     brand = None
     rest = tokens
-    for take in (2, 1):
+    for take in (3, 2, 1):
         cand = " ".join(tokens[:take]).lower()
-        if cand in BRAND_ALIASES:
-            brand = BRAND_ALIASES[cand]
+        if cand in aliases:
+            brand = aliases[cand]
             rest = tokens[take:]
             break
     catalogue = None
@@ -63,24 +80,24 @@ def material_slots(code):
     return [t for t in tokens if len(t) == 1 and t.isalpha() and t.islower() and t != "a"]
 
 
-def parse_description(desc, placeholder_code):
+def parse_description(desc, placeholder_code, brands=None):
     """Slot definitions from one material's description text. Explicit 'b=…'
     entries win; prefixless legacy text maps to the material's FIRST slot."""
     out = {}
     for slot, value in _SLOT_DEF_RE.findall(desc or ""):
-        parsed = parse_slot_value(value)
+        parsed = parse_slot_value(value, brands)
         if parsed:
             out[slot] = parsed
     if not out and (desc or "").strip():
         slots = material_slots(placeholder_code)
         if slots:
-            parsed = parse_slot_value(desc)
+            parsed = parse_slot_value(desc, brands)
             if parsed:
                 out[slots[0]] = parsed
     return out
 
 
-def extract_slot_map(pdf_text):
+def extract_slot_map(pdf_text, brands=None):
     """Walk a PDF's text: a line starting with a placeholder material code opens a
     row; following non-numeric, non-material lines are its description. Returns
     [{placeholder, slot, brand, catalogue, name, raw}] in reading order."""
@@ -90,7 +107,7 @@ def extract_slot_map(pdf_text):
     def flush():
         if not current:
             return
-        for slot, parsed in parse_description("\n".join(desc_lines), current).items():
+        for slot, parsed in parse_description("\n".join(desc_lines), current, brands).items():
             key = (current, slot)
             if key in seen:
                 continue

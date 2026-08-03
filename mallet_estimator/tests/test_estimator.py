@@ -145,6 +145,14 @@ class TestDecor(unittest.TestCase):
         self.assertEqual((v["brand"], v["catalogue"], v["name"]), ("Royal Touch", "6575", ""))
         v = decor.parse_slot_value("Royal Touch 6575 Black Marmor")
         self.assertEqual(v["brand"], "Royal Touch")
+        # multi-word maker + initials alias, straight from the maker list
+        v = decor.parse_slot_value("Virgo Mica 1834 Grey")
+        self.assertEqual((v["brand"], v["catalogue"], v["name"]), ("Virgo Mica", "1834", "Grey"))
+        v = decor.parse_slot_value("VM 1834")
+        self.assertEqual(v["brand"], "Virgo Mica")
+        # a NEW maker supplied via the live list is recognised without code changes
+        v = decor.parse_slot_value("Greenlam 204 Teak", brands=["Greenlam", "Merino"])
+        self.assertEqual(v["brand"], "Greenlam")
 
     def test_legacy_freeform(self):
         from mallet_estimator import decor

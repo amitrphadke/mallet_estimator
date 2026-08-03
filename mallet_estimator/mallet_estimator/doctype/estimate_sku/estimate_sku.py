@@ -236,7 +236,8 @@ class EstimateSKU(Document):
         try:
             pl_text = views_pdf._pdf_text(pl_content) if self.partlist_pdf else ""
             est_text = estimate_pdf.read_pdf_text(_file_content(self.estimate_pdf))
-            self.refresh_decor_slots(est_text + "\n" + pl_text)
+            brands = frappe.get_all("Manufacturer", pluck="name")
+            self.refresh_decor_slots(est_text + "\n" + pl_text, brands)
         except Exception:
             frappe.log_error(frappe.get_traceback(), f"decor slots {self.name}")
 
@@ -464,13 +465,13 @@ class EstimateSKU(Document):
             })
 
     # --- derived consumables + transport (J1 / C1) -------------------------
-    def refresh_decor_slots(self, combined_text):
+    def refresh_decor_slots(self, combined_text, brands=None):
         """S9 — rebuild the slot map from the PDFs' description sub-lines. A row
         whose décor item the user re-pointed (differs from its auto item) keeps
         the manual choice; removed placeholders drop off."""
         if not self.meta.has_field("decor_slots"):
             return
-        defs = decor.extract_slot_map(combined_text)
+        defs = decor.extract_slot_map(combined_text, brands)
         existing = {(r.placeholder, r.slot): r for r in (self.get("decor_slots") or [])}
         self.set("decor_slots", [])
         for d in defs:

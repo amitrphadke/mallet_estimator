@@ -28,7 +28,7 @@ CLIENT_SKU_GROUP = "Client SKU"  # finished articles per client project (archiva
 # Supplier prices — all native.
 #   MANUFACTURERS: maker -> the material kind they make (used to default the Item's
 #   manufacturer). BRAND_NAMES mirror the maker names.
-MANUFACTURERS = {"Hafele": "hardware", "Ebco": "hardware", "Merino": "laminate", "Royal Touch": "laminate"}
+MANUFACTURERS = {"Hafele": "hardware", "Ebco": "hardware", "Merino": "laminate", "Royal Touch": "laminate", "Virgo Mica": "laminate"}
 BRAND_NAMES = tuple(MANUFACTURERS)
 # Back-compat: the 4 maker/brand names verify_setup still asserts.
 VENDOR_NAMES = tuple(MANUFACTURERS)
