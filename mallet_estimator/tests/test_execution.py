@@ -77,3 +77,19 @@ class TestMaterialRateCard(MalletTestCase):
         # sheet code already carries its thickness — no double suffix
         self.assertTrue(frappe.db.exists("Item", "SG_PLY_V0_a_a_16mm"))
         self.assertFalse(frappe.db.exists("Item", "SG_PLY_V0_a_a_16mm_16mm"))
+
+
+class TestPartlistEdges(MalletTestCase):
+    def test_parse_edges_with_wrapped_spec(self):
+        from mallet_estimator import views_pdf
+        text = (
+            " EB_PVC_EX_b / 1 mm x 22 mm 21 20.41 m0.45 m²0.00 m³\n"
+            " EB_PVC_IN_a / 1 mm x 22 mm\n"
+            "b=YS_6534_MOONLIT_BED_Laminate\n"
+            "27 24.13 m0.53 m²0.00 m³\n"
+            " SG_LAM_V0_12mm_a_a / 1 mm 24 17.38 m9.56 m²0.01 m³\n"
+        )
+        edges = views_pdf.parse_partlist_edges_text(text)
+        self.assertEqual(len(edges), 2)
+        self.assertEqual(edges[0], {"code": "EB_PVC_EX_b", "parts": 21, "meters": 20.41})
+        self.assertEqual(edges[1], {"code": "EB_PVC_IN_a", "parts": 27, "meters": 24.13})

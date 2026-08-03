@@ -207,14 +207,19 @@ class EstimateSKU(Document):
             parts = opencutlist.parts_list(rows)
             part_count = len(parts)
 
-        hardware = []
+        hardware, pl_edges = [], []
         if self.partlist_pdf:
+            pl_content = _file_content(self.partlist_pdf)
             try:
-                hardware = views_pdf.parse_partlist_hardware(_file_content(self.partlist_pdf))
+                hardware = views_pdf.parse_partlist_hardware(pl_content)
             except Exception:
                 frappe.log_error(frappe.get_traceback(), f"partlist parse {self.name}")
                 frappe.msgprint(_("Could not parse hardware from the Part List PDF — using the estimate PDF's generic hardware."),
                                 indicator="orange")
+            try:
+                pl_edges = views_pdf.parse_partlist_edges(pl_content)
+            except Exception:
+                frappe.log_error(frappe.get_traceback(), f"partlist edges {self.name}")
 
         # Manually added rows (extra hardware like a bed hydraulic lift) survive
         # every re-import — only imported rows are rebuilt.
@@ -236,9 +241,10 @@ class EstimateSKU(Document):
             qty = m["qty"] or 0
             desc = _pdf_desc(m)
             if m.get("kind") == "edge":
-                # Edge banding is bought AND charged to the client in whole ROLLS
-                # (50 m each) — the PDF's roll count is the line qty; the rate is
-                # the per-meter rate x 50 = per-roll.
+                if pl_edges:
+                    continue  # authoritative rows come from the part list below
+                # Fallback (no part list): the estimate PDF's roll count. Bought
+                # AND charged in whole ROLLS (50 m each) at per-meter rate x 50.
                 desc = f"{desc} — whole roll(s) of {inventory.EDGE_ROLL_METERS:g} m"[:140]
                 self._add_material_line(
                     m["name"], "edge", m.get("thickness") or 0, qty, desc, unpriced,
@@ -249,6 +255,19 @@ class EstimateSKU(Document):
                 m["name"], m.get("kind"), m.get("thickness") or 0, qty,
                 desc, unpriced,
             )
+        # Edge banding from the PART LIST Summary (authoritative: real banding
+        # meters; the estimate PDF's edge section can be wrong/missing). Purchase
+        # + client charge = whole 50 m rolls covering those meters.
+        import math
+        for e in pl_edges:
+            rolls = max(1, math.ceil((e["meters"] or 0) / inventory.EDGE_ROLL_METERS)) if e["meters"] else 1
+            desc = (f"{e['code']} — {e['meters']:g} m banding on {e['parts']} part edge(s) "
+                    f"→ {rolls} whole roll(s) of {inventory.EDGE_ROLL_METERS:g} m")[:140]
+            self._add_material_line(
+                e["code"], "edge", 0, rolls, desc, unpriced,
+                uom="Roll", rate_factor=inventory.EDGE_ROLL_METERS,
+            )
+
         for h in hardware:
             cat = f" · {h['category']}" if h.get("category") and h["category"] != h["code"] else ""
             self._add_material_line(
@@ -290,6 +309,10 @@ class EstimateSKU(Document):
                 title=_("Materials need a price"), indicator="orange",
             )
 
+        # Edge Banding operation qty: banded-edge count from the part list when
+        # the CSV part count is absent.
+        if not part_count and pl_edges:
+            part_count = sum(e["parts"] or 0 for e in pl_edges)
         opq = estimate_pdf.operation_quantities(materials, part_count)
         for row in self.labor:
             op = op_phase(row)

@@ -19,6 +19,11 @@ _GROUP_RE = re.compile(r"^\s*\xa0?\s*(HWD_[A-Za-z0-9_]+)\s*$")
 # A designation row: "<row no><designation>[#N] [qty]" — qty may wrap to a later line.
 _ROW_RE = re.compile(r"^(\d+)\s*(HWD_[A-Za-z0-9_]+?)(#\d+)?\s*(\d+)?\s*$")
 _QTY_RE = re.compile(r"^\s*(\d+)\s*$")
+# Summary edge-banding row: "EB_<code> / 1 mm x 22 mm <parts> <len> m<area> m²…"
+# (numbers may run together after the unit). The spec sub-line ("b=YS_… Laminate")
+# can push the numbers onto a FOLLOWING line.
+_EDGE_ROW_RE = re.compile(r"^\s*\xa0?\s*(EB_[A-Za-z0-9_]+)\s*/\s*(.*)$")
+_EDGE_NUMS_RE = re.compile(r"(\d+)\s+([0-9.]+)\s*m")
 
 
 def _pdf_text(content):
@@ -73,6 +78,38 @@ def parse_partlist_text(text):
 def parse_partlist_hardware(content):
     """Hardware designations from a Parts List PDF (bytes)."""
     return parse_partlist_text(_pdf_text(content))
+
+
+def parse_partlist_edges_text(text):
+    """Edge banding from the Parts List PDF's Summary: [{code, parts, meters}].
+    The 'Σ Rough Length' meters are the REAL banding need (the estimate PDF's
+    edge section can be wrong/missing); parts = banded-edge count."""
+    out, pending = [], None
+    for line in text.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        m = _EDGE_ROW_RE.match(line)
+        if m:
+            code, rest = m.group(1), m.group(2)
+            nums = _EDGE_NUMS_RE.search(rest)
+            if nums:
+                out.append({"code": code, "parts": int(nums.group(1)), "meters": float(nums.group(2))})
+                pending = None
+            else:
+                pending = code  # numbers wrapped below (spec sub-line in between)
+            continue
+        if pending:
+            nums = _EDGE_NUMS_RE.search(line)
+            if nums:
+                out.append({"code": pending, "parts": int(nums.group(1)), "meters": float(nums.group(2))})
+                pending = None
+    return out
+
+
+def parse_partlist_edges(content):
+    """Edge banding rows from a Parts List PDF (bytes)."""
+    return parse_partlist_edges_text(_pdf_text(content))
 
 
 def extract_iso_image(content):
