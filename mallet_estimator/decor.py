@@ -55,6 +55,8 @@ def parse_slot_value(value, brands=None):
     {brand, catalogue, name, raw}; brand None when unrecognised (legacy freeform
     keeps working via the raw text)."""
     raw = (value or "").strip()
+    # a leaked "b=" / "c =" prefix must never enter the identity slug
+    raw = re.sub(r"^[a-z]\s*=\s*", "", raw)
     tokens = raw.split()
     if not tokens:
         return None
