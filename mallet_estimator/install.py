@@ -553,7 +553,7 @@ def verify_setup():
     itt = frappe.db.get_value("Item Tax Template", {"title": ITEM_TAX_TEMPLATE}, "name")
     has_tax_parent = bool(frappe.db.exists(
         "Account", {"account_name": ["like", "%Duties and Taxes%"], "is_group": 1}))
-    grp_applied = bool(itt) and bool(frappe.db.exists("Item Tax Template Detail", {"parenttype": "Item Group"}))
+    grp_applied = bool(itt) and bool(frappe.db.exists("Item Tax", {"parenttype": "Item Group"}))
     chk("Item tax template", bool(itt) or not has_tax_parent,
         ITEM_TAX_TEMPLATE if itt else ("no Duties-and-Taxes accounts on this site" if not has_tax_parent
                                        else "missing — run Create/refresh masters"))
