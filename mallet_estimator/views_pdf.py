@@ -114,8 +114,13 @@ def parse_partlist_edges_text(text):
         if pending:
             lookahead += 1
             nums = re.match(r"^\s*(\d+)\s+([0-9.]+)\s*m", line)
+            lone = re.match(r"^\s*(\d{1,4})\s*$", line)
             if nums and float(nums.group(2)) <= _MAX_EDGE_METERS and int(nums.group(1)) <= 500:
                 out.append({"code": pending, "parts": int(nums.group(1)), "meters": float(nums.group(2))})
+                pending = None
+            elif lone:
+                # qty wrapped alone onto its own line
+                out.append({"code": pending, "parts": int(lone.group(1)), "meters": None})
                 pending = None
             elif lookahead >= 3:
                 # give up cleanly: record the code with unknown meters rather than
@@ -124,7 +129,21 @@ def parse_partlist_edges_text(text):
                 pending = None
     if pending:
         out.append({"code": pending, "parts": 0, "meters": None})
-    return out
+    # A code can appear in more than one section (summary + detail) — merge to one
+    # entry per code, preferring the one that carries meters, then the max parts.
+    best = {}
+    order = []
+    for e in out:
+        c = e["code"]
+        if c not in best:
+            best[c] = e
+            order.append(c)
+        else:
+            cur = best[c]
+            if (e["meters"] and not cur["meters"]) or \
+               (bool(e["meters"]) == bool(cur["meters"]) and (e["parts"] or 0) > (cur["parts"] or 0)):
+                best[c] = e
+    return [best[c] for c in order]
 
 
 def parse_partlist_edges(content):
