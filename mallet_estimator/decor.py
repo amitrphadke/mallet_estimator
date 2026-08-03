@@ -7,7 +7,7 @@
 #     b = Merino 6534; c = RT 6575          (multi-slot, ';' or newline)
 #
 # The description flows into the estimate/part-list PDFs as a sub-line under the
-# material row; import parses it, auto-creates the décor Item (LAMD_* for
+# material row; import parses it, auto-creates the décor Item (LAMINATE_* for
 # laminates, EBD_* for edge banding — structure only, rate keyed once on the
 # price list) and fills the SKU's slot map. Legacy freeform descriptions still
 # map (slug item, no manufacturer).
@@ -200,9 +200,9 @@ def extract_slot_map(pdf_text, brands=None):
 
 
 def decor_item_code(placeholder, brand, catalogue, raw):
-    """LAMD_/EBD_ + BRAND + catalogue (or a slug of the raw text). One item per
+    """LAMINATE_/EBD_ + BRAND + catalogue (or a slug of the raw text). One item per
     real-world décor — reused across projects/SKUs."""
-    prefix = "EBD" if str(placeholder or "").upper().startswith("EB") else "LAMD"
+    prefix = "EBD" if str(placeholder or "").upper().startswith("EB") else "LAMINATE"
     if brand and catalogue:
         return f"{prefix}_{_slug(brand).upper()}_{catalogue}"
     return f"{prefix}_{_slug(raw)[:50]}"

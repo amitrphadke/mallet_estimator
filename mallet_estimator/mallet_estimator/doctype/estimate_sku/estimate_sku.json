@@ -496,7 +496,7 @@
    "label": "Décor Slot Map (b/c → real laminate & edge banding)",
    "options": "Estimate Slot Map",
    "cannot_add_rows": 1,
-   "description": "Auto-filled from the OCL material Descriptions (B-C-N: 'b = Merino 1834 Moonlit Gray'). The real décor items (LAMD_/EBD_) drive the execution BOM and POs — repoint a slot when the client changes their pick. The estimate stays at the placeholder ceiling."
+   "description": "Auto-filled from the OCL material Descriptions (B-C-N: 'b = Merino 1834 Moonlit Gray'). The real décor items (LAMINATE_/EBD_) drive the execution BOM and POs — repoint a slot when the client changes their pick. The estimate stays at the placeholder ceiling."
   }
  ],
  "links": [],

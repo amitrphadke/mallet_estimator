@@ -935,7 +935,7 @@ def ensure_warehouses(company=None):
 
 def ensure_decor_item(placeholder, brand, catalogue, name, raw, year=None, title=None):
     """S9 — create/enrich the REAL décor Item behind a placeholder slot:
-    LAMD_* (Laminate group, sheet, dye-lot batch) or EBD_* (Edge Banding group,
+    LAMINATE_* (Laminate group, sheet, dye-lot batch) or EBD_* (Edge Banding group,
     metre/roll). One item per real-world décor, reused across projects. Structure
     only — the rate is keyed once on the price list (middle-path rule). Returns
     the item_code."""

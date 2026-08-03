@@ -38,7 +38,7 @@
    "label": "Décor Item (real)",
    "in_list_view": 1,
    "columns": 2,
-   "description": "The real laminate/edge-band item (LAMD_/EBD_). Repoint when the client changes their pick."
+   "description": "The real laminate/edge-band item (LAMINATE_/EBD_). Repoint when the client changes their pick."
   },
   {
    "fieldname": "manufacturer",

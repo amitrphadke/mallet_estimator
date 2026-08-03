@@ -176,7 +176,7 @@ class TestDecor(unittest.TestCase):
     def test_item_codes(self):
         from mallet_estimator import decor
         self.assertEqual(decor.decor_item_code("SG_LAM_V1_16mm_b_a", "Merino", "1834", "x"),
-                         "LAMD_MERINO_1834")
+                         "LAMINATE_MERINO_1834")
         self.assertTrue(decor.decor_item_code("EB_PVC_EX_c", None, None,
                         "YS_6534_MOONLIT_BED_Laminate").startswith("EBD_"))
 
