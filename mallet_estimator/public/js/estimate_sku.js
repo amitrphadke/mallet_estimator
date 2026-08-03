@@ -265,6 +265,14 @@ function render_cost_breakup(frm) {
   if (!d || !(d.groups || []).length) { f.$wrapper.empty(); return; }
   const money = (v) => format_currency(v || 0);
   const esc = frappe.utils.escape_html;
+  // " (+15%)" / " (+80/80/100%)" from Estimate Settings markups — blank when 0.
+  const mk = (...keys) => {
+    const p = d.markup_pct || {};
+    const vals = keys.map((k) => +(p[k] || 0));
+    if (!vals.some((v) => v)) return "";
+    const label = vals.every((v) => v === vals[0]) ? `${vals[0]}` : vals.join("/");
+    return ` <span class="text-muted">(+${label}%)</span>`;
+  };
   let body = "";
   for (const [gname, lines] of d.groups) {
     const shown = lines.filter((r) => r[1]);
@@ -277,10 +285,14 @@ function render_cost_breakup(frm) {
     <table class="table table-bordered" style="font-size:12.5px;margin:0">
       <thead><tr><th>Cost Component</th><th class="text-right">Amount</th></tr></thead>
       <tbody>${body}
-        <tr style="font-weight:700;border-top:2px solid var(--gray-600)"><td>Internal Cost</td><td class="text-right">${money(d.internal)}</td></tr>
-        <tr><td>Client: Material</td><td class="text-right">${money(d.client_material)}</td></tr>
-        <tr><td>Client: Design &amp; Execution</td><td class="text-right">${money(d.client_design_exec)}</td></tr>
-        <tr style="font-weight:700"><td>Client Total</td><td class="text-right">${money(d.client_total)}</td></tr>
+        <tr style="font-weight:700;border-top:2px solid var(--gray-600)"><td>Internal Cost — what it costs to MAKE (incl. transport)</td><td class="text-right">${money(d.internal)}</td></tr>
+        <tr><td>Client: Material${mk("material")}</td><td class="text-right">${money(d.client_material)}</td></tr>
+        <tr><td>Client: Design &amp; Execution${mk("labor", "overhead", "design")}</td><td class="text-right">${money(d.client_design_exec)}</td></tr>
+        <tr style="font-weight:700"><td>Client Total (excl. transport &amp; GST)</td><td class="text-right">${money(d.client_total)}</td></tr>
+        ${d.transport ? `<tr><td>Transport recovered on the Estimate (at cost)</td><td class="text-right">${money(d.transport)}</td></tr>` : ""}
+        ${d.profit != null ? `
+        <tr style="font-weight:700;color:${d.profit >= 0 ? "var(--green-600, #16794c)" : "var(--red-600, #c0392b)"}">
+          <td>Profit on this SKU (${(d.margin_pct || 0).toFixed(1)}% margin)</td><td class="text-right">${money(d.profit)}</td></tr>` : ""}
         ${d.gst_amount != null ? `
         <tr><td>Output GST ${d.gst_pct || 18}%</td><td class="text-right">${money(d.gst_amount)}</td></tr>
         <tr style="font-weight:700"><td>Client Total incl. GST</td><td class="text-right">${money(d.client_total_with_gst)}</td></tr>` : ""}

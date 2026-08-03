@@ -504,4 +504,5 @@ def calc_sku(sku, settings, ws_rates=None):
         "client_material": client_material,
         "client_design_exec": client_design_exec,
         "client_total": client_total,
+        "markup_pct": dict(markup),
     }

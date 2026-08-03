@@ -623,17 +623,34 @@ class EstimateSKU(Document):
         other = bucket("Other Material")
         if other:
             groups[0][1].append(["Other Material", other])
+        # Transport sits INSIDE internal cost (it is money spent making/delivering
+        # this SKU) but is billed on the Estimate — show it so Internal vs Client
+        # always reconciles on screen.
+        transport = float(r.get("transport_cost") or 0)
+        if transport:
+            groups.append(["Transport", [
+                ["Trips for this SKU (recovered on the Estimate, at cost)", transport],
+            ]])
+
         # Output GST shown per SKU too (the DOCUMENT charge stays on the
         # Estimate/Quotation — this is the same 18% made visible per article).
         gst_pct = 18.0
         client_total = float(self.client_total or 0)
+        internal = float(self.internal_cost or 0)
         gst_amount = client_total * gst_pct / 100.0
+        # Profit: what the client pays (SKU total + transport recovered at cost on
+        # the Estimate) minus every rupee it cost to make.
+        profit = client_total + transport - internal
         self.cost_breakup = json.dumps({
             "groups": groups,
-            "internal": float(self.internal_cost or 0),
+            "internal": internal,
             "client_material": float(self.client_material or 0),
             "client_design_exec": float(self.client_design_exec or 0),
             "client_total": client_total,
+            "markup_pct": r.get("markup_pct") or {},
+            "transport": transport,
+            "profit": profit,
+            "margin_pct": (profit / client_total * 100.0) if client_total else 0,
             "gst_pct": gst_pct,
             "gst_amount": gst_amount,
             "client_total_with_gst": client_total + gst_amount,
