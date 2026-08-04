@@ -5,6 +5,33 @@ from frappe import _
 from frappe.model.document import Document
 
 
+def _sku_client_buckets(s):
+    """One SKU's CLIENT-side amounts by bucket, at its own effective margins.
+    Live path: the fresh _calc from compute_costs. Frozen path: the stored
+    bifurcation JSON (what was quoted)."""
+    calc = getattr(s, "_calc", None)
+    if calc:
+        return {
+            "material": float(calc.get("client_material") or 0),
+            "labor": float(calc.get("client_labor") or 0),
+            "design": float(calc.get("client_design") or 0),
+            "overhead": float(calc.get("client_overhead") or 0),
+        }
+    try:
+        rows = {r["label"]: r["amount"]
+                for r in (json.loads(s.cost_breakup or "{}").get("bifurcation") or {}).get("rows", [])}
+    except Exception:
+        rows = {}
+    def pick(prefix):
+        return next((float(v or 0) for l, v in rows.items() if l.startswith(prefix)), 0.0)
+    return {
+        "material": pick("Material") or float(s.client_material or 0),
+        "labor": pick("Labor"),
+        "design": pick("Design"),
+        "overhead": pick("Factory Overhead"),
+    }
+
+
 class Estimate(Document):
     def on_submit(self):
         """Approving the estimate FREEZES every SKU's rates — later price-list
@@ -110,7 +137,9 @@ class Estimate(Document):
                 rows.append(r)
         self.set("skus", rows)
         totals = dict(material=0, labor=0, overhead=0, design=0, internal=0, client=0)
-        self._client_material_sum = 0.0
+        # Client buckets are summed PER SKU (each at its own effective margins —
+        # house default or SKU override) — never re-derived from house margins.
+        self._client_buckets = dict(material=0.0, labor=0.0, design=0.0, overhead=0.0)
         self._sqft_sum = 0.0
         for r in rows:
             if not frappe.db.exists("Estimate SKU", r.estimate_sku):
@@ -124,7 +153,8 @@ class Estimate(Document):
                     s.compute_costs()
                 except Exception:
                     frappe.log_error(frappe.get_traceback(), f"estimate reprice {s.name}")
-            self._client_material_sum += float(s.client_material or 0)
+            for k, v in _sku_client_buckets(s).items():
+                self._client_buckets[k] += v
             blk = s.facial_sqft_block() or {}
             self._sqft_sum += float(blk.get("sqft") or 0)
             r.item = s.item
@@ -132,6 +162,10 @@ class Estimate(Document):
             r.article_name = s.article_name
             r.internal_cost = s.internal_cost
             r.client_total = s.client_total
+            # the portfolio view: which article carries the project's profit
+            transport = float(s.get("transport_cost") or 0)
+            r.profit = float(s.client_total or 0) + transport - float(s.internal_cost or 0)
+            r.margin_pct = (r.profit / float(s.client_total) * 100.0) if s.client_total else 0
             totals["material"] += s.material_cost or 0
             totals["labor"] += s.labor_cost or 0
             totals["overhead"] += s.overhead_cost or 0
@@ -202,16 +236,12 @@ class Estimate(Document):
         if self.docstatus != 0 or not self.meta.has_field("cost_breakup"):
             return
         from mallet_estimator.mallet_estimator.doctype.estimate_sku.estimate_sku import build_bifurcation
-        settings = frappe.get_single("Estimate Settings")
-
-        def up(total, field):
-            return float(total or 0) * (1 + float(getattr(settings, field, 0) or 0) / 100.0)
-
+        buckets = getattr(self, "_client_buckets", None) or dict(material=0, labor=0, design=0, overhead=0)
         amounts = {
-            "client_material": float(getattr(self, "_client_material_sum", 0) or 0),
-            "client_labor": up(self.total_labor, "markup_labor"),
-            "client_design": up(self.total_design, "markup_design"),
-            "client_overhead": up(self.total_overhead, "markup_overhead"),
+            "client_material": buckets["material"],
+            "client_labor": buckets["labor"],
+            "client_design": buckets["design"],
+            "client_overhead": buckets["overhead"],
             "transport": float(self.total_transport or 0),
         }
         gst_pct = self.gst_pct if self.gst_pct is not None else 18

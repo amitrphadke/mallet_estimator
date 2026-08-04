@@ -854,14 +854,67 @@ class EstimateSKU(Document):
         settings = frappe.get_single("Estimate Settings")
         rates = live_workstation_rates(settings)
         out = {name: (r.get("net_hr") or 0) for name, r in rates.items()}
-        out["__markups__"] = {
-            "material": float(settings.markup_material or 0),
-            "labor": float(settings.markup_labor or 0),
-            "overhead": float(settings.markup_overhead or 0),
-            "design": float(settings.markup_design or 0),
-        }
+        # live totals must price at THIS SKU's effective margins (override wins)
+        if self.get("use_custom_margins"):
+            out["__markups__"] = {
+                "material": float(self.get("margin_material") or 0),
+                "labor": float(self.get("margin_labor") or 0),
+                "overhead": float(self.get("margin_overhead") or 0),
+                "design": float(self.get("margin_design") or 0),
+            }
+        else:
+            out["__markups__"] = {
+                "material": float(settings.markup_material or 0),
+                "labor": float(settings.markup_labor or 0),
+                "overhead": float(settings.markup_overhead or 0),
+                "design": float(settings.markup_design or 0),
+            }
         out["__default__"] = out.get(DEFAULT_WORKSTATION, 0)
         return out
+
+    @frappe.whitelist()
+    def apply_target_price(self, target=None, per_sqft=None):
+        """Price backwards from REVENUE: give the pre-tax price you want for
+        this SKU (final rupees, or rupees per facial sq ft) and the margins are
+        back-solved onto the SKU as custom margins. Material margin keeps its
+        current effective value (the client can supply material); the whole
+        remaining uplift is carried by labor / overhead / design — one factor
+        across the three, which is where conversion profit belongs."""
+        if self._frozen():
+            frappe.throw(_("Rates are frozen (quoted) — amend/cancel the Estimate first."))
+        target = float(target or 0)
+        if not target and per_sqft:
+            blk = self.facial_sqft_block()
+            if not blk:
+                frappe.throw(_("Per-sqft target needs the outer W/D/H dims — key them first."))
+            target = float(per_sqft) * blk["sqft"]
+        if target <= 0:
+            frappe.throw(_("Give a target price (₹ or ₹/sq ft)."))
+        r = getattr(self, "_calc", None) or {}
+        if not r:
+            self.compute_costs()
+            r = getattr(self, "_calc", None) or {}
+        mat_cost = float(r.get("material_cost") or 0) + float(r.get("joinery_cost") or 0)
+        conv_cost = float(r.get("labor_cost") or 0) + float(r.get("overhead_cost") or 0) \
+            + float(r.get("design_cost") or 0)
+        if not conv_cost:
+            frappe.throw(_("No labor/overhead/design cost to carry the margin — import the SKU first."))
+        mat_margin = float((r.get("markup_pct") or {}).get("material") or 0)
+        client_material = mat_cost * (1 + mat_margin / 100.0)
+        k = (target - client_material) / conv_cost - 1.0
+        self.use_custom_margins = 1
+        self.margin_material = mat_margin
+        self.margin_labor = self.margin_overhead = self.margin_design = round(k * 100.0, 2)
+        self.save(ignore_permissions=True)
+        internal = float(self.internal_cost or 0)
+        return {
+            "target": target,
+            "client_total": float(self.client_total or 0),
+            "conversion_margin_pct": round(k * 100.0, 2),
+            "blended_margin_pct": round((target / internal - 1) * 100.0, 2) if internal else 0,
+            "profit": float(self.client_total or 0) + float(r.get("transport_cost") or 0) - internal,
+            "below_cost": target < internal,
+        }
 
     @frappe.whitelist()
     def reimport(self):

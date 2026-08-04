@@ -72,10 +72,11 @@ frappe.ui.form.on("Estimate SKU", {
     if (!frm.is_new()) {
       frm.add_custom_button(__("Add material row"), () => add_material_dialog(frm), __("Materials"));
     }
-    // Margin text boxes: decide how much to make on each total; global
-    // (Estimate Settings), reprices every SKU/Estimate on open/save.
+    // Price backwards from revenue: type the pre-tax price you want (₹ or
+    // ₹/sq ft) — margins are back-solved onto THIS SKU as custom margins
+    // (material stays put; labor/overhead/design carry the uplift).
     if (!frm.is_new() && !frm.doc.rates_frozen) {
-      frm.add_custom_button(__("Set margins %"), () => margins_dialog(frm));
+      frm.add_custom_button(__("Price from target"), () => target_price_dialog(frm));
     }
     // Pull the current price-list rate onto every material line — the everyday
     // flow after pricing red-flagged items on the Estimation (Assumed) list.
@@ -184,36 +185,40 @@ frappe.ui.form.on("Estimate Material", {
   materials_remove: (frm) => update_live_totals(frm),
 });
 
-// Margin text boxes (global Estimate Settings): decide the % to make on each
-// total. Saving reprices this doc immediately and every other on open/save.
-function margins_dialog(frm) {
-  frappe.call("mallet_estimator.mallet_estimator.doctype.estimate_sku.estimate_sku.get_margins").then((r) => {
-    const m = (r && r.message) || {};
-    const d = new frappe.ui.Dialog({
-      title: __("Margins — % you make on each total"),
-      fields: [
-        { fieldname: "material", fieldtype: "Percent", label: __("Material margin %"), default: m.material,
-          description: __("Keep low — client can supply material") },
-        { fieldname: "labor", fieldtype: "Percent", label: __("Labor margin %"), default: m.labor,
-          description: __("Conversion carries the profit") },
-        { fieldname: "overhead", fieldtype: "Percent", label: __("Overhead margin %"), default: m.overhead },
-        { fieldname: "design", fieldtype: "Percent", label: __("Design margin %"), default: m.design },
-      ],
-      primary_action_label: __("Apply"),
-      primary_action(values) {
-        d.hide();
-        frappe.call("mallet_estimator.mallet_estimator.doctype.estimate_sku.estimate_sku.set_margins", values).then(() => {
-          frappe.show_alert({ message: __("Margins applied — repricing"), indicator: "green" }, 4);
-          if (frm.doc.doctype === "Estimate SKU") {
-            frm.call("recompute").then(() => frm.reload_doc());
-          } else {
-            frm.call("refresh_skus").then(() => frm.reload_doc());
-          }
+// Profit is a function of revenue: type the price you want, get the margins.
+// Material margin stays at its current effective value; the remaining uplift is
+// solved as ONE factor across labor/overhead/design and saved as this SKU's
+// custom margins.
+function target_price_dialog(frm) {
+  const d = new frappe.ui.Dialog({
+    title: __("Price this SKU from a target (pre-tax)"),
+    fields: [
+      { fieldname: "target", fieldtype: "Currency", label: __("Target price (₹, pre-tax)") },
+      { fieldname: "per_sqft", fieldtype: "Currency", label: __("… or target ₹ / sq ft (facial area)"),
+        description: __("Used only when the ₹ target above is empty; needs outer W/D/H.") },
+      { fieldname: "now", fieldtype: "HTML",
+        options: `<p class="text-muted" style="font-size:12px">${__("Currently: client total {0} · internal cost {1}",
+          [format_currency(frm.doc.client_total || 0), format_currency(frm.doc.internal_cost || 0)])}</p>` },
+    ],
+    primary_action_label: __("Solve & apply"),
+    primary_action(values) {
+      d.hide();
+      frm.call("apply_target_price", { target: values.target || 0, per_sqft: values.per_sqft || 0 }).then((r) => {
+        const m = (r && r.message) || {};
+        frappe.msgprint({
+          title: __("Priced from target"),
+          indicator: m.below_cost ? "red" : "green",
+          message: __("Client total {0} · conversion margin {1}% · blended margin {2}% · profit {3}{4}", [
+            format_currency(m.client_total || 0), m.conversion_margin_pct, m.blended_margin_pct,
+            format_currency(m.profit || 0),
+            m.below_cost ? "<br><b style='color:var(--red-600,#c0392b)'>" + __("TARGET IS BELOW INTERNAL COST") + "</b>" : "",
+          ]),
         });
-      },
-    });
-    d.show();
+        frm.reload_doc();
+      });
+    },
   });
+  d.show();
 }
 
 function add_material_dialog(frm) {
@@ -327,13 +332,15 @@ function render_cost_breakup(frm) {
   if (!d || !(d.groups || []).length) { f.$wrapper.empty(); return; }
   const money = (v) => format_currency(v || 0);
   const esc = frappe.utils.escape_html;
-  // " (+15%)" / " (+80/80/100%)" from Estimate Settings markups — blank when 0.
+  // " (+15%)" / " (+80/80/100%)" — effective margins; flagged when this SKU
+  // overrides the house policy.
   const mk = (...keys) => {
     const p = d.markup_pct || {};
     const vals = keys.map((k) => +(p[k] || 0));
-    if (!vals.some((v) => v)) return "";
+    const tag = p.__custom__ ? ` · ${__("SKU override")}` : "";
+    if (!vals.some((v) => v)) return tag ? ` <span class="text-muted">(${__("SKU override")})</span>` : "";
     const label = vals.every((v) => v === vals[0]) ? `${vals[0]}` : vals.join("/");
-    return ` <span class="text-muted">(+${label}%)</span>`;
+    return ` <span class="text-muted">(+${label}%${tag})</span>`;
   };
   let body = "";
   for (const [gname, lines] of d.groups) {
@@ -396,7 +403,18 @@ function render_bifurcation(b, sqft) {
     </table>`;
 }
 
-// include_misc toggle re-prices instantly too.
+// include_misc toggle re-prices instantly too; margin edits refetch the
+// effective markups (the server reads the UNSAVED doc) and reprice live.
+const refetch_markups = (frm) =>
+  frm.call("workstation_net_rates").then((r) => {
+    frm._ws_net = (r && r.message) || {};
+    update_live_totals(frm);
+  });
 frappe.ui.form.on("Estimate SKU", {
   include_misc: (frm) => update_live_totals(frm),
+  use_custom_margins: refetch_markups,
+  margin_material: refetch_markups,
+  margin_labor: refetch_markups,
+  margin_overhead: refetch_markups,
+  margin_design: refetch_markups,
 });

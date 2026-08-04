@@ -10,15 +10,74 @@
   "room",
   "item",
   "internal_cost",
-  "client_total"
+  "client_total",
+  "profit",
+  "margin_pct"
  ],
  "fields": [
-  {"fieldname": "estimate_sku", "fieldtype": "Link", "label": "Estimate SKU", "options": "Estimate SKU", "in_list_view": 1, "reqd": 1},
-  {"fieldname": "article_name", "fieldtype": "Data", "label": "Article", "fetch_from": "estimate_sku.article_name", "read_only": 1, "in_list_view": 1},
-  {"fieldname": "room", "fieldtype": "Data", "label": "Room", "fetch_from": "estimate_sku.room", "read_only": 1, "in_list_view": 1},
-  {"fieldname": "item", "fieldtype": "Link", "label": "Item", "options": "Item", "fetch_from": "estimate_sku.item", "read_only": 1},
-  {"fieldname": "internal_cost", "fieldtype": "Currency", "label": "Internal", "fetch_from": "estimate_sku.internal_cost", "read_only": 1, "in_list_view": 1},
-  {"fieldname": "client_total", "fieldtype": "Currency", "label": "To Client", "fetch_from": "estimate_sku.client_total", "read_only": 1, "in_list_view": 1}
+  {
+   "fieldname": "estimate_sku",
+   "fieldtype": "Link",
+   "label": "Estimate SKU",
+   "options": "Estimate SKU",
+   "in_list_view": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "article_name",
+   "fieldtype": "Data",
+   "label": "Article",
+   "fetch_from": "estimate_sku.article_name",
+   "read_only": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "room",
+   "fieldtype": "Data",
+   "label": "Room",
+   "fetch_from": "estimate_sku.room",
+   "read_only": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "item",
+   "fieldtype": "Link",
+   "label": "Item",
+   "options": "Item",
+   "fetch_from": "estimate_sku.item",
+   "read_only": 1
+  },
+  {
+   "fieldname": "internal_cost",
+   "fieldtype": "Currency",
+   "label": "Internal",
+   "fetch_from": "estimate_sku.internal_cost",
+   "read_only": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "client_total",
+   "fieldtype": "Currency",
+   "label": "To Client",
+   "fetch_from": "estimate_sku.client_total",
+   "read_only": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "profit",
+   "fieldtype": "Currency",
+   "label": "Profit",
+   "read_only": 1,
+   "in_list_view": 1,
+   "description": "client total + this SKU's transport - internal cost"
+  },
+  {
+   "fieldname": "margin_pct",
+   "fieldtype": "Percent",
+   "label": "Margin %",
+   "read_only": 1,
+   "in_list_view": 1
+  }
  ],
  "istable": 1,
  "links": [],

@@ -60,6 +60,13 @@
   "trips_client_hw",
   "trips_outward",
   "transport_cost",
+  "margins_section",
+  "use_custom_margins",
+  "margin_material",
+  "margin_labor",
+  "margins_col",
+  "margin_overhead",
+  "margin_design",
   "breakup_section",
   "cost_breakup",
   "cost_breakup_html",
@@ -402,6 +409,46 @@
    "label": "Transport Cost",
    "read_only": 1,
    "hidden": 1
+  },
+  {
+   "fieldname": "margins_section",
+   "fieldtype": "Section Break",
+   "label": "Margins & Pricing",
+   "collapsible": 1
+  },
+  {
+   "fieldname": "use_custom_margins",
+   "fieldtype": "Check",
+   "label": "Use custom margins for this SKU",
+   "description": "Off = house margins from Estimate Settings. On = the four values below price THIS SKU (0 is a valid margin - e.g. client-supplied material)."
+  },
+  {
+   "fieldname": "margin_material",
+   "fieldtype": "Percent",
+   "label": "Material margin %",
+   "depends_on": "eval:doc.use_custom_margins"
+  },
+  {
+   "fieldname": "margin_labor",
+   "fieldtype": "Percent",
+   "label": "Labor margin %",
+   "depends_on": "eval:doc.use_custom_margins"
+  },
+  {
+   "fieldname": "margins_col",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "margin_overhead",
+   "fieldtype": "Percent",
+   "label": "Overhead margin %",
+   "depends_on": "eval:doc.use_custom_margins"
+  },
+  {
+   "fieldname": "margin_design",
+   "fieldtype": "Percent",
+   "label": "Design margin %",
+   "depends_on": "eval:doc.use_custom_margins"
   },
   {
    "fieldname": "breakup_section",

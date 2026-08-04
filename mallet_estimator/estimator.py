@@ -388,12 +388,24 @@ def calc_sku(sku, settings, ws_rates=None):
     if ws_rates is None:
         ws_rates = {w["name"]: w for w in workstation_rates(settings)}
     default_ws = "Assembly Station"
-    markup = {
-        "material": _num(settings.markup_material),
-        "labor": _num(settings.markup_labor),
-        "overhead": _num(settings.markup_overhead),
-        "design": _num(settings.markup_design),
-    }
+    # Margins live on the SELLABLE THING: a SKU with custom margins prices
+    # itself; everything else inherits the house policy (Estimate Settings).
+    custom = bool(_num(getattr(sku, "use_custom_margins", 0) or 0))
+    if custom:
+        markup = {
+            "material": _num(sku.get("margin_material")),
+            "labor": _num(sku.get("margin_labor")),
+            "overhead": _num(sku.get("margin_overhead")),
+            "design": _num(sku.get("margin_design")),
+        }
+    else:
+        markup = {
+            "material": _num(settings.markup_material),
+            "labor": _num(settings.markup_labor),
+            "overhead": _num(settings.markup_overhead),
+            "design": _num(settings.markup_design),
+        }
+    markup_display = dict(markup, __custom__=custom)
 
     def cost_rows(rows, fallback_ws, skip_misc):
         """Price a table of step rows at their workstation rates. Returns totals
@@ -507,5 +519,5 @@ def calc_sku(sku, settings, ws_rates=None):
         "client_design": client_design,
         "client_design_exec": client_design_exec,
         "client_total": client_total,
-        "markup_pct": dict(markup),
+        "markup_pct": markup_display,
     }
