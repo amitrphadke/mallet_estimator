@@ -72,6 +72,30 @@ frappe.ui.form.on("Estimate SKU", {
     if (!frm.is_new()) {
       frm.add_custom_button(__("Add material row"), () => add_material_dialog(frm), __("Materials"));
     }
+    // Combined model: pull every distinct décor of the project into THIS SKU's
+    // map (one letter per décor project-wide) and show the letter register to
+    // use while assigning generic materials in the combined SketchUp file.
+    if (!frm.is_new() && !frm.doc.rates_frozen && frm.doc.project) {
+      frm.add_custom_button(__("Prefill décor map from project SKUs"), () => {
+        frm.call("prefill_decor_from_project").then((r) => {
+          const m = (r && r.message) || {};
+          const esc = frappe.utils.escape_html;
+          const rows = (m.rows || []).map((x) => `
+            <tr><td><b>${esc(x.slot)}</b></td><td>${esc(x.domain)}</td>
+                <td>${esc(x.brand || "")} ${esc(x.code || "")} ${esc(x.name || "")}</td></tr>`).join("");
+          frappe.msgprint({
+            title: __("Project décor register — use these letters in the combined SketchUp model"),
+            message: `<p>${__("{0} décor(s) pulled from the project's SKUs.", [m.added || 0])}</p>
+              <table class="table table-bordered" style="font-size:12.5px">
+                <thead><tr><th>${__("Slot letter")}</th><th>${__("Domain")}</th><th>${__("Décor")}</th></tr></thead>
+                <tbody>${rows}</tbody></table>
+              <p class="text-muted" style="font-size:11.5px">${__("Generic materials in the combined model must use THESE letters (SG_LAM_V1_16mm_c_a, EB_PVC_EX_d …) — one letter per décor across the whole project.")}</p>`,
+          });
+          frm.reload_doc();
+        });
+      }, __("Materials"));
+    }
+
     // Price backwards from revenue: type the pre-tax price you want (₹ or
     // ₹/sq ft) — margins are back-solved onto THIS SKU as custom margins
     // (material stays put; labor/overhead/design carry the uplift).

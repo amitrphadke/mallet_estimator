@@ -568,6 +568,63 @@ class EstimateSKU(Document):
                 title=_("Fill the Décor Slots map"), indicator="orange",
             )
 
+    @frappe.whitelist()
+    def prefill_decor_from_project(self):
+        """COMBINED-MODEL helper: one SketchUp file holding every SKU reuses slot
+        letters PROJECT-WIDE — one letter per DISTINCT décor (not per article).
+        Pull every distinct décor from this project's other SKUs into this SKU's
+        map: a letter is kept when it doesn't collide, otherwise the next free
+        letter (per domain) is assigned. Returns the register — the exact
+        generic material letters to use while building the combined model."""
+        if self._frozen():
+            frappe.throw(_("Rates are frozen (quoted) — amend/cancel the Estimate first."))
+        if not self.project:
+            frappe.throw(_("Set the Project first."))
+        letters = "abcdefghijklmnopqrstuvwxyz"
+        used = {"Laminate": set(), "Edge Band": set()}
+        have = set()
+        for r in self.get("sku_decors") or []:
+            dom = r.domain or "Laminate"
+            used[dom].add((r.slot or "").strip().lower()[:1])
+            have.add((dom, (r.brand or "").strip().lower(), (r.code or "").strip(),
+                      (r.decor_name or "").strip().lower()))
+        register, added = [], 0
+        for name in frappe.get_all("Estimate SKU", filters={"project": self.project},
+                                   order_by="room asc, article_name asc", pluck="name"):
+            if name == self.name:
+                continue
+            src = frappe.get_doc("Estimate SKU", name)
+            for r in src.get("sku_decors") or []:
+                dom = r.domain or "Laminate"
+                ident = (dom, (r.brand or "").strip().lower(), (r.code or "").strip(),
+                         (r.decor_name or "").strip().lower())
+                if ident in have or not (r.brand or r.code):
+                    continue
+                pref = (r.slot or "").strip().lower()[:1]
+                slot = pref if pref and pref not in used[dom] else \
+                    next((l for l in letters if l not in used[dom]), None)
+                if not slot:
+                    continue
+                used[dom].add(slot)
+                have.add(ident)
+                self.append("sku_decors", {
+                    "slot": slot, "domain": dom, "brand": r.brand, "code": r.code,
+                    "decor_name": r.decor_name, "year": r.year, "short": r.get("short"),
+                    "thickness": r.get("thickness"), "width": r.get("width"),
+                })
+                register.append({"slot": slot, "domain": dom, "brand": r.brand,
+                                 "code": r.code, "name": r.decor_name,
+                                 "from": src.sku_code or name,
+                                 "relettered": bool(pref and pref != slot)})
+                added += 1
+        if added:
+            self.save(ignore_permissions=True)
+        return {"added": added,
+                "rows": [{"slot": r.slot, "domain": r.domain, "brand": r.brand,
+                          "code": r.code, "name": r.decor_name}
+                         for r in (self.get("sku_decors") or [])],
+                "register": register}
+
     def refresh_material_rates(self):
         """The price list is the only rate authority — until the Estimate is
         quoted (rates_frozen), every save re-reads each material line's rate,
