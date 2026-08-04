@@ -39,6 +39,7 @@
   "total_gst",
   "total_with_gst",
   "cost_breakup",
+  "bifurcation_section",
   "cost_breakup_html",
   "quotation",
   "amended_from"
@@ -117,13 +118,15 @@
    "fieldname": "allowances",
    "fieldtype": "Table",
    "label": "Provisional Allowances",
-   "options": "Estimate Allowance"
+   "options": "Estimate Allowance",
+   "print_hide": 1
   },
   {
    "fieldname": "total_allowance",
    "fieldtype": "Currency",
    "label": "Provisional Allowances Total",
-   "read_only": 1
+   "read_only": 1,
+   "print_hide": 1
   },
   {
    "fieldname": "transport_section",
@@ -181,25 +184,29 @@
    "fieldname": "total_material",
    "fieldtype": "Currency",
    "label": "Material",
-   "read_only": 1
+   "read_only": 1,
+   "print_hide": 1
   },
   {
    "fieldname": "total_labor",
    "fieldtype": "Currency",
    "label": "Labor",
-   "read_only": 1
+   "read_only": 1,
+   "print_hide": 1
   },
   {
    "fieldname": "total_overhead",
    "fieldtype": "Currency",
    "label": "Overhead",
-   "read_only": 1
+   "read_only": 1,
+   "print_hide": 1
   },
   {
    "fieldname": "total_design",
    "fieldtype": "Currency",
    "label": "Design",
-   "read_only": 1
+   "read_only": 1,
+   "print_hide": 1
   },
   {
    "fieldname": "column_break_totals",
@@ -210,7 +217,8 @@
    "fieldtype": "Currency",
    "label": "Internal Cost",
    "read_only": 1,
-   "bold": 1
+   "bold": 1,
+   "print_hide": 1
   },
   {
    "fieldname": "total_client",
@@ -244,12 +252,20 @@
    "fieldtype": "Code",
    "label": "Cost Breakup (JSON)",
    "hidden": 1,
-   "read_only": 1
+   "read_only": 1,
+   "print_hide": 1
+  },
+  {
+   "fieldname": "bifurcation_section",
+   "fieldtype": "Section Break",
+   "label": "Cost Bifurcation & Rooms",
+   "print_hide": 1
   },
   {
    "fieldname": "cost_breakup_html",
    "fieldtype": "HTML",
-   "label": "Cost Bifurcation"
+   "label": "Cost Bifurcation",
+   "print_hide": 1
   },
   {
    "fieldname": "quotation",

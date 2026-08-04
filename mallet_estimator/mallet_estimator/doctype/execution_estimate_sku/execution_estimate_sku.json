@@ -53,7 +53,8 @@
    "label": "Internal",
    "fetch_from": "estimate_sku.internal_cost",
    "read_only": 1,
-   "in_list_view": 1
+   "in_list_view": 1,
+   "print_hide": 1
   },
   {
    "fieldname": "client_total",
@@ -69,14 +70,16 @@
    "label": "Profit",
    "read_only": 1,
    "in_list_view": 1,
-   "description": "client total + this SKU's transport - internal cost"
+   "description": "client total + this SKU's transport - internal cost",
+   "print_hide": 1
   },
   {
    "fieldname": "margin_pct",
    "fieldtype": "Percent",
    "label": "Margin %",
    "read_only": 1,
-   "in_list_view": 1
+   "in_list_view": 1,
+   "print_hide": 1
   }
  ],
  "istable": 1,

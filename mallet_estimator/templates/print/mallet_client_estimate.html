@@ -1,198 +1,104 @@
 {%- macro money(v) -%}₹{{ "{:,.2f}".format(v or 0) }}{%- endmacro -%}
-
-{%- set sku_docs = [] -%}
-{%- for row in doc.skus -%}
-  {%- if row.estimate_sku -%}
-    {%- set _ = sku_docs.append(frappe.get_doc("Estimate SKU", row.estimate_sku)) -%}
-  {%- endif -%}
-{%- endfor -%}
-
-{%- set rooms = {} -%}
-{%- set room_order = [] -%}
-{%- for s in sku_docs -%}
-  {%- set rn = s.room or "Unassigned" -%}
-  {%- if rn not in rooms -%}
-    {%- set _ = rooms.update({rn: []}) -%}
-    {%- set _ = room_order.append(rn) -%}
-  {%- endif -%}
-  {%- set _ = rooms[rn].append(s) -%}
-{%- endfor -%}
-
+{%- set p = doc.print_payload("client") -%}
 <div class="mce">
   <style>
     .mce { font-size: 12px; color: #1f2933; }
     .mce h2 { color: #2f5233; margin: 0; font-size: 20px; }
+    .mce h4 { color: #2f5233; margin: 14px 0 6px; font-size: 14px; }
     .mce .head { display: flex; justify-content: space-between; border-bottom: 3px solid #2f5233; padding-bottom: 10px; margin-bottom: 12px; }
-    .mce .parties { display: flex; gap: 40px; margin-bottom: 16px; }
-    .mce .parties .lbl { color: #6b7280; font-size: 10px; text-transform: uppercase; letter-spacing: .5px; }
-    .mce .roomtitle { color: #2f5233; font-size: 14px; border-bottom: 1px solid #e2e6eb; padding: 6px 0 4px; margin: 16px 0 8px; }
-    .mce .sku { border: 1px solid #e2e6eb; border-radius: 6px; padding: 10px 12px; margin-bottom: 10px; page-break-inside: avoid; }
-    .mce .sku .top { display: flex; justify-content: space-between; font-weight: 600; }
-    .mce .sku .desc { color: #6b7280; font-size: 11px; margin: 3px 0 8px; }
-    .mce table { width: 100%; border-collapse: collapse; }
-    .mce table td, .mce table th { padding: 4px 6px; border-bottom: 1px solid #eef0f2; }
-    .mce table th { background: #f1f4ef; text-align: left; font-size: 11px; }
+    .mce .lbl { color: #6b7280; font-size: 10px; text-transform: uppercase; letter-spacing: .5px; }
+    .mce .draft { color: #b45309; font-weight: 700; letter-spacing: 2px; }
+    .mce table { width: 100%; border-collapse: collapse; margin-bottom: 6px; }
+    .mce td, .mce th { padding: 5px 7px; border-bottom: 1px solid #eef0f2; }
+    .mce th { background: #f1f4ef; text-align: left; font-size: 11px; }
     .mce td.r, .mce th.r { text-align: right; }
-    .mce .lines { max-width: 320px; margin-left: auto; margin-top: 8px; }
-    .mce .lines td { border: 0; padding: 2px 6px; }
-    .mce .lines .tot td { border-top: 1px solid #e2e6eb; font-weight: 700; }
-    .mce .roomtotal { display: flex; justify-content: space-between; background: #f6f8f4; padding: 6px 12px; border-radius: 5px; font-weight: 700; }
-    .mce .grand { max-width: 340px; margin-left: auto; margin-top: 18px; border-top: 2px solid #2f5233; padding-top: 8px; }
-    .mce .grand .row { display: flex; justify-content: space-between; padding: 3px 0; }
-    .mce .grand .final { border-top: 1px solid #e2e6eb; margin-top: 4px; padding-top: 6px; font-size: 16px; font-weight: 800; color: #1a7f45; }
-    .mce .foot { color: #6b7280; font-size: 10px; margin-top: 18px; border-top: 1px solid #e2e6eb; padding-top: 8px; }
-    .mce .artpage { page-break-before: always; padding-top: 4px; }
-    .mce .artpage .arttitle { color: #2f5233; font-size: 16px; font-weight: 700; }
-    .mce .artpage .artsub { color: #6b7280; font-size: 11px; margin-bottom: 6px; }
-    .mce .artpage .imgwrap { text-align: center; margin: 8px 0 14px; }
-    .mce .artpage .imgwrap img { max-width: 100%; max-height: 430px; border: 1px solid #e2e6eb; border-radius: 8px; }
-    .mce .artpage .noimg { color: #9aa5b1; font-size: 11px; border: 1px dashed #e2e6eb; border-radius: 8px; padding: 46px; text-align: center; margin: 8px 0 14px; }
-    .mce .spectbl { max-width: 520px; }
-    .mce .spectbl td, .mce .spectbl th { border-bottom: 1px solid #eef0f2; padding: 5px 8px; font-size: 12px; }
-    .mce .spectbl th { background: #f6f8f4; text-align: left; width: 90px; color: #334; font-weight: 600; }
+    .mce .roomrow td { background: #f6f8f4; font-weight: 700; }
+    .mce .grand { max-width: 360px; margin-left: auto; margin-top: 14px; }
+    .mce .grand td { border: 0; padding: 3px 7px; }
+    .mce .grand .tot td { border-top: 2px solid #2f5233; font-weight: 700; font-size: 13px; }
+    .mce .page { page-break-before: always; }
+    .mce .iso { max-height: 300px; max-width: 100%; }
+    .mce .muted { color: #6b7280; font-size: 11px; }
   </style>
 
   <div class="head">
     <div>
-      <h2>{{ doc.execution_company or "Mallet Crafts PVT LTD" }}</h2>
-      <div style="color:#6b7280;font-size:11px;">Execution estimate</div>
+      <h2>Client Estimate</h2>
+      <div class="muted">{{ doc.name }} · {{ frappe.utils.formatdate(doc.modified) }}</div>
     </div>
-    <div style="text-align:right;font-size:11px;">
-      {% if doc.quote_number %}<div>Quote <b>{{ doc.quote_number }}</b></div>{% endif %}
-      <div>Date <b>{{ frappe.utils.formatdate(doc.get("transaction_date") or frappe.utils.nowdate(), "dd MMM yyyy") }}</b></div>
-      <div>Ref <b>{{ doc.name }}</b></div>
+    <div style="text-align:right">
+      {% if p.is_draft %}<div class="draft">DRAFT</div>{% endif %}
+      <div class="lbl">Quote No.</div><div>{{ doc.quote_number or "—" }}</div>
     </div>
   </div>
-
-  <div class="parties">
-    <div><div class="lbl">Customer</div><b>{{ frappe.db.get_value("Customer", doc.customer, "customer_name") or doc.customer }}</b></div>
-    <div><div class="lbl">Project</div>{{ doc.project or "—" }}</div>
-    <div><div class="lbl">Designed by</div>{{ doc.designed_by or "—" }}</div>
+  <div style="display:flex; gap:40px; margin-bottom:12px">
+    <div><div class="lbl">Project</div><div>{{ doc.project }}</div></div>
+    <div><div class="lbl">Customer</div><div>{{ doc.customer }}</div></div>
+    <div><div class="lbl">Designed By</div><div>{{ doc.designed_by or "" }}</div></div>
+    <div><div class="lbl">Execution</div><div>{{ doc.execution_company or "" }}</div></div>
   </div>
 
-  {% for rn in room_order %}
-    {% set items = rooms[rn] %}
-    {% set room_mat = items | sum(attribute="client_material") %}
-    {% set room_de = items | sum(attribute="client_design_exec") %}
-    {% set room_tot = items | sum(attribute="client_total") %}
-    <div class="roomtitle">{{ rn }}</div>
-    {% for s in items %}
-      <div class="sku">
-        <div class="top">
-          <div>
-            {{ s.sku_code or s.name }}{% if s.article_name %} — {{ s.article_name }}{% endif %}
-            {% if s.outer_w or s.outer_d or s.outer_h %}
-              <span style="color:#6b7280;font-weight:400;font-size:11px;">· {{ "%g"|format(s.outer_w or 0) }} × {{ "%g"|format(s.outer_d or 0) }} × {{ "%g"|format(s.outer_h or 0) }} mm</span>
-            {% endif %}
-          </div>
-          <div>{{ money(s.client_total) }}</div>
-        </div>
-        {% if s.description %}<div class="desc">{{ s.description }}</div>{% endif %}
-        {# Article ISO view + specs are on the per-article pages below. #}
-        {# Internal per-material cost breakdown intentionally omitted — the client
-           sees only the payable values below. Curated client-facing allowances
-           (handles/hinges/rails) come from the Provisional Allowance table (F6). #}
-        <table class="lines">
-          <tr><td>Material</td><td class="r">{{ money(s.client_material) }}</td></tr>
-          <tr><td>Design &amp; execution</td><td class="r">{{ money(s.client_design_exec) }}</td></tr>
-          <tr class="tot"><td>SKU total</td><td class="r">{{ money(s.client_total) }}</td></tr>
-        </table>
-      </div>
-    {% endfor %}
-    <div class="roomtotal"><span>{{ rn }} total</span><span>{{ money(room_tot) }}</span></div>
-  {% endfor %}
-
-  <div class="roomtitle">Room-wise summary</div>
+  {% set ns = namespace(sr=0) %}
   <table>
-    <thead><tr><th>Room / SKU</th><th>Article</th><th class="r">Material</th><th class="r">Design &amp; execution</th><th class="r">Amount</th></tr></thead>
+    <thead><tr>
+      <th>Sr No</th><th>Estimate SKU</th><th>Room</th><th>Item</th>
+      <th>Dimensions (W x D x H mm)</th><th class="r">Area (sq ft)</th><th class="r">Price</th>
+    </tr></thead>
     <tbody>
-    {% for rn in room_order %}
-      {% set items = rooms[rn] %}
-      <tr><td colspan="5" style="background:#f1f4ef;font-weight:600;">{{ rn }}</td></tr>
-      {% for s in items %}
+    {% for g in p.rooms %}
+      {% for row in g.rows %}
+        {% set ns.sr = ns.sr + 1 %}
         <tr>
-          <td style="padding-left:18px;">{{ s.sku_code or s.name }}</td>
-          <td>{{ s.article_name or "—" }}</td>
-          <td class="r">{{ money(s.client_material) }}</td>
-          <td class="r">{{ money(s.client_design_exec) }}</td>
-          <td class="r">{{ money(s.client_total) }}</td>
+          <td>{{ ns.sr }}</td><td>{{ row.sku }}</td><td>{{ row.article }} ({{ g.room }})</td>
+          <td>{{ row.item }}</td><td>{{ row.dims }}</td>
+          <td class="r">{{ "%.2f"|format(row.sqft) }}</td><td class="r">{{ money(row.price) }}</td>
         </tr>
       {% endfor %}
-      <tr style="font-weight:600;background:#fafbf8;">
-        <td colspan="2">{{ rn }} total</td>
-        <td class="r">{{ money(items | sum(attribute="client_material")) }}</td>
-        <td class="r">{{ money(items | sum(attribute="client_design_exec")) }}</td>
-        <td class="r">{{ money(items | sum(attribute="client_total")) }}</td>
+      <tr class="roomrow">
+        <td colspan="5">{{ g.room }} — subtotal</td>
+        <td class="r">{{ "%.2f"|format(g.sqft) }}</td>
+        <td class="r">{{ money(g.subtotal) }}{% if g.per_sqft %} <span class="muted">({{ money(g.per_sqft) }}/sq ft)</span>{% endif %}</td>
       </tr>
     {% endfor %}
     </tbody>
   </table>
 
-  <div class="grand">
-    <div class="row"><span>Material</span><span>{{ money(sku_docs | sum(attribute="client_material")) }}</span></div>
-    <div class="row"><span>Design &amp; execution</span><span>{{ money(sku_docs | sum(attribute="client_design_exec")) }}</span></div>
-    {% if doc.total_transport %}
-    <div class="row"><span>Transport (consolidated)</span><span>{{ money(doc.total_transport) }}</span></div>
-    {% endif %}
-    <div class="row final"><span>Total estimate</span><span>{{ money(doc.total_client or (sku_docs | sum(attribute="client_total"))) }}</span></div>
-    {% if doc.total_gst %}
-    <div class="row"><span>GST @ {{ "%g"|format(doc.gst_pct or 18) }}%</span><span>{{ money(doc.total_gst) }}</span></div>
-    <div class="row final"><span>Grand total (incl. GST)</span><span>{{ money(doc.total_with_gst) }}</span></div>
-    {% endif %}
-  </div>
+  <table class="grand">
+    <tr><td>Subtotal (all rooms{% if p.total_sqft %}, {{ "%.2f"|format(p.total_sqft) }} sq ft{% endif %})</td><td class="r">{{ money(p.subtotal) }}</td></tr>
+    <tr><td>Transport</td><td class="r">{{ money(p.transport) }}</td></tr>
+    <tr><td>GST {{ "%g"|format(p.gst_pct) }}%</td><td class="r">{{ money(p.gst) }}</td></tr>
+    <tr class="tot"><td>Grand Total</td><td class="r">{{ money(p.grand_total) }}</td></tr>
+  </table>
 
-  {# --- Provisional allowances (F6): price-sensitive items shown transparently,
-       trued up to the actual chosen price at final invoice --- #}
-  {% if doc.allowances %}
-    <div class="roomtitle">Provisional allowances</div>
-    <div style="color:#6b7280;font-size:11px;margin:-4px 0 8px;">
-      Indicative amounts for the items below. Each is billed at the <b>actual</b> price of the piece you finally select — the difference is adjusted transparently in the final invoice.
-    </div>
-    <table>
-      <thead><tr><th>Item</th><th>Description</th><th class="r">Qty</th><th>UOM</th><th class="r">Assumed rate</th><th class="r">Amount</th></tr></thead>
-      <tbody>
-      {% for a in doc.allowances %}
-        <tr>
-          <td>{{ a.material_type }}</td>
-          <td>{{ a.description or "—" }}</td>
-          <td class="r">{{ "%g"|format(a.qty or 0) }}</td>
-          <td>{{ a.uom or "—" }}</td>
-          <td class="r">{{ money(a.assumed_rate) }}</td>
-          <td class="r">{{ money(a.amount) }}</td>
-        </tr>
-      {% endfor %}
-        <tr style="font-weight:700;background:#fafbf8;">
-          <td colspan="5">Provisional allowances total (billed at actual)</td>
-          <td class="r">{{ money(doc.total_allowance) }}</td>
-        </tr>
-      </tbody>
-    </table>
+  {% if p.assumed_rates %}
+  <div class="page"></div>
+  <h4>Assumed Unit Rates — for your selection at the gallery</h4>
+  <p class="muted">Budgets on the following pages use these assumed unit prices. Choosing a
+  different laminate / hardware at the gallery adjusts the final bill by the difference.</p>
+  <table>
+    <thead><tr><th>Item</th><th>Category</th><th>Unit</th><th class="r">Assumed Rate</th></tr></thead>
+    <tbody>
+    {% for r in p.assumed_rates %}
+      <tr><td>{{ r.item }}</td><td>{{ r.bucket }}</td><td>{{ r.uom }}</td><td class="r">{{ money(r.rate) }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
   {% endif %}
 
-  {# --- One page per article: ISO view + specs + price --- #}
-  {% for s in sku_docs %}
-    <div class="artpage">
-      <div class="arttitle">{{ s.sku_code or s.name }}{% if s.article_name %} — {{ s.article_name }}{% endif %}</div>
-      <div class="artsub">{{ s.room or "Unassigned" }}</div>
-      {% if s.article_image %}
-        <div class="imgwrap"><img src="{{ s.article_image }}"></div>
-      {% else %}
-        <div class="noimg">No ISO view attached — add one on the Estimate SKU (Article Image).</div>
-      {% endif %}
-      <table class="spectbl">
-        <tr>
-          <th>Size (W×D×H)</th><td>{{ "%g × %g × %g mm"|format(s.outer_w or 0, s.outer_d or 0, s.outer_h or 0) }}</td>
-          <th>Finish</th><td>{{ s.finish or "—" }}</td>
-        </tr>
-      </table>
-      {% if s.description %}<div class="desc" style="margin-top:8px;">{{ s.description }}</div>{% endif %}
-      <table class="lines">
-        <tr><td>Material</td><td class="r">{{ money(s.client_material) }}</td></tr>
-        <tr><td>Design &amp; execution</td><td class="r">{{ money(s.client_design_exec) }}</td></tr>
-        <tr class="tot"><td>Article total</td><td class="r">{{ money(s.client_total) }}</td></tr>
-      </table>
-    </div>
+  {% for s in p.gallery %}
+  <div class="page"></div>
+  <h4>{{ s.sku }} — {{ s.article }} <span class="muted">({{ s.room }} · {{ s.dims }})</span></h4>
+  {% if s.iso %}<img class="iso" src="{{ s.iso }}">{% endif %}
+  <table style="margin-top:8px">
+    <thead><tr><th>Your choices at the gallery</th><th>Category</th><th class="r">Qty</th><th>Unit</th><th class="r">Budget</th></tr></thead>
+    <tbody>
+    {% for m in s.choose %}
+      <tr><td>{{ m.item }}</td><td>{{ m.bucket }}</td><td class="r">{{ "%g"|format(m.qty) }}</td><td>{{ m.uom }}</td><td class="r">{{ money(m.budget) }}</td></tr>
+    {% else %}
+      <tr><td colspan="5" class="muted">No client-choosable items on this article.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  <div class="grand"><table><tr class="tot"><td>{{ s.sku }} price{% if s.sqft %} ({{ "%.2f"|format(s.sqft) }} sq ft){% endif %}</td><td class="r">{{ money(s.price) }}</td></tr></table></div>
   {% endfor %}
-
-  <div class="foot">Inclusive of material, design &amp; execution. GST @ {{ "%g"|format(doc.gst_pct or 18) }}% extra as applicable. Valid for 30 days.</div>
 </div>

@@ -211,6 +211,55 @@ def extract_outer_dims(content):
     return {"w": w, "d": d, "h": h}
 
 
+_VIEW_LABELS = ("IsoView", "TopView", "BottomView", "LeftView", "RightView",
+                "FrontView", "BackView", "RearView", "NoDoors", "InternalView")
+
+
+def extract_view_images(content):
+    """EVERY view page's render from the 7 Views PDF: [(label, ext, bytes)].
+    The label comes from the view heading found in the page text (IsoView,
+    TopView, …); an unrecognised page — e.g. a doors-off view added later —
+    still flows through as Page<N>."""
+    from pypdf import PdfReader
+    if isinstance(content, str):
+        content = content.encode("utf-8", "ignore")
+    reader = PdfReader(io.BytesIO(content))
+    out = []
+    for n, page in enumerate(reader.pages, start=1):
+        text = page.extract_text() or ""
+        label = next((v for v in _VIEW_LABELS if v in text), None) or f"Page{n}"
+        best = None
+        for img in page.images:
+            if best is None or len(img.data) > len(best.data):
+                best = img
+        if best is None:
+            continue
+        ext = "png" if best.name.lower().endswith("png") else "jpg"
+        out.append((label, ext, best.data))
+    return out
+
+
+def attach_view_images(doc, content):
+    """Attach every view render as a File on the doc; {label: file_url}. Used by
+    the execution print (all 8 views, plus any page added later)."""
+    urls = {}
+    for label, ext, data in extract_view_images(content):
+        try:
+            f = frappe.get_doc({
+                "doctype": "File",
+                "file_name": f"{doc.name}_view_{label}.{ext}",
+                "attached_to_doctype": doc.doctype,
+                "attached_to_name": doc.name,
+                "is_private": 0,
+                "content": data,
+            })
+            f.save(ignore_permissions=True)
+            urls[label] = f.file_url
+        except Exception:
+            frappe.log_error(frappe.get_traceback(), f"view image {doc.name} {label}")
+    return urls
+
+
 def attach_iso_image(doc, views_pdf_content, dims=None):
     """Extract the IsoView render and attach it as a File — the PLAIN image, no
     annotation (user 2026-08-02: the stamped dims were wrong; outer W/D/H live in

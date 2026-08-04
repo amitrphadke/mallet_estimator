@@ -8,6 +8,20 @@ frappe.ui.form.on("Estimate", {
 
     render_estimate_bifurcation(frm);
 
+    // The two prints, clearly separated. Both carry ONLY client-shared numbers
+    // by construction (leak-safe); the execution copy adds views + purchase data.
+    if (!frm.is_new()) {
+      const printview = (fmt) =>
+        window.open(
+          frappe.urllib.get_full_url(
+            "/printview?doctype=Estimate&name=" + encodeURIComponent(frm.doc.name) +
+            "&format=" + encodeURIComponent(fmt) + "&no_letterhead=1"
+          )
+        );
+      frm.add_custom_button(__("Print Client Estimate"), () => printview("Mallet Client Estimate"), __("Print"));
+      frm.add_custom_button(__("Print Execution Estimate"), () => printview("Mallet Execution Estimate"), __("Print"));
+    }
+
     // Margin text boxes — same global margins as on the SKU form.
     if (draft && !frm.is_new()) {
       frm.add_custom_button(__("Set margins %"), () => estimate_margins_dialog(frm));
@@ -203,17 +217,30 @@ function render_estimate_bifurcation(frm) {
       <tr><td>Material / sq ft</td><td class="text-right">${money(d.sqft.material_per_sqft)}</td><td colspan="3"></td></tr>
       <tr><td>Labor (design &amp; execution) / sq ft</td><td class="text-right">${money(d.sqft.labor_per_sqft)}</td><td colspan="3"></td></tr>
       <tr style="font-weight:700"><td>Estimate / sq ft (pre-tax, excl. transport)</td><td class="text-right">${money(d.sqft.total_per_sqft)}</td><td colspan="3"></td></tr>` : "";
+  // room-wise summary: subtotals, sqft and ₹/sq ft per room
+  const roomRows = (d.rooms || []).map((g) => `
+      <tr><td>${esc(g.room)} <span class="text-muted">(${g.count} SKU${g.count > 1 ? "s" : ""})</span></td>
+        <td class="text-right">${(g.sqft || 0).toFixed(2)}</td>
+        <td class="text-right">${g.per_sqft ? money(g.per_sqft) : "—"}</td>
+        <td class="text-right">${money(g.subtotal)}</td></tr>`).join("");
+  const roomTable = roomRows ? `
+    <h5 style="margin:18px 0 6px">Room-wise summary</h5>
+    <table class="table table-bordered" style="font-size:14px">
+      <thead><tr><th>Room</th><th class="text-right">Facial sq ft</th><th class="text-right">₹ / sq ft</th><th class="text-right">Subtotal (client, excl. transport &amp; GST)</th></tr></thead>
+      <tbody>${roomRows}</tbody>
+    </table>` : "";
   f.$wrapper.html(`
-    <h6 style="margin:8px 0 4px">Bifurcation — all SKUs combined</h6>
-    <table class="table table-bordered" style="font-size:12.5px;margin:0">
-      <thead><tr><th>Component</th><th class="text-right">Amount</th><th class="text-right">% of pre-tax</th><th class="text-right">GST ${b.gst_pct || 18}%</th><th class="text-right">Incl. GST</th></tr></thead>
+    <h5 style="margin:8px 0 6px">Bifurcation — all SKUs combined</h5>
+    <table class="table table-bordered" style="font-size:14px;margin:0;width:100%">
+      <thead><tr><th style="width:40%">Component</th><th class="text-right">Amount</th><th class="text-right">% of pre-tax</th><th class="text-right">GST ${b.gst_pct || 18}%</th><th class="text-right">Incl. GST</th></tr></thead>
       <tbody>${rows}
         <tr style="font-weight:700;border-top:2px solid var(--gray-600)"><td>Total before taxes</td><td class="text-right">${money(b.pre_tax)}</td><td class="text-right">100%</td><td class="text-right">${money(b.taxes)}</td><td class="text-right">${money(b.grand_total)}</td></tr>
         <tr style="font-weight:700"><td>Taxes (GST ${b.gst_pct || 18}%)</td><td class="text-right">${money(b.taxes)}</td><td colspan="3"></td></tr>
         <tr style="font-weight:700"><td>Grand Total incl. GST</td><td class="text-right">${money(b.grand_total)}</td><td colspan="3"></td></tr>
         ${sq}
       </tbody>
-    </table>`);
+    </table>
+    ${roomTable}`);
 }
 
 function update_estimate_totals(frm) {

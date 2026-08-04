@@ -141,6 +141,8 @@ class Estimate(Document):
         # house default or SKU override) — never re-derived from house margins.
         self._client_buckets = dict(material=0.0, labor=0.0, design=0.0, overhead=0.0)
         self._sqft_sum = 0.0
+        self._room_groups = {}
+        self._room_order = []
         for r in rows:
             if not frappe.db.exists("Estimate SKU", r.estimate_sku):
                 continue
@@ -166,6 +168,15 @@ class Estimate(Document):
             transport = float(s.get("transport_cost") or 0)
             r.profit = float(s.client_total or 0) + transport - float(s.internal_cost or 0)
             r.margin_pct = (r.profit / float(s.client_total) * 100.0) if s.client_total else 0
+            # room-wise rollup for the on-screen summary
+            rn = s.room or "Unassigned"
+            if rn not in self._room_groups:
+                self._room_groups[rn] = {"room": rn, "count": 0, "subtotal": 0.0, "sqft": 0.0}
+                self._room_order.append(rn)
+            g = self._room_groups[rn]
+            g["count"] += 1
+            g["subtotal"] += float(s.client_total or 0)
+            g["sqft"] += float(blk.get("sqft") or 0)
             totals["material"] += s.material_cost or 0
             totals["labor"] += s.labor_cost or 0
             totals["overhead"] += s.overhead_cost or 0
@@ -183,6 +194,84 @@ class Estimate(Document):
         # right after in validate) adds the consolidated trips + GST on top.
         self.total_internal = totals["internal"]
         self.total_client = totals["client"]
+
+    def print_payload(self, kind="client"):
+        """Everything the two print formats render, computed once server-side.
+        LEAK-SAFE BY CONSTRUCTION: only client-shared numbers enter this dict —
+        internal cost, margins and profit never do, so either print can leak
+        without exposing pricing. The provisional-allowance total is spread
+        proportionally into the printed SKU prices (the itemised rows stay in
+        the ERP for the final true-up)."""
+        from mallet_estimator import inventory
+        CHOOSE = ("Laminate External", "Edge Banding External", "Client Hardware")
+        skus, total_client = [], 0.0
+        for r in self.skus or []:
+            if r.estimate_sku and frappe.db.exists("Estimate SKU", r.estimate_sku):
+                s = frappe.get_doc("Estimate SKU", r.estimate_sku)
+                skus.append(s)
+                total_client += float(s.client_total or 0)
+        allowance = float(self.total_allowance or 0)
+        spread = (1 + allowance / total_client) if total_client else 1.0
+        rooms, order, gallery, rate_rows = {}, [], [], {}
+        for s in skus:
+            blk = s.facial_sqft_block() or {}
+            sqft = float(blk.get("sqft") or 0)
+            price = float(s.client_total or 0) * spread
+            rn = s.room or "Unassigned"
+            if rn not in rooms:
+                rooms[rn] = {"room": rn, "rows": [], "subtotal": 0.0, "sqft": 0.0}
+                order.append(rn)
+            rooms[rn]["rows"].append({
+                "sku": s.sku_code or s.name, "article": s.article_name or "",
+                "item": s.item or "", "dims": "%d x %d x %d" % (s.outer_w or 0, s.outer_d or 0, s.outer_h or 0),
+                "price": price, "sqft": sqft,
+            })
+            rooms[rn]["subtotal"] += price
+            rooms[rn]["sqft"] += sqft
+            choose_rows, internal_rows = [], []
+            for m in s.materials or []:
+                bucket = inventory.material_bucket(m.item, m.material)
+                row = {"item": m.item, "bucket": bucket, "qty": float(m.qty or 0),
+                       "uom": m.uom or "", "budget": float(m.qty or 0) * float(m.unit_cost or 0)}
+                if bucket in CHOOSE:
+                    choose_rows.append(row)
+                    rate_rows.setdefault(m.item, {
+                        "item": m.item, "bucket": bucket, "uom": m.uom or "",
+                        "rate": float(m.unit_cost or 0),
+                    })
+                elif kind == "execution":
+                    internal_rows.append(row)
+            views = []
+            try:
+                views = sorted(json.loads(s.get("views_images") or "{}").items())
+            except Exception:
+                pass
+            gallery.append({
+                "sku": s.sku_code or s.name, "article": s.article_name or "", "room": rn,
+                "iso": s.article_image, "views": views, "price": price, "sqft": sqft,
+                "dims": "%d x %d x %d mm" % (s.outer_w or 0, s.outer_d or 0, s.outer_h or 0),
+                "choose": choose_rows, "internal": internal_rows,
+            })
+        room_list = []
+        for rn in order:
+            g = rooms[rn]
+            g["per_sqft"] = (g["subtotal"] / g["sqft"]) if g["sqft"] else 0
+            room_list.append(g)
+        transport = float(self.total_transport or 0)
+        subtotal = total_client * spread
+        gst_pct = float(self.gst_pct if self.gst_pct is not None else 18)
+        gst = (subtotal + transport) * gst_pct / 100.0
+        status = {0: "DRAFT", 1: "APPROVED", 2: "CANCELLED"}.get(self.docstatus, "DRAFT")
+        if self.quotation:
+            status += f" · Quotation {self.quotation}"
+        return {
+            "kind": kind, "status": status, "is_draft": self.docstatus == 0,
+            "rooms": room_list, "total_sqft": sum(g["sqft"] for g in room_list),
+            "subtotal": subtotal, "transport": transport,
+            "gst_pct": gst_pct, "gst": gst, "grand_total": subtotal + transport + gst,
+            "assumed_rates": sorted(rate_rows.values(), key=lambda x: (x["bucket"], x["item"])),
+            "gallery": gallery,
+        }
 
     @frappe.whitelist()
     def compare_with(self, other):
@@ -256,7 +345,12 @@ class Estimate(Document):
                 "labor_per_sqft": labor_side / sqft,
                 "total_per_sqft": (amounts["client_material"] + labor_side) / sqft,
             }
-        self.cost_breakup = json.dumps({"bifurcation": bif, "sqft": sq})
+        rooms = []
+        for rn in getattr(self, "_room_order", []) or []:
+            g = self._room_groups[rn]
+            g["per_sqft"] = (g["subtotal"] / g["sqft"]) if g["sqft"] else 0
+            rooms.append(g)
+        self.cost_breakup = json.dumps({"bifurcation": bif, "sqft": sq, "rooms": rooms})
 
     @frappe.whitelist()
     def create_quotation(self):

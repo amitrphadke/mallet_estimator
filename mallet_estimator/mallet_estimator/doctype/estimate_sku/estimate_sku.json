@@ -25,6 +25,7 @@
   "finish",
   "description",
   "article_image",
+  "views_images",
   "material_section",
   "estimate_pdf",
   "partlist_pdf",
@@ -193,6 +194,14 @@
    "description": "Extracted from the 'IsoView' page of the 7 Views PDF above — no manual upload. Shown on the client estimate."
   },
   {
+   "fieldname": "views_images",
+   "fieldtype": "Code",
+   "label": "View Images (JSON)",
+   "hidden": 1,
+   "read_only": 1,
+   "print_hide": 1
+  },
+  {
    "fieldname": "material_section",
    "fieldtype": "Section Break",
    "label": "Material"
@@ -228,20 +237,23 @@
    "fieldtype": "Small Text",
    "label": "Materials Needing a Price",
    "read_only": 1,
-   "description": "Materials with no ERPNext price yet — set a rate on the Item so the estimate can cost them."
+   "description": "Materials with no ERPNext price yet — set a rate on the Item so the estimate can cost them.",
+   "print_hide": 1
   },
   {
    "fieldname": "material_cost",
    "fieldtype": "Currency",
    "label": "Material Cost",
-   "read_only": 1
+   "read_only": 1,
+   "print_hide": 1
   },
   {
    "fieldname": "import_drivers",
    "fieldtype": "Code",
    "label": "Import Drivers (JSON)",
    "hidden": 1,
-   "read_only": 1
+   "read_only": 1,
+   "print_hide": 1
   },
   {
    "fieldname": "execution_section",
@@ -282,7 +294,8 @@
    "fieldname": "parts_csv",
    "fieldtype": "Attach",
    "label": "OpenCutList Parts CSV (execution)",
-   "hidden": 1
+   "hidden": 1,
+   "print_hide": 1
   },
   {
    "fieldname": "parts",
@@ -318,7 +331,8 @@
    "fieldname": "labor_cost",
    "fieldtype": "Currency",
    "label": "Wages Cost (workstation wage components)",
-   "read_only": 1
+   "read_only": 1,
+   "print_hide": 1
   },
   {
    "fieldname": "joinery_section",
@@ -336,7 +350,8 @@
    "fieldname": "joinery_cost",
    "fieldtype": "Currency",
    "label": "Joinery Consumables Cost",
-   "read_only": 1
+   "read_only": 1,
+   "print_hide": 1
   },
   {
    "fieldname": "design_section",
@@ -367,7 +382,8 @@
    "fieldname": "design_cost",
    "fieldtype": "Currency",
    "label": "Design Cost",
-   "read_only": 1
+   "read_only": 1,
+   "print_hide": 1
   },
   {
    "fieldname": "transport_section",
@@ -410,7 +426,8 @@
    "fieldtype": "Currency",
    "label": "Transport Cost",
    "read_only": 1,
-   "hidden": 1
+   "hidden": 1,
+   "print_hide": 1
   },
   {
    "fieldname": "decor_section",
@@ -435,19 +452,22 @@
    "fieldname": "use_custom_margins",
    "fieldtype": "Check",
    "label": "Use custom margins for this SKU",
-   "description": "Off = house margins from Estimate Settings. On = the four values below price THIS SKU (0 is a valid margin - e.g. client-supplied material)."
+   "description": "Off = house margins from Estimate Settings. On = the four values below price THIS SKU (0 is a valid margin - e.g. client-supplied material).",
+   "print_hide": 1
   },
   {
    "fieldname": "margin_material",
    "fieldtype": "Percent",
    "label": "Material margin %",
-   "depends_on": "eval:doc.use_custom_margins"
+   "depends_on": "eval:doc.use_custom_margins",
+   "print_hide": 1
   },
   {
    "fieldname": "margin_labor",
    "fieldtype": "Percent",
    "label": "Labor margin %",
-   "depends_on": "eval:doc.use_custom_margins"
+   "depends_on": "eval:doc.use_custom_margins",
+   "print_hide": 1
   },
   {
    "fieldname": "margins_col",
@@ -457,13 +477,15 @@
    "fieldname": "margin_overhead",
    "fieldtype": "Percent",
    "label": "Overhead margin %",
-   "depends_on": "eval:doc.use_custom_margins"
+   "depends_on": "eval:doc.use_custom_margins",
+   "print_hide": 1
   },
   {
    "fieldname": "margin_design",
    "fieldtype": "Percent",
    "label": "Design margin %",
-   "depends_on": "eval:doc.use_custom_margins"
+   "depends_on": "eval:doc.use_custom_margins",
+   "print_hide": 1
   },
   {
    "fieldname": "breakup_section",
@@ -475,12 +497,14 @@
    "fieldtype": "Code",
    "label": "Cost Breakup (JSON)",
    "hidden": 1,
-   "read_only": 1
+   "read_only": 1,
+   "print_hide": 1
   },
   {
    "fieldname": "cost_breakup_html",
    "fieldtype": "HTML",
-   "label": "Cost Breakup"
+   "label": "Cost Breakup",
+   "print_hide": 1
   },
   {
    "fieldname": "cost_section",
@@ -505,14 +529,16 @@
    "fieldname": "overhead_cost",
    "fieldtype": "Currency",
    "label": "Factory Overhead (rent + electricity + consumables + depreciation)",
-   "read_only": 1
+   "read_only": 1,
+   "print_hide": 1
   },
   {
    "fieldname": "internal_cost",
    "fieldtype": "Currency",
    "label": "Internal Cost",
    "read_only": 1,
-   "bold": 1
+   "bold": 1,
+   "print_hide": 1
   },
   {
    "fieldname": "column_break_cost",

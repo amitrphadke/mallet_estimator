@@ -19,6 +19,7 @@ from mallet_estimator.inventory import (
 
 PRINT_FORMAT_NAME = "Mallet Client Estimate"
 JOB_CARD_PRINT_FORMAT_NAME = "Mallet Job Card"
+EXECUTION_PRINT_FORMAT_NAME = "Mallet Execution Estimate"
 WORKSPACE_NAME = "Mallet Estimator"
 
 # ERPNext auto-computes Operation.total_operation_time from sub-operations (so a
@@ -523,6 +524,7 @@ def verify_setup():
     chk("Routing", frappe.db.exists("Routing", ROUTING_NAME), ROUTING_NAME)
     chk("Print format", frappe.db.exists("Print Format", PRINT_FORMAT_NAME), PRINT_FORMAT_NAME)
     chk("Job Card print", frappe.db.exists("Print Format", JOB_CARD_PRINT_FORMAT_NAME), JOB_CARD_PRINT_FORMAT_NAME)
+    chk("Execution print", frappe.db.exists("Print Format", EXECUTION_PRINT_FORMAT_NAME), EXECUTION_PRINT_FORMAT_NAME)
     chk("Workspace", frappe.db.exists("Workspace", WORKSPACE_NAME), WORKSPACE_NAME)
 
     # F5 — assumed price list; F4 — Project material-choice table; F6 — allowance table.
@@ -673,4 +675,5 @@ def _upsert_print_format(name, doc_type, template_file):
 def ensure_print_format():
     _upsert_print_format(PRINT_FORMAT_NAME, "Estimate", "mallet_client_estimate.html")
     _upsert_print_format(JOB_CARD_PRINT_FORMAT_NAME, "Job Card", "mallet_job_card.html")
+    _upsert_print_format(EXECUTION_PRINT_FORMAT_NAME, "Estimate", "mallet_execution_estimate.html")
     frappe.db.commit()

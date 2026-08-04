@@ -1,0 +1,101 @@
+{%- macro money(v) -%}₹{{ "{:,.2f}".format(v or 0) }}{%- endmacro -%}
+{%- set p = doc.print_payload("execution") -%}
+<div class="mee">
+  <style>
+    .mee { font-size: 12px; color: #1f2933; }
+    .mee h2 { color: #7c2d12; margin: 0; font-size: 20px; }
+    .mee h4 { color: #7c2d12; margin: 14px 0 6px; font-size: 14px; }
+    .mee .head { display: flex; justify-content: space-between; border-bottom: 3px solid #7c2d12; padding-bottom: 10px; margin-bottom: 12px; }
+    .mee .lbl { color: #6b7280; font-size: 10px; text-transform: uppercase; letter-spacing: .5px; }
+    .mee .status { display: inline-block; padding: 4px 14px; border: 2px solid #7c2d12; border-radius: 5px; font-weight: 700; letter-spacing: 1px; }
+    .mee table { width: 100%; border-collapse: collapse; margin-bottom: 6px; }
+    .mee td, .mee th { padding: 4px 7px; border-bottom: 1px solid #eef0f2; }
+    .mee th { background: #fbf3ec; text-align: left; font-size: 11px; }
+    .mee td.r, .mee th.r { text-align: right; }
+    .mee .roomrow td { background: #faf6f2; font-weight: 700; }
+    .mee .grand { max-width: 360px; margin-left: auto; margin-top: 12px; }
+    .mee .grand td { border: 0; padding: 3px 7px; }
+    .mee .grand .tot td { border-top: 2px solid #7c2d12; font-weight: 700; font-size: 13px; }
+    .mee .page { page-break-before: always; }
+    .mee .views { display: flex; flex-wrap: wrap; gap: 6px; }
+    .mee .views figure { margin: 0; width: 24%; text-align: center; }
+    .mee .views img { max-width: 100%; max-height: 160px; }
+    .mee .views figcaption { font-size: 9.5px; color: #6b7280; }
+    .mee .muted { color: #6b7280; font-size: 11px; }
+  </style>
+
+  <div class="head">
+    <div>
+      <h2>Execution Estimate — Factory Copy</h2>
+      <div class="muted">{{ doc.name }} · {{ doc.project }} · {{ doc.customer }} · {{ frappe.utils.formatdate(doc.modified) }}</div>
+    </div>
+    <div style="text-align:right"><span class="status">{{ p.status }}</span></div>
+  </div>
+  <p class="muted">Prices below are the CLIENT-SHARED figures (assumed purchase rates and client
+  totals) — identical to the client estimate by design.</p>
+
+  {% set ns = namespace(sr=0) %}
+  <table>
+    <thead><tr><th>Sr</th><th>SKU</th><th>Room</th><th>Item</th><th>Dimensions</th><th class="r">Sq ft</th><th class="r">Client Price</th></tr></thead>
+    <tbody>
+    {% for g in p.rooms %}
+      {% for row in g.rows %}
+        {% set ns.sr = ns.sr + 1 %}
+        <tr><td>{{ ns.sr }}</td><td>{{ row.sku }}</td><td>{{ g.room }}</td><td>{{ row.item }}</td>
+            <td>{{ row.dims }}</td><td class="r">{{ "%.2f"|format(row.sqft) }}</td><td class="r">{{ money(row.price) }}</td></tr>
+      {% endfor %}
+      <tr class="roomrow"><td colspan="5">{{ g.room }} — subtotal</td><td class="r">{{ "%.2f"|format(g.sqft) }}</td><td class="r">{{ money(g.subtotal) }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  <table class="grand">
+    <tr><td>Subtotal</td><td class="r">{{ money(p.subtotal) }}</td></tr>
+    <tr><td>Transport</td><td class="r">{{ money(p.transport) }}</td></tr>
+    <tr><td>GST {{ "%g"|format(p.gst_pct) }}%</td><td class="r">{{ money(p.gst) }}</td></tr>
+    <tr class="tot"><td>Grand Total</td><td class="r">{{ money(p.grand_total) }}</td></tr>
+  </table>
+
+  {% if p.assumed_rates %}
+  <h4>Assumed Unit Rates</h4>
+  <table>
+    <thead><tr><th>Item</th><th>Category</th><th>Unit</th><th class="r">Assumed Rate</th></tr></thead>
+    <tbody>
+    {% for r in p.assumed_rates %}
+      <tr><td>{{ r.item }}</td><td>{{ r.bucket }}</td><td>{{ r.uom }}</td><td class="r">{{ money(r.rate) }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+
+  {% for s in p.gallery %}
+  <div class="page"></div>
+  <h4>{{ s.sku }} — {{ s.article }} <span class="muted">({{ s.room }} · {{ s.dims }} · {{ money(s.price) }})</span></h4>
+  {% if s.views %}
+  <div class="views">
+    {% for label, url in s.views %}
+      <figure><img src="{{ url }}"><figcaption>{{ label }}</figcaption></figure>
+    {% endfor %}
+  </div>
+  {% elif s.iso %}<img src="{{ s.iso }}" style="max-height:260px">{% endif %}
+
+  <h4 style="font-size:12.5px">Client-choosable (gallery) items</h4>
+  <table>
+    <thead><tr><th>Item</th><th>Category</th><th class="r">Qty</th><th>Unit</th><th class="r">Budget</th></tr></thead>
+    <tbody>
+    {% for m in s.choose %}
+      <tr><td>{{ m.item }}</td><td>{{ m.bucket }}</td><td class="r">{{ "%g"|format(m.qty) }}</td><td>{{ m.uom }}</td><td class="r">{{ money(m.budget) }}</td></tr>
+    {% else %}<tr><td colspan="5" class="muted">None.</td></tr>{% endfor %}
+    </tbody>
+  </table>
+
+  <h4 style="font-size:12.5px">Purchase reference — ply / internal laminate / internal edge / joinery</h4>
+  <table>
+    <thead><tr><th>Item</th><th>Category</th><th class="r">Qty</th><th>Unit</th><th class="r">Budget</th></tr></thead>
+    <tbody>
+    {% for m in s.internal %}
+      <tr><td>{{ m.item }}</td><td>{{ m.bucket }}</td><td class="r">{{ "%g"|format(m.qty) }}</td><td>{{ m.uom }}</td><td class="r">{{ money(m.budget) }}</td></tr>
+    {% else %}<tr><td colspan="5" class="muted">No internal material lines (import the SKU).</td></tr>{% endfor %}
+    </tbody>
+  </table>
+  {% endfor %}
+</div>

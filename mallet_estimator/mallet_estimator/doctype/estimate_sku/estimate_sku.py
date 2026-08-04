@@ -136,6 +136,8 @@ class EstimateSKU(Document):
             self.import_drivers = ""
         if not self.is_new() and self.has_value_changed("views_pdf") and not self.views_pdf:
             self.article_image = None
+            if self.meta.has_field("views_images"):
+                self.views_images = ""
 
     def on_update(self):
         if self.create_item:
@@ -148,6 +150,10 @@ class EstimateSKU(Document):
         Attachments sidebar: delete File docs attached to this SKU whose URL no
         attach field references any more (repeat ISO extracts included)."""
         keep = {self.get(f) for f in self.ATTACH_FIELDS if self.get(f)}
+        try:
+            keep |= set((json.loads(self.get("views_images") or "{}")).values())
+        except Exception:
+            pass
         for fd in frappe.get_all(
             "File", filters={"attached_to_doctype": self.doctype, "attached_to_name": self.name},
             fields=["name", "file_url"],
@@ -239,6 +245,10 @@ class EstimateSKU(Document):
             url = views_pdf.attach_iso_image(self, content)
             if url:
                 self.article_image = url
+            # ALL view renders (8 views + any page added later, e.g. doors-off)
+            # for the execution print; URLs tracked so the file GC keeps them.
+            if self.meta.has_field("views_images"):
+                self.views_images = json.dumps(views_pdf.attach_view_images(self, content))
             else:
                 frappe.msgprint(_("No 'IsoView' page found in the 7 Views PDF — attach an Article Image manually."),
                                 indicator="orange")
