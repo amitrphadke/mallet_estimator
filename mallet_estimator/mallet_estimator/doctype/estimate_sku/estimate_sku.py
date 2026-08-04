@@ -976,6 +976,7 @@ class EstimateSKU(Document):
         moved. Called on form load so Phase Cost / Std (master) never show a value
         that pre-dates a workstation-rate or Operation-time change."""
         before = self.client_total or 0
+        before_days = float(self.get("est_days") or 0)
         before_std = [row.std_min for row in (self.labor or [])]
         before_rates = [row.unit_cost for row in (self.materials or [])]
         self.refresh_material_rates()
@@ -983,7 +984,8 @@ class EstimateSKU(Document):
         after_std = [row.std_min for row in (self.labor or [])]
         after_rates = [row.unit_cost for row in (self.materials or [])]
         if abs((self.client_total or 0) - before) > 0.005 or before_std != after_std \
-                or before_rates != after_rates:
+                or before_rates != after_rates \
+                or abs(float(self.get("est_days") or 0) - before_days) > 0.005:
             self.save(ignore_permissions=True)
             return {"changed": True, "client_total": self.client_total}
         return {"changed": False, "client_total": self.client_total}
