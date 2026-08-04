@@ -21,10 +21,13 @@ class Estimate(Document):
                                     update_modified=False)
 
     def validate(self):
-        # Only a draft (docstatus 0) re-pulls SKUs. Once submitted (approved) the
-        # SKU list and totals are frozen as the baseline; changes go via Amend.
+        # SKU selection is the ESTIMATE's feature: rows are added by hand (or via
+        # 'Add all project SKUs'), so the same SKU can serve many estimates —
+        # e.g. one estimate per-SKU-PDFs vs one whole-project-PDF, compared side
+        # by side. A draft only refreshes the DATA of the rows it carries; once
+        # submitted the list and totals are frozen as the baseline.
         if self.docstatus == 0:
-            self.aggregate_project_skus()
+            self.refresh_sku_rows()
         # Provisional allowances (F6) — amounts are a simple qty x assumed rate,
         # recomputed every save so the client-print subtotal is always right.
         self.compute_allowances()
@@ -78,28 +81,41 @@ class Estimate(Document):
 
     @frappe.whitelist()
     def refresh_skus(self):
-        """Re-pull every Estimate SKU of this Project into a draft estimate.
-        Used by the 'Refresh SKUs' button after adding a SKU post-creation."""
+        """'Add all project SKUs' — append every Estimate SKU of this Project
+        that isn't already a row. Rows the user removed by hand stay removed
+        only if they delete them again after this; nothing is ever dropped
+        automatically."""
         if self.docstatus != 0:
             frappe.throw(_("This estimate is approved (submitted). Amend it to change the SKUs."))
-        self.aggregate_project_skus()
-        self.save(ignore_permissions=True)
-        return {"count": len(self.skus), "client": self.total_client}
-
-    def aggregate_project_skus(self):
-        """Rebuild the SKU list from every Estimate SKU linked to this Project
-        (no manual add, so a SKU can't be counted twice) and roll up the totals."""
-        names = frappe.get_all(
-            "Estimate SKU",
-            filters={"project": self.project, "exclude_from_estimate": ["!=", 1]},
+        existing = {r.estimate_sku for r in (self.skus or [])}
+        added = 0
+        for name in frappe.get_all(
+            "Estimate SKU", filters={"project": self.project},
             order_by="room asc, article_name asc", pluck="name",
-        ) if self.project else []
-        self.set("skus", [])
+        ) if self.project else []:
+            if name not in existing:
+                self.append("skus", {"estimate_sku": name})
+                added += 1
+        self.save(ignore_permissions=True)
+        return {"count": len(self.skus), "added": added, "client": self.total_client}
+
+    def refresh_sku_rows(self):
+        """Refresh the DATA of the rows this estimate carries (dedupe, reprice
+        unfrozen SKUs at current margins/rates) and roll up the totals. The row
+        LIST itself is the user's selection — never rebuilt automatically."""
+        seen, rows = set(), []
+        for r in self.skus or []:
+            if r.estimate_sku and r.estimate_sku not in seen:
+                seen.add(r.estimate_sku)
+                rows.append(r)
+        self.set("skus", rows)
         totals = dict(material=0, labor=0, overhead=0, design=0, internal=0, client=0)
         self._client_material_sum = 0.0
         self._sqft_sum = 0.0
-        for name in names:
-            s = frappe.get_doc("Estimate SKU", name)
+        for r in rows:
+            if not frappe.db.exists("Estimate SKU", r.estimate_sku):
+                continue
+            s = frappe.get_doc("Estimate SKU", r.estimate_sku)
             # Reprice at the CURRENT margins/workstation rates before reading —
             # stored totals can pre-date a margin change (frozen SKUs keep the
             # values they were quoted at).
@@ -107,18 +123,15 @@ class Estimate(Document):
                 try:
                     s.compute_costs()
                 except Exception:
-                    frappe.log_error(frappe.get_traceback(), f"estimate reprice {name}")
+                    frappe.log_error(frappe.get_traceback(), f"estimate reprice {s.name}")
             self._client_material_sum += float(s.client_material or 0)
             blk = s.facial_sqft_block() or {}
             self._sqft_sum += float(blk.get("sqft") or 0)
-            self.append("skus", {
-                "estimate_sku": s.name,
-                "item": s.item,
-                "room": s.room,
-                "article_name": s.article_name,
-                "internal_cost": s.internal_cost,
-                "client_total": s.client_total,
-            })
+            r.item = s.item
+            r.room = s.room
+            r.article_name = s.article_name
+            r.internal_cost = s.internal_cost
+            r.client_total = s.client_total
             totals["material"] += s.material_cost or 0
             totals["labor"] += s.labor_cost or 0
             totals["overhead"] += s.overhead_cost or 0
@@ -136,6 +149,49 @@ class Estimate(Document):
         # right after in validate) adds the consolidated trips + GST on top.
         self.total_internal = totals["internal"]
         self.total_client = totals["client"]
+
+    @frappe.whitelist()
+    def compare_with(self, other):
+        """Compare this estimate with another (e.g. per-SKU PDFs vs the whole
+        project modelled as ONE SketchUp file) — bucket by bucket, with the
+        scale saving in amount and %. Both estimates should carry the same SKUs;
+        the numbers tell how much material + operation time the single-file
+        design saves."""
+        if not other or other == self.name:
+            frappe.throw(_("Pick a DIFFERENT estimate to compare with."))
+        b_doc = frappe.get_doc("Estimate", other)
+
+        def parts(doc):
+            d = json.loads(doc.cost_breakup or "{}")
+            bif = d.get("bifurcation") or {}
+            return (
+                {r["label"]: r["amount"] for r in bif.get("rows", [])},
+                bif, d.get("sqft"),
+            )
+
+        a_rows, a_bif, a_sq = parts(self)
+        b_rows, b_bif, b_sq = parts(b_doc)
+        if not a_bif or not b_bif:
+            frappe.throw(_("Both estimates need a saved cost bifurcation — open and save each once."))
+        labels = list(a_rows) + [l for l in b_rows if l not in a_rows]
+        rows = []
+        for label in labels:
+            a, b = float(a_rows.get(label) or 0), float(b_rows.get(label) or 0)
+            rows.append({"label": label, "a": a, "b": b, "delta": b - a,
+                         "pct": ((b - a) / a * 100.0) if a else 0})
+        for label, a, b in (
+            (_("Total before taxes"), a_bif.get("pre_tax") or 0, b_bif.get("pre_tax") or 0),
+            (_("Taxes"), a_bif.get("taxes") or 0, b_bif.get("taxes") or 0),
+            (_("Grand Total incl. GST"), a_bif.get("grand_total") or 0, b_bif.get("grand_total") or 0),
+        ):
+            rows.append({"label": label, "a": a, "b": b, "delta": b - a,
+                         "pct": ((b - a) / a * 100.0) if a else 0, "bold": 1})
+        if a_sq and b_sq:
+            rows.append({"label": _("Rate / sq ft (pre-tax)"), "a": a_sq.get("total_per_sqft") or 0,
+                         "b": b_sq.get("total_per_sqft") or 0,
+                         "delta": (b_sq.get("total_per_sqft") or 0) - (a_sq.get("total_per_sqft") or 0),
+                         "pct": 0})
+        return {"a": self.name, "b": b_doc.name, "rows": rows}
 
     def build_cost_breakup(self):
         """The same Material / Labor / Design / Overhead / Transport / Taxes
@@ -171,60 +227,6 @@ class Estimate(Document):
                 "total_per_sqft": (amounts["client_material"] + labor_side) / sqft,
             }
         self.cost_breakup = json.dumps({"bifurcation": bif, "sqft": sq})
-
-    @frappe.whitelist()
-    def create_combined_sku(self):
-        """Scale mode: ONE SKU for the whole estimate. All member SKUs are laid
-        out in the description (code, article, room, WxDxH, facial sqft) and each
-        member's ISO render flows in as an attachment — the user then attaches
-        the WHOLE-PROJECT estimate PDF + part list (all SKUs combined in
-        SketchUp/OCL) so cutting shares sheets and operations run in one go.
-        Created with exclude_from_estimate=1 so nothing double-counts until the
-        user decides to switch over."""
-        if not self.skus:
-            frappe.throw(_("This estimate has no SKUs to combine."))
-        members = [frappe.get_doc("Estimate SKU", r.estimate_sku) for r in self.skus]
-        rows, sqft_total = [], 0.0
-        for s in members:
-            blk = s.facial_sqft_block() or {}
-            sqft_total += float(blk.get("sqft") or 0)
-            rows.append(
-                f"{s.sku_code or s.name} | {s.article_name or ''} | {s.room or ''} | "
-                f"{int(s.outer_w or 0)} x {int(s.outer_d or 0)} x {int(s.outer_h or 0)} mm | "
-                f"{(blk.get('sqft') or 0):.2f} sqft"
-            )
-        desc = (
-            "COMBINED SKU — the whole estimate designed as one article for shared "
-            "material + execution efficiency. Attach the WHOLE-PROJECT Estimate PDF "
-            "and Part List exported from OCL (all SKUs in one SketchUp model).\n\n"
-            "Member SKUs (code | article | room | W x D x H | facial sqft):\n"
-            + "\n".join(rows)
-            + f"\n\nTotal facial area: {sqft_total:.2f} sqft"
-        )
-        doc = frappe.get_doc({
-            "doctype": "Estimate SKU",
-            "project": self.project,
-            "customer": self.customer,
-            "room": members[0].room,
-            "article_name": f"{self.name} Combined",
-            "auto_name": 1,
-            "exclude_from_estimate": 1,
-            "description": desc,
-        })
-        doc.insert(ignore_permissions=True)
-        # each member's ISO render flows in (named member_* — exempt from the
-        # attach-field GC on Estimate SKU)
-        for s in members:
-            if s.article_image:
-                try:
-                    frappe.get_doc({
-                        "doctype": "File", "file_url": s.article_image,
-                        "file_name": f"member_{(s.sku_code or s.name)}_iso",
-                        "attached_to_doctype": "Estimate SKU", "attached_to_name": doc.name,
-                    }).insert(ignore_permissions=True)
-                except Exception:
-                    frappe.log_error(frappe.get_traceback(), f"combined sku iso {s.name}")
-        return {"name": doc.name, "members": len(members), "sqft": sqft_total}
 
     @frappe.whitelist()
     def create_quotation(self):

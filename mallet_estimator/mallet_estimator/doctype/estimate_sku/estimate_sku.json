@@ -18,7 +18,6 @@
   "item",
   "create_item",
   "include_misc",
-  "exclude_from_estimate",
   "spec_section",
   "outer_w",
   "outer_d",
@@ -146,12 +145,6 @@
    "fieldtype": "Check",
    "label": "Include miscellaneous / extra step (17)",
    "default": "1"
-  },
-  {
-   "fieldname": "exclude_from_estimate",
-   "fieldtype": "Check",
-   "label": "Exclude from Estimate",
-   "description": "Tick to DELINK this SKU from the project's draft estimates — it is dropped from the estimate on its next save and can then be deleted."
   },
   {
    "fieldname": "spec_section",

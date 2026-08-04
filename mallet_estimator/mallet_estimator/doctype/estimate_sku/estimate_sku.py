@@ -150,10 +150,8 @@ class EstimateSKU(Document):
         keep = {self.get(f) for f in self.ATTACH_FIELDS if self.get(f)}
         for fd in frappe.get_all(
             "File", filters={"attached_to_doctype": self.doctype, "attached_to_name": self.name},
-            fields=["name", "file_url", "file_name"],
+            fields=["name", "file_url"],
         ):
-            if str(fd.file_name or "").startswith("member_"):
-                continue  # a combined SKU's member ISO renders live here on purpose
             if fd.file_url not in keep:
                 try:
                     frappe.delete_doc("File", fd.name, force=True, ignore_permissions=True)
@@ -541,18 +539,19 @@ class EstimateSKU(Document):
                 row.qty = q[op]
 
     def refresh_project_estimates(self):
-        """Keep any DRAFT Estimate of this SKU's Project in sync, so a SKU added
-        (or edited) after the Estimate was created is pulled in automatically.
-        Submitted (approved) estimates are frozen and never touched."""
-        if not self.project:
-            return
+        """Refresh the totals of any DRAFT Estimate that CARRIES this SKU, so an
+        edit here shows there without reopening. SKU selection belongs to the
+        Estimate (rows are picked by hand) — nothing is ever added or removed
+        from an estimate automatically; submitted estimates are never touched."""
         for name in frappe.get_all(
-            "Estimate", filters={"project": self.project, "docstatus": 0}, pluck="name"
+            "Execution Estimate SKU", filters={"estimate_sku": self.name},
+            pluck="parent", distinct=True,
         ):
+            if frappe.db.get_value("Estimate", name, "docstatus") != 0:
+                continue
             try:
                 est = frappe.get_doc("Estimate", name)
-                est.aggregate_project_skus()
-                est.save(ignore_permissions=True)
+                est.save(ignore_permissions=True)  # validate refreshes row data + totals
             except Exception:
                 frappe.log_error(frappe.get_traceback(), f"mallet_estimator refresh estimate {name}")
 

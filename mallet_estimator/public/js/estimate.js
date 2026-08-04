@@ -13,43 +13,45 @@ frappe.ui.form.on("Estimate", {
       frm.add_custom_button(__("Set margins %"), () => estimate_margins_dialog(frm));
     }
 
-    // Scale mode: design the WHOLE estimate as one SKU (shared sheets, one-go
-    // cutting) — creates a combined Estimate SKU pre-filled with every member
-    // SKU's dims + facial sqft and their ISO renders; attach the whole-project
-    // estimate PDF + part list there.
-    if (!frm.is_new() && (frm.doc.skus || []).length) {
-      frm.add_custom_button(__("Create combined SKU (scale mode)"), () => {
-        frappe.confirm(
-          __("Create ONE combined SKU carrying every member SKU's details and facial area? It is excluded from estimate totals until you switch over."),
-          () =>
-            frm.call("create_combined_sku").then((r) => {
+    // Scale comparison: pick another estimate (same SKUs, but modelled as ONE
+    // SketchUp file with its own whole-project PDFs) and see bucket-by-bucket
+    // what the single-file design saves in material + operation time.
+    if (!frm.is_new()) {
+      frm.add_custom_button(__("Compare with estimate…"), () => {
+        const d = new frappe.ui.Dialog({
+          title: __("Compare estimates"),
+          fields: [{
+            fieldname: "other", fieldtype: "Link", options: "Estimate", reqd: 1,
+            label: __("Compare with"),
+            get_query: () => ({ filters: { name: ["!=", frm.doc.name] } }),
+          }],
+          primary_action_label: __("Compare"),
+          primary_action(values) {
+            d.hide();
+            frm.call("compare_with", { other: values.other }).then((r) => {
               const m = (r && r.message) || {};
-              if (m.name) {
-                frappe.show_alert({
-                  message: __("Combined SKU {0}: {1} member(s), {2} sq ft facial area", [m.name, m.members, (m.sqft || 0).toFixed(2)]),
-                  indicator: "green",
-                }, 6);
-                frappe.set_route("Form", "Estimate SKU", m.name);
-              }
-            })
-        );
+              if (m.rows) show_estimate_comparison(m);
+            });
+          },
+        });
+        d.show();
       });
     }
 
     // --- Draft: pull in SKUs added after this estimate was created ----------
     if (draft && !frm.is_new()) {
-      frm.add_custom_button(__("Refresh SKUs"), () => {
+      frm.add_custom_button(__("Add all project SKUs"), () => {
         frm.call("refresh_skus").then((r) => {
           const m = (r && r.message) || {};
           frappe.show_alert({
-            message: __("Pulled {0} SKU(s) · total {1}", [m.count || 0, format_currency(m.client || 0)]),
+            message: __("Added {0} SKU(s) · {1} total · {2}", [m.added || 0, m.count || 0, format_currency(m.client || 0)]),
             indicator: "green",
           });
           frm.reload_doc();
         });
       }).addClass("btn-primary");
       frm.dashboard.add_comment(
-        __("Draft — SKUs auto-refresh as you add them. <b>Submit</b> to approve and freeze this estimate before quoting."),
+        __("Draft — pick this estimate's SKUs yourself (Add Row in the SKU table, or 'Add all project SKUs'). The same SKU can serve many estimates. <b>Submit</b> to approve and freeze before quoting."),
         "blue", true
       );
     }
@@ -146,6 +148,37 @@ function estimate_margins_dialog(frm) {
       },
     });
     d.show();
+  });
+}
+
+// Side-by-side estimate comparison (per-SKU PDFs vs one-file whole-project
+// PDFs): each bucket's amount in both, the delta, and the saving %.
+function show_estimate_comparison(m) {
+  const money = (v) => format_currency(v || 0);
+  const esc = frappe.utils.escape_html;
+  const rows = (m.rows || []).map((r) => {
+    const good = (r.delta || 0) < 0; // B cheaper than A = saving
+    const style = r.bold ? "font-weight:700;" : "";
+    const dstyle = `${style}color:${good ? "var(--green-600, #16794c)" : r.delta ? "var(--red-600, #c0392b)" : "inherit"}`;
+    return `<tr style="${style}"><td>${esc(r.label)}</td>
+      <td class="text-right">${money(r.a)}</td>
+      <td class="text-right">${money(r.b)}</td>
+      <td class="text-right" style="${dstyle}">${money(r.delta)}</td>
+      <td class="text-right" style="${dstyle}">${r.pct ? r.pct.toFixed(1) + "%" : ""}</td></tr>`;
+  }).join("");
+  frappe.msgprint({
+    title: __("Estimate comparison"),
+    wide: true,
+    message: `
+      <table class="table table-bordered" style="font-size:12.5px">
+        <thead><tr><th>${__("Component")}</th>
+          <th class="text-right">${esc(m.a)}</th>
+          <th class="text-right">${esc(m.b)}</th>
+          <th class="text-right">${__("Δ (B − A)")}</th>
+          <th class="text-right">${__("Δ %")}</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+      <p class="text-muted" style="font-size:11.5px">${__("Green = the compared estimate is cheaper (the scale saving of the one-file design).")}</p>`,
   });
 }
 
