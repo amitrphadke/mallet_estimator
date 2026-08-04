@@ -310,15 +310,22 @@ class EstimateSKU(Document):
             pl_text = views_pdf._pdf_text(pl_content) if self.partlist_pdf else ""
             est_text = estimate_pdf.read_pdf_text(_file_content(self.estimate_pdf))
             brands = frappe.get_all("Manufacturer", pluck="name")
-            existing = {((r.domain or "Laminate"), (r.slot or "").strip().lower()[:1])
+            existing = {((r.domain or "Laminate"), (r.slot or "").strip().lower())
                         for r in (self.get("sku_decors") or [])}
             for d in decor.extract_slot_map(est_text + "\n" + pl_text, brands):
-                dom = "Edge Band" if str(d["placeholder"]).startswith("EB_") else "Laminate"
-                key = (dom, d["slot"])
-                if key in existing or not (d.get("brand") or d.get("catalogue")):
+                ph = str(d["placeholder"])
+                dom = "Edge Band" if ph.startswith("EB_") else "Laminate"
+                # A description block that describes the placeholder's DECIDING
+                # letter maps to its slot INSTANCE (b on ..._b_a1 → row b1 —
+                # SketchUp's paste-rename suffix namespaces the whole material);
+                # other blocks (the non-deciding side) fill their plain letter.
+                first = (decor.trailing_slots(ph) or [""])[0][:1]
+                slot = decor.slot_key(ph) if d["slot"] == first else d["slot"]
+                key = (dom, slot)
+                if not slot or key in existing or not (d.get("brand") or d.get("catalogue")):
                     continue
                 self.append("sku_decors", {
-                    "slot": d["slot"], "domain": dom, "brand": d.get("brand"),
+                    "slot": slot, "domain": dom, "brand": d.get("brand"),
                     "code": d.get("catalogue"), "decor_name": d.get("name"),
                     "year": d.get("year"), "short": d.get("short"),
                 })
@@ -505,8 +512,8 @@ class EstimateSKU(Document):
         Décor Slots table, THE single source of truth for what a/b/c mean."""
         lam, edge = {}, {}
         for row in self.get("sku_decors") or []:
-            slot = (row.slot or "").strip().lower()[:1]
-            if not slot:
+            slot = (row.slot or "").strip().lower()
+            if not decor.SLOT_TOKEN_RE.match(slot):
                 continue
             parsed = {
                 "brand": (row.brand or "").strip() or None,
@@ -546,7 +553,7 @@ class EstimateSKU(Document):
                 continue
             real, letter = decor.substitute_real_code(base, edge_shorts if is_edge else lam_shorts)
             if letter is None:
-                missing.add(f"{decor.trailing_slots(base)[0]} ({'Edge Band' if is_edge else 'Laminate'})")
+                missing.add(f"{decor.slot_key(base)} ({'Edge Band' if is_edge else 'Laminate'})")
                 real = base
             if (m.item or "") == real:
                 continue

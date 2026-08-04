@@ -211,18 +211,34 @@ def extract_slot_map(pdf_text, brands=None):
 
 
 
+SLOT_TOKEN_RE = re.compile(r"^[a-z]\d*$")
+
+
 def trailing_slots(code):
-    """The trailing slot letters of a placeholder, INCLUDING 'a':
-    SG_LAM_V1_16mm_b_a → ['b','a'];  SG_LAM_V0_a_a → ['a','a'];
-    EB_PVC_EX_c → ['c'];  SG_LAM_V1_16mm_VM6534 → [] (already real)."""
+    """The trailing slot tokens of a placeholder, INCLUDING 'a' and including
+    SketchUp's paste-rename digits: SG_LAM_V1_16mm_b_a → ['b','a'];
+    SG_LAM_V1_16mm_b_a1 → ['b','a1'];  EB_PVC_EX_b1 → ['b1'];
+    SG_LAM_V1_16mm_VM6534 → [] (already real)."""
     tokens = str(code or "").split("_")
     out = []
     for t in reversed(tokens):
-        if len(t) == 1 and t.isalpha() and t.islower():
+        if SLOT_TOKEN_RE.match(t):
             out.append(t)
         else:
             break
     return list(reversed(out))
+
+
+def slot_key(code):
+    """The slot INSTANCE that decides this placeholder's décor: the FIRST
+    trailing letter + the paste-rename suffix (the digits SketchUp appends to
+    the LAST token when a same-named material with a DIFFERENT definition is
+    pasted in). b_a → 'b'; b_a1 → 'b1' (a different décor than 'b');
+    EB_PVC_EX_b1 → 'b1'; a_b1 → 'a1'."""
+    toks = trailing_slots(code)
+    if not toks:
+        return None
+    return toks[0][0] + re.sub(r"^[a-z]", "", toks[-1])
 
 
 def short_code(parsed):
@@ -249,14 +265,16 @@ def substitute_real_code(code, slot_shorts):
         SG_LAM_V1_16mm_b_a + {b: VM6534} → SG_LAM_V1_16mm_VM6534
         SG_LAM_V0_a_a      + {a: GE1834} → SG_LAM_V0_GE1834
         EB_PVC_EX_b        + {b: VM6534} → EB_PVC_EX_VM6534
-    Returns (real_code, slot_letter) — or (code, None) when no décor is defined
-    for the first letter (the placeholder itself stays the item)."""
+    Suffixed placeholders (SketchUp paste-rename) are their OWN slot instance:
+        SG_LAM_V1_16mm_b_a1 + {b1: VM6534} → SG_LAM_V1_16mm_VM6534
+    Returns (real_code, slot_key) — or (code, None) when no décor is defined
+    for the deciding slot (the placeholder itself stays the item)."""
     letters = trailing_slots(code)
     if not letters:
         return code, None
-    first = letters[0]
-    short = slot_shorts.get(first)
+    key = slot_key(code)
+    short = slot_shorts.get(key)
     if not short:
         return code, None
     base = "_".join(str(code).split("_")[: -len(letters)])
-    return f"{base}_{short}", first
+    return f"{base}_{short}", key

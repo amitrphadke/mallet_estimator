@@ -257,7 +257,25 @@ jobs:
                && [ "$BCU" != "true" ] && [ "$HASH_OK" = "1" ] && [ "$UNMOVED" = "0" ]; then
               STABLE=$((STABLE + 1))
               if [ "$STABLE" -ge 2 ]; then
-                echo "✅ LIVE on Frappe Cloud — build ${DNAME}; all ${SITE_N} site(s) moved to the new bench running ${CURHASH:-$HASH}."
+                # Final proof: the SITE'S OWN bench must carry the hash we deployed.
+                # Two racing deploys can each build a bench; the site may have moved
+                # onto the OTHER one (seen 2026-08-04: site moved to a cancelled
+                # run's bench and every other signal looked green).
+                SITE_BENCH=$(printf '%s' "$BODY" | jq -r '[.message.sites[]?.bench] | first // ""')
+                SBHASH=""
+                if [ -n "$SITE_BENCH" ]; then
+                  call "${CLIENT_BASE}.get" "$(jq -nc --arg d 'Bench' --arg n "$SITE_BENCH" '{doctype:$d, name:$n}')"
+                  if is_json "$BODY"; then
+                    SBHASH=$(printf '%s' "$BODY" | jq -r --arg app "$APP" \
+                      '[.message.apps[]? | select(.app==$app) | (.hash // "")] | first // ""')
+                  fi
+                fi
+                if [ -n "$SBHASH" ] && [ "${SBHASH:0:12}" != "${HASH:0:12}" ]; then
+                  echo "site bench ${SITE_BENCH} carries ${SBHASH:0:12}, not deployed ${HASH:0:12} — a racing deploy took the swap; keep waiting."
+                  STABLE=0
+                  continue
+                fi
+                echo "✅ LIVE on Frappe Cloud — build ${DNAME}; all ${SITE_N} site(s) moved to bench ${SITE_BENCH:-?} running ${SBHASH:-${CURHASH:-$HASH}}."
                 exit 0
               fi
             else
