@@ -165,6 +165,15 @@ jobs:
             sleep 20
           done
 
+          # The bench each site runs BEFORE the update. A successful migrate MOVES
+          # the site onto the newly created bench; a stalled/failed one leaves this
+          # pointer unchanged. This is the ONLY site-level proof of the swap: the
+          # bench-level fields (current_hash / update_available) flip as soon as
+          # the new bench image EXISTS, regardless of whether the site migrated —
+          # which is exactly how stalled migrates false-greened this gate.
+          PRE_BENCHES=$(printf '%s' "$BODY" | jq -c '[ .message.sites[]? | {name, bench} ]')
+          echo "Pre-update site benches: $PRE_BENCHES"
+
           # --- 2. deploy AND update the sites (the dashboard "Update Now" path) --
           echo "Building the new bench and updating the site(s) ..."
           call "${BENCH_BASE}.deploy_and_update" \
@@ -223,25 +232,37 @@ jobs:
             CURHASH=$(printf '%s' "$BODY" | jq -r --arg app "$APP" \
               '.message.apps[]? | select(.app==$app) | (.current_hash // .hash // "")')
             CURHASH=${CURHASH:0:12}
-            echo "[$((i*20))s] build=${STATUS} deploy_in_progress=${DIP} bench_creating=${BCU} pending=${PENDING} running=${CURHASH:-?} deployed=${HASH:0:12}"
+
+            # THE swap proof: every site must have LEFT its pre-update bench.
+            # current_hash / update_available are BENCH-level — they report the new
+            # image the moment it exists, migrated or not. Only sites[].bench moves
+            # when the site itself does; a stalled migrate keeps it on the old bench.
+            SITE_N=$(printf '%s' "$BODY" | jq -r '[ .message.sites[]? ] | length')
+            UNMOVED=$(printf '%s' "$BODY" | jq -r --argjson pre "$PRE_BENCHES" '
+              [ .message.sites[]? as $s
+                | ($pre[]? | select(.name == $s.name)) as $p
+                | select($p.bench == $s.bench) ] | length')
+            # A transient poll with no site rows must never look like "all moved".
+            [ "$SITE_N" = "0" ] && UNMOVED=999
+            echo "[$((i*20))s] build=${STATUS} deploy_in_progress=${DIP} bench_creating=${BCU} pending=${PENDING} moved=$((SITE_N-UNMOVED<0?0:SITE_N-UNMOVED))/${SITE_N} running=${CURHASH:-?} deployed=${HASH:0:12}"
 
             # Done only when: build Success, nothing in progress, no pending update,
-            # the bench finished creating, AND the site runs the hash we deployed —
-            # held for two consecutive checks. If FC doesn't expose a running hash
-            # (CURHASH empty) we don't block on it, but bench_creation_underway must
-            # still have cleared, which is what a stuck/failed migrate never does.
+            # the bench finished creating, the bench carries the hash we deployed,
+            # AND every site has moved off its pre-update bench — held for two
+            # consecutive checks. If FC doesn't expose a running hash (CURHASH
+            # empty) we don't block on it; the site-bench move is the hard proof.
             HASH_OK=0
             { [ -z "$CURHASH" ] || [ "$CURHASH" = "${HASH:0:12}" ]; } && HASH_OK=1
             if [ "$BUILT" = "1" ] && [ "$DIP" != "true" ] && [ "$PENDING" = "0" ] \
-               && [ "$BCU" != "true" ] && [ "$HASH_OK" = "1" ]; then
+               && [ "$BCU" != "true" ] && [ "$HASH_OK" = "1" ] && [ "$UNMOVED" = "0" ]; then
               STABLE=$((STABLE + 1))
               if [ "$STABLE" -ge 2 ]; then
-                echo "✅ LIVE on Frappe Cloud — build ${DNAME}; site runs ${CURHASH:-$HASH} (build + migrate succeeded)."
+                echo "✅ LIVE on Frappe Cloud — build ${DNAME}; all ${SITE_N} site(s) moved to the new bench running ${CURHASH:-$HASH}."
                 exit 0
               fi
             else
               STABLE=0
             fi
           done
-          echo "::error::Deploy NOT confirmed live after 55 min (build=${STATUS}, pending=${PENDING}, bench_creating=${BCU}, site runs ${CURHASH:-?} vs deployed ${HASH:0:12}). The build likely succeeded but the SITE MIGRATION did not complete — a failed migrate leaves the site on the old bench. Check the Frappe Cloud dashboard job (site → Deploys/Insights) for the migrate traceback."
+          echo "::error::Deploy NOT confirmed live after 55 min (build=${STATUS}, pending=${PENDING}, bench_creating=${BCU}, ${UNMOVED:-?} site(s) still on their pre-update bench, bench runs ${CURHASH:-?} vs deployed ${HASH:0:12}). The build likely succeeded but the SITE MIGRATION did not complete — a failed migrate leaves the site on the old bench. Recover with: gh workflow run deploy-staging.yml -f force=true, then check the FC dashboard (site → Deploys/Insights) for the migrate traceback."
           exit 1
