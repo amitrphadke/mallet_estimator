@@ -36,8 +36,12 @@ frappe.ui.form.on("Estimate", {
           title: __("Compare estimates"),
           fields: [{
             fieldname: "other", fieldtype: "Link", options: "Estimate", reqd: 1,
-            label: __("Compare with"),
-            get_query: () => ({ filters: { name: ["!=", frm.doc.name] } }),
+            label: __("Compare with (same project & client)"),
+            get_query: () => ({ filters: {
+              name: ["!=", frm.doc.name],
+              project: frm.doc.project,
+              customer: frm.doc.customer,
+            } }),
           }],
           primary_action_label: __("Compare"),
           primary_action(values) {

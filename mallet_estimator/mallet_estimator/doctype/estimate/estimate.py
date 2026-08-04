@@ -287,6 +287,11 @@ class Estimate(Document):
         if not other or other == self.name:
             frappe.throw(_("Pick a DIFFERENT estimate to compare with."))
         b_doc = frappe.get_doc("Estimate", other)
+        # Comparison is only meaningful within the same job: same project AND
+        # same client (per-SKU-PDFs vs one-file design of the SAME scope).
+        if (b_doc.project or "") != (self.project or "") or (b_doc.customer or "") != (self.customer or ""):
+            frappe.throw(_("Compare estimates of the SAME project and client — {0} belongs to {1} / {2}.")
+                         .format(other, b_doc.project or "?", b_doc.customer or "?"))
 
         def parts(doc):
             d = json.loads(doc.cost_breakup or "{}")
