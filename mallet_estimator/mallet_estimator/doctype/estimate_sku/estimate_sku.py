@@ -942,8 +942,11 @@ class EstimateSKU(Document):
         # I-days: a human's productive day = 360 min (6 of 8 hrs). The SKU takes
         # as long as its BUSIEST trade — max(carpenter, helper minutes) ÷ 360.
         if self.meta.has_field("est_days"):
-            self.est_days = max(float(r.get("carp_min_total") or 0),
-                                float(r.get("helper_min_total") or 0)) / 360.0
+            # round at SOURCE to the field's 1-decimal precision — an unrounded
+            # value vs the stored rounded one made recompute() report 'changed'
+            # on every form open (reload loop)
+            self.est_days = round(max(float(r.get("carp_min_total") or 0),
+                                      float(r.get("helper_min_total") or 0)) / 360.0, 1)
         self.compute_execution()
 
     def compute_execution(self):
@@ -1110,7 +1113,7 @@ class EstimateSKU(Document):
         after_rates = [row.unit_cost for row in (self.materials or [])]
         if abs((self.client_total or 0) - before) > 0.005 or before_std != after_std \
                 or before_rates != after_rates \
-                or abs(float(self.get("est_days") or 0) - before_days) > 0.005:
+                or abs(float(self.get("est_days") or 0) - before_days) > 0.05:
             self.save(ignore_permissions=True)
             return {"changed": True, "client_total": self.client_total}
         return {"changed": False, "client_total": self.client_total}
