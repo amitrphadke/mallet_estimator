@@ -82,7 +82,8 @@
   "column_break_cost",
   "client_material",
   "client_design_exec",
-  "client_total"
+  "client_total",
+  "est_days"
  ],
  "fields": [
   {
@@ -562,6 +563,15 @@
    "label": "Client: SKU Total",
    "read_only": 1,
    "bold": 1
+  },
+  {
+   "fieldname": "est_days",
+   "fieldtype": "Float",
+   "label": "Estimated Days",
+   "read_only": 1,
+   "bold": 1,
+   "precision": "1",
+   "description": "max(carpenter, helper) minutes / 360 productive min per day"
   },
   {
    "fieldname": "rates_frozen",

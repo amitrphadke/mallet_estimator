@@ -814,6 +814,11 @@ class EstimateSKU(Document):
         ):
             if self.meta.has_field(k):
                 self.set(k, r.get(k, 0))
+        # I-days: a human's productive day = 360 min (6 of 8 hrs). The SKU takes
+        # as long as its BUSIEST trade — max(carpenter, helper minutes) ÷ 360.
+        if self.meta.has_field("est_days"):
+            self.est_days = max(float(r.get("carp_min_total") or 0),
+                                float(r.get("helper_min_total") or 0)) / 360.0
         self.compute_execution()
 
     def compute_execution(self):

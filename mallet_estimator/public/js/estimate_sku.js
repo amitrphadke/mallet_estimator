@@ -282,6 +282,12 @@ function update_live_totals(frm) {
   frm.set_value("client_material", cm);
   frm.set_value("client_design_exec", cde);
   frm.set_value("client_total", cm + cde);
+  // I-days live floor: carpenter minutes / 360 (server adds the helper side on save)
+  if (frm.get_field("est_days")) {
+    const mins = (frm.doc.labor || []).reduce(
+      (s, r) => s + ((r.is_misc && !frm.doc.include_misc) ? 0 : (r.carp_total || 0)), 0);
+    frm.set_value("est_days", mins / 360);
+  }
   update_live_breakup(frm);  // the summary tables move with the totals
 }
 

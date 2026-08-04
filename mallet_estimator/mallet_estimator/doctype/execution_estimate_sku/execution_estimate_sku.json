@@ -12,7 +12,8 @@
   "internal_cost",
   "client_total",
   "profit",
-  "margin_pct"
+  "margin_pct",
+  "est_days"
  ],
  "fields": [
   {
@@ -21,7 +22,8 @@
    "label": "Estimate SKU",
    "options": "Estimate SKU",
    "in_list_view": 1,
-   "reqd": 1
+   "reqd": 1,
+   "columns": 2
   },
   {
    "fieldname": "article_name",
@@ -29,7 +31,8 @@
    "label": "Article",
    "fetch_from": "estimate_sku.article_name",
    "read_only": 1,
-   "in_list_view": 1
+   "in_list_view": 1,
+   "columns": 2
   },
   {
    "fieldname": "room",
@@ -37,7 +40,8 @@
    "label": "Room",
    "fetch_from": "estimate_sku.room",
    "read_only": 1,
-   "in_list_view": 1
+   "in_list_view": 1,
+   "columns": 1
   },
   {
    "fieldname": "item",
@@ -45,7 +49,8 @@
    "label": "Item",
    "options": "Item",
    "fetch_from": "estimate_sku.item",
-   "read_only": 1
+   "read_only": 1,
+   "in_list_view": 0
   },
   {
    "fieldname": "internal_cost",
@@ -53,7 +58,7 @@
    "label": "Internal",
    "fetch_from": "estimate_sku.internal_cost",
    "read_only": 1,
-   "in_list_view": 1,
+   "in_list_view": 0,
    "print_hide": 1
   },
   {
@@ -62,7 +67,8 @@
    "label": "To Client",
    "fetch_from": "estimate_sku.client_total",
    "read_only": 1,
-   "in_list_view": 1
+   "in_list_view": 1,
+   "columns": 2
   },
   {
    "fieldname": "profit",
@@ -71,7 +77,8 @@
    "read_only": 1,
    "in_list_view": 1,
    "description": "client total + this SKU's transport - internal cost",
-   "print_hide": 1
+   "print_hide": 1,
+   "columns": 1
   },
   {
    "fieldname": "margin_pct",
@@ -79,7 +86,17 @@
    "label": "Margin %",
    "read_only": 1,
    "in_list_view": 1,
-   "print_hide": 1
+   "print_hide": 1,
+   "columns": 1
+  },
+  {
+   "fieldname": "est_days",
+   "fieldtype": "Float",
+   "label": "Days",
+   "read_only": 1,
+   "in_list_view": 1,
+   "precision": "1",
+   "columns": 1
   }
  ],
  "istable": 1,

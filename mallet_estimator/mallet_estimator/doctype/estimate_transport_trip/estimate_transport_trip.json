@@ -4,13 +4,52 @@
  "doctype": "DocType",
  "editable_grid": 1,
  "engine": "InnoDB",
- "field_order": ["trip_type", "description", "qty", "rate", "amount"],
+ "field_order": [
+  "trip_type",
+  "description",
+  "qty",
+  "rate",
+  "amount"
+ ],
  "fields": [
-  {"fieldname": "trip_type", "fieldtype": "Data", "label": "Trip", "reqd": 1, "in_list_view": 1, "columns": 3},
-  {"fieldname": "description", "fieldtype": "Data", "label": "Description", "in_list_view": 1, "columns": 3},
-  {"fieldname": "qty", "fieldtype": "Int", "label": "Trips", "default": "1", "in_list_view": 1, "columns": 1},
-  {"fieldname": "rate", "fieldtype": "Currency", "label": "Rate / Trip", "in_list_view": 1, "columns": 2},
-  {"fieldname": "amount", "fieldtype": "Currency", "label": "Amount", "read_only": 1, "in_list_view": 1, "columns": 1}
+  {
+   "fieldname": "trip_type",
+   "fieldtype": "Data",
+   "label": "Trip",
+   "reqd": 1,
+   "in_list_view": 1,
+   "columns": 3
+  },
+  {
+   "fieldname": "description",
+   "fieldtype": "Data",
+   "label": "Description",
+   "in_list_view": 1,
+   "columns": 3
+  },
+  {
+   "fieldname": "qty",
+   "fieldtype": "Int",
+   "label": "Trips",
+   "default": "1",
+   "in_list_view": 1,
+   "columns": 1
+  },
+  {
+   "fieldname": "rate",
+   "fieldtype": "Currency",
+   "label": "Rate / Trip",
+   "in_list_view": 1,
+   "columns": 1
+  },
+  {
+   "fieldname": "amount",
+   "fieldtype": "Currency",
+   "label": "Amount",
+   "read_only": 1,
+   "in_list_view": 1,
+   "columns": 2
+  }
  ],
  "istable": 1,
  "links": [],

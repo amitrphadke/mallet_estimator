@@ -164,6 +164,7 @@ class Estimate(Document):
             r.article_name = s.article_name
             r.internal_cost = s.internal_cost
             r.client_total = s.client_total
+            r.est_days = float(s.get("est_days") or 0)
             # the portfolio view: which article carries the project's profit
             transport = float(s.get("transport_cost") or 0)
             r.profit = float(s.client_total or 0) + transport - float(s.internal_cost or 0)
@@ -194,6 +195,8 @@ class Estimate(Document):
         # right after in validate) adds the consolidated trips + GST on top.
         self.total_internal = totals["internal"]
         self.total_client = totals["client"]
+        if self.meta.has_field("total_days"):
+            self.total_days = sum(float(r.est_days or 0) for r in rows)
 
     def print_payload(self, kind="client"):
         """Everything the two print formats render, computed once server-side.

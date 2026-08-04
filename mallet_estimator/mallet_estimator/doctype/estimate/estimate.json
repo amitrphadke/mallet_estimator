@@ -38,6 +38,7 @@
   "gst_pct",
   "total_gst",
   "total_with_gst",
+  "total_days",
   "cost_breakup",
   "bifurcation_section",
   "cost_breakup_html",
@@ -246,6 +247,15 @@
    "label": "Grand Total (incl. GST)",
    "read_only": 1,
    "bold": 1
+  },
+  {
+   "fieldname": "total_days",
+   "fieldtype": "Float",
+   "label": "Estimated Days (all SKUs)",
+   "read_only": 1,
+   "bold": 1,
+   "precision": "1",
+   "description": "Sum of each SKU's estimated build days (360 productive min/day)."
   },
   {
    "fieldname": "cost_breakup",
