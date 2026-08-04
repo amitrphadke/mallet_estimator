@@ -97,15 +97,14 @@
   {
    "fieldname": "skus_section",
    "fieldtype": "Section Break",
-   "label": "SKUs",
-   "description": "Auto-aggregated from every Estimate SKU linked to this Project."
+   "label": "SKUs"
   },
   {
    "fieldname": "skus",
    "fieldtype": "Table",
    "label": "SKUs",
    "options": "Execution Estimate SKU",
-   "read_only": 1
+   "description": "YOUR selection for this estimate: Add Row to pick a SKU, tick + Delete Row to exclude one. 'Add all project SKUs' appends whatever is missing; nothing is removed automatically."
   },
   {
    "fieldname": "allowances_section",
