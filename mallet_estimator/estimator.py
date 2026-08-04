@@ -257,6 +257,28 @@ def live_workstation_rates(settings):
     return rates
 
 
+def mm_to_ftin(mm):
+    """1524 → 5′-0″ ; 598 → 1′-11½″. Millimetres stay the single source of
+    truth (factory language); feet-inches are PRESENTATION ONLY, rounded to the
+    nearest half inch (client language)."""
+    mm = _num(mm)
+    if not mm:
+        return ""
+    total_in = round(mm / 25.4 * 2) / 2.0
+    ft = int(total_in // 12)
+    rem = total_in - ft * 12
+    whole = int(rem)
+    frac = "½" if (rem - whole) >= 0.49 else ""
+    inch = f"{whole}{frac}″"
+    return f"{ft}′-{inch}" if ft else inch
+
+
+def dims_ftin(w, d, h):
+    """W x D x H in feet-inches, skipping missing dims."""
+    parts = [mm_to_ftin(v) for v in (w, d, h)]
+    return " x ".join(p for p in parts if p)
+
+
 def _num(v):
     try:
         return float(v) if v not in (None, "") else 0.0

@@ -464,8 +464,31 @@ const refetch_markups = (frm) =>
     update_live_totals(frm);
     update_live_breakup(frm);
   });
+// mm stays the stored truth; feet-inches shown alongside for the humans who
+// think in inches (nearest half inch).
+function mm_to_ftin(mm) {
+  mm = +mm || 0;
+  if (!mm) return "";
+  const totalIn = Math.round((mm / 25.4) * 2) / 2;
+  const ft = Math.floor(totalIn / 12);
+  const rem = totalIn - ft * 12;
+  const whole = Math.floor(rem);
+  const inch = `${whole}${rem - whole >= 0.49 ? "½" : ""}″`;
+  return ft ? `${ft}′-${inch}` : inch;
+}
+
+function show_ftin(frm) {
+  const parts = [frm.doc.outer_w, frm.doc.outer_d, frm.doc.outer_h].map(mm_to_ftin).filter(Boolean);
+  frm.set_df_property("outer_h", "description",
+    parts.length ? __("= {0} (W x D x H, feet-inches)", [parts.join(" x ")]) : "");
+}
+
 frappe.ui.form.on("Estimate SKU", {
+  refresh: show_ftin,
   include_misc: (frm) => update_live_totals(frm),
+  outer_w: show_ftin,
+  outer_d: show_ftin,
+  outer_h: show_ftin,
   use_custom_margins: refetch_markups,
   margin_material: refetch_markups,
   margin_labor: refetch_markups,

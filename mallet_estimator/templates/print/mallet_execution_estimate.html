@@ -42,7 +42,7 @@
       {% for row in g.rows %}
         {% set ns.sr = ns.sr + 1 %}
         <tr><td>{{ ns.sr }}</td><td>{{ row.sku }}</td><td>{{ g.room }}</td><td>{{ row.item }}</td>
-            <td>{{ row.dims }}</td><td class="r">{{ "%.2f"|format(row.sqft) }}</td><td class="r">{{ money(row.price) }}</td></tr>
+            <td>{{ row.dims }} mm <span class="muted">({{ row.dims_ftin }})</span></td><td class="r">{{ "%.2f"|format(row.sqft) }}</td><td class="r">{{ money(row.price) }}</td></tr>
       {% endfor %}
       <tr class="roomrow"><td colspan="5">{{ g.room }} — subtotal</td><td class="r">{{ "%.2f"|format(g.sqft) }}</td><td class="r">{{ money(g.subtotal) }}</td></tr>
     {% endfor %}
@@ -69,7 +69,7 @@
 
   {% for s in p.gallery %}
   <div class="page"></div>
-  <h4>{{ s.sku }} — {{ s.article }} <span class="muted">({{ s.room }} · {{ s.dims }} · {{ money(s.price) }})</span></h4>
+  <h4>{{ s.sku }} — {{ s.article }} <span class="muted">({{ s.room }} · {{ s.dims }} · {{ s.dims_ftin }} · {{ money(s.price) }})</span></h4>
   {% if s.views %}
   <div class="views">
     {% for label, url in s.views %}

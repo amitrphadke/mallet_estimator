@@ -42,7 +42,7 @@
   <table>
     <thead><tr>
       <th>Sr No</th><th>Estimate SKU</th><th>Room</th><th>Item</th>
-      <th>Dimensions (W x D x H mm)</th><th class="r">Area (sq ft)</th><th class="r">Price</th>
+      <th>Dimensions (W x D x H)</th><th class="r">Area (sq ft)</th><th class="r">Price</th>
     </tr></thead>
     <tbody>
     {% for g in p.rooms %}
@@ -50,7 +50,7 @@
         {% set ns.sr = ns.sr + 1 %}
         <tr>
           <td>{{ ns.sr }}</td><td>{{ row.sku }}</td><td>{{ row.article }} ({{ g.room }})</td>
-          <td>{{ row.item }}</td><td>{{ row.dims }}</td>
+          <td>{{ row.item }}</td><td>{{ row.dims_ftin or row.dims }} <span class="muted">({{ row.dims }} mm)</span></td>
           <td class="r">{{ "%.2f"|format(row.sqft) }}</td><td class="r">{{ money(row.price) }}</td>
         </tr>
       {% endfor %}
@@ -87,7 +87,7 @@
 
   {% for s in p.gallery %}
   <div class="page"></div>
-  <h4>{{ s.sku }} — {{ s.article }} <span class="muted">({{ s.room }} · {{ s.dims }})</span></h4>
+  <h4>{{ s.sku }} — {{ s.article }} <span class="muted">({{ s.room }} · {{ s.dims_ftin or s.dims }} · {{ s.dims }})</span></h4>
   {% if s.iso %}<img class="iso" src="{{ s.iso }}">{% endif %}
   <table style="margin-top:8px">
     <thead><tr><th>Your choices at the gallery</th><th>Category</th><th class="r">Qty</th><th>Unit</th><th class="r">Budget</th></tr></thead>

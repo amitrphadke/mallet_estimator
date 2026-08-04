@@ -221,9 +221,11 @@ class Estimate(Document):
             if rn not in rooms:
                 rooms[rn] = {"room": rn, "rows": [], "subtotal": 0.0, "sqft": 0.0}
                 order.append(rn)
+            from mallet_estimator.estimator import dims_ftin
             rooms[rn]["rows"].append({
                 "sku": s.sku_code or s.name, "article": s.article_name or "",
                 "item": s.item or "", "dims": "%d x %d x %d" % (s.outer_w or 0, s.outer_d or 0, s.outer_h or 0),
+                "dims_ftin": dims_ftin(s.outer_w, s.outer_d, s.outer_h),
                 "price": price, "sqft": sqft,
             })
             rooms[rn]["subtotal"] += price
@@ -246,10 +248,12 @@ class Estimate(Document):
                 views = sorted(json.loads(s.get("views_images") or "{}").items())
             except Exception:
                 pass
+            from mallet_estimator.estimator import dims_ftin as _dftin
             gallery.append({
                 "sku": s.sku_code or s.name, "article": s.article_name or "", "room": rn,
                 "iso": s.article_image, "views": views, "price": price, "sqft": sqft,
                 "dims": "%d x %d x %d mm" % (s.outer_w or 0, s.outer_d or 0, s.outer_h or 0),
+                "dims_ftin": _dftin(s.outer_w, s.outer_d, s.outer_h),
                 "choose": choose_rows, "internal": internal_rows,
             })
         room_list = []
