@@ -35,3 +35,5 @@ mallet_estimator.patches.tax_supplier_hygiene
 mallet_estimator.patches.real_laminates
 # T2b — stamp the GST item tax template on every material Item (not only groups).
 mallet_estimator.patches.item_gst_backfill
+# UI hygiene — remove per-view PNG attachments (views extract at print time now).
+mallet_estimator.patches.drop_view_files

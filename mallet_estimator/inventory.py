@@ -357,6 +357,7 @@ def ensure_vendor_masters():
       • Supplier              = the 7 real vendors the shop buys from
     Idempotent; never clobbers an existing record."""
     result = {"manufacturers": 0, "brands": 0, "suppliers": 0, "errors": []}
+    _SCOPE = {"hardware": "Hardware", "laminate": "Laminate", "edge": "Edge Band"}
     for name in MANUFACTURERS:
         try:
             if frappe.db.exists("DocType", "Manufacturer") and not frappe.db.exists("Manufacturer", name):
@@ -366,6 +367,16 @@ def ensure_vendor_masters():
                 result["manufacturers"] += 1
         except Exception as exc:
             result["errors"].append(f"Manufacturer {name}: {exc}")
+    # scope stamps so the décor pickers only offer the right makers
+    if frappe.db.exists("DocType", "Manufacturer") and frappe.get_meta("Manufacturer").has_field("mallet_scope"):
+        known = dict({n: _SCOPE.get(k, "") for n, k in MANUFACTURERS.items()},
+                     **{"Generic": "Laminate", "Rheau": "Edge Band"})
+        for n, scope in known.items():
+            try:
+                if scope and frappe.db.exists("Manufacturer", n)                         and not frappe.db.get_value("Manufacturer", n, "mallet_scope"):
+                    frappe.db.set_value("Manufacturer", n, "mallet_scope", scope, update_modified=False)
+            except Exception as exc:
+                result["errors"].append(f"Manufacturer scope {n}: {exc}")
         try:
             if frappe.db.exists("DocType", "Brand") and not frappe.db.exists("Brand", name):
                 d = frappe.new_doc("Brand")
@@ -720,6 +731,11 @@ def _set(doc, meta, field, value):
 
 # --- masters --------------------------------------------------------------
 CUSTOM_FIELDS = {
+    "Manufacturer": [
+        {"fieldname": "mallet_scope", "fieldtype": "Select", "label": "Mallet Scope",
+         "options": "\nLaminate\nEdge Band\nHardware", "insert_after": "short_name",
+         "description": "Which décor picker shows this maker (blank = shown everywhere)."},
+    ],
     "Item": [
         {"fieldname": "mallet_material_sb", "fieldtype": "Section Break",
          "label": "Dimensions (mm)", "insert_after": "stock_uom", "collapsible": 1},
@@ -964,6 +980,8 @@ def enrich_decor_item(item_code, decor_meta):
         try:
             m = frappe.new_doc("Manufacturer")
             m.short_name = brand
+            if m.meta.has_field("mallet_scope") and (decor_meta or {}).get("domain"):
+                m.mallet_scope = decor_meta["domain"]
             m.insert(ignore_permissions=True)
         except Exception:
             frappe.log_error(frappe.get_traceback(), f"decor manufacturer {brand}")

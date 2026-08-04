@@ -246,11 +246,19 @@ class Estimate(Document):
                     })
                 elif kind == "execution":
                     internal_rows.append(row)
+            # views extracted ON THE FLY from the 7Views PDF (no stored PNG
+            # clutter on the SKU) — embedded as data URIs, print-only
             views = []
-            try:
-                views = sorted(json.loads(s.get("views_images") or "{}").items())
-            except Exception:
-                pass
+            if kind == "execution" and s.get("views_pdf"):
+                try:
+                    import base64
+                    from mallet_estimator import views_pdf as _vp
+                    from mallet_estimator.mallet_estimator.doctype.estimate_sku.estimate_sku import _file_content
+                    for label, ext, data in _vp.extract_view_images(_file_content(s.views_pdf)):
+                        mime = "image/png" if ext == "png" else "image/jpeg"
+                        views.append((label, f"data:{mime};base64," + base64.b64encode(data).decode()))
+                except Exception:
+                    frappe.log_error(frappe.get_traceback(), f"print views {s.name}")
             from mallet_estimator.estimator import dims_ftin as _dftin
             gallery.append({
                 "sku": s.sku_code or s.name, "article": s.article_name or "", "room": rn,

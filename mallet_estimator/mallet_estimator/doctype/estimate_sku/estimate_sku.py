@@ -177,7 +177,7 @@ class EstimateSKU(Document):
         # Labor + design steps wipe too — ensure_steps re-seeds the fresh
         # 17-step / 7-step templates during the save below.
         for table in ("materials", "joinery_items", "parts", "execution_materials",
-                      "labor", "design_labor"):
+                      "labor", "design_labor", "sku_decors"):
             if self.meta.has_field(table):
                 self.set(table, [])
         self.unpriced_materials = ""
@@ -246,10 +246,6 @@ class EstimateSKU(Document):
             url = views_pdf.attach_iso_image(self, content)
             if url:
                 self.article_image = url
-            # ALL view renders (8 views + any page added later, e.g. doors-off)
-            # for the execution print; URLs tracked so the file GC keeps them.
-            if self.meta.has_field("views_images"):
-                self.views_images = json.dumps(views_pdf.attach_view_images(self, content))
             else:
                 frappe.msgprint(_("No 'IsoView' page found in the 7 Views PDF — attach an Article Image manually."),
                                 indicator="orange")
@@ -464,6 +460,24 @@ class EstimateSKU(Document):
                 # carp_min = minutes the workstation is occupied per unit (the
                 # single time driver; the crew wage lives in the workstation rate).
                 row.carp_min = std["min_per_unit"]
+        # Every slot instance present on the lines gets a map row — WITHOUT
+        # descriptions in the PDF the row comes in BLANK, so the user simply
+        # selects the laminate / edge band (creating the stock item if new).
+        have_rows = {((r.domain or "Laminate"), (r.slot or "").strip().lower())
+                     for r in (self.get("sku_decors") or [])}
+        for m_row in self.materials or []:
+            base = str(m_row.material or "")
+            up = base.upper()
+            if not (up.startswith("SG_LAM") or up.startswith("EB_")):
+                continue
+            key = decor.slot_key(base)
+            if not key:
+                continue
+            dom = "Edge Band" if up.startswith("EB_") else "Laminate"
+            if (dom, key) not in have_rows:
+                self.append("sku_decors", {"slot": key, "domain": dom})
+                have_rows.add((dom, key))
+
         self.import_drivers = json.dumps(opq)
 
         # A design exists the moment an estimate PDF does — design steps whose
@@ -523,6 +537,7 @@ class EstimateSKU(Document):
                 "short": (row.get("short") or "").strip() or None,
                 "thickness": float(row.get("thickness") or 0),
                 "width": float(row.get("width") or 0),
+                "domain": row.domain or "Laminate",
                 "title": None,
                 "raw": " ".join(x for x in ((row.brand or "").strip(), (row.code or "").strip(),
                                             (row.decor_name or "").strip()) if x),
