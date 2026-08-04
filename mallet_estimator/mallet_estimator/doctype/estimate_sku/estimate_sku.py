@@ -296,6 +296,26 @@ class EstimateSKU(Document):
         # 6534 laminate vs b = Rheau 2008 edge band). An EB_ row's own block wins
         # for edge banding; otherwise it matches the laminate slot.
         lam_decors, edge_decors = {}, {}
+        # The SKU's OWN décor table is the MASTER: design in SketchUp with the
+        # generic slot codes only and define what a/b mean HERE. Rows seed the
+        # maps first, so PDF description blocks only fill slots not defined
+        # (or upgrade a row that lacks a catalogue code).
+        for row in self.get("sku_decors") or []:
+            slot = (row.slot or "").strip().lower()[:1]
+            if not slot:
+                continue
+            parsed = {
+                "brand": (row.brand or "").strip() or None,
+                "catalogue": (row.code or "").strip() or None,
+                "name": (row.decor_name or "").strip(),
+                "year": (row.year or "").strip(),
+                "short": (row.get("short") or "").strip() or None,
+                "title": None,
+                "raw": " ".join(x for x in ((row.brand or "").strip(), (row.code or "").strip(),
+                                            (row.decor_name or "").strip()) if x),
+            }
+            tgt = edge_decors if (row.domain or "") == "Edge Band" else lam_decors
+            tgt.setdefault(slot, parsed)
         try:
             pl_text = views_pdf._pdf_text(pl_content) if self.partlist_pdf else ""
             est_text = estimate_pdf.read_pdf_text(_file_content(self.estimate_pdf))

@@ -282,6 +282,7 @@ function update_live_totals(frm) {
   frm.set_value("client_material", cm);
   frm.set_value("client_design_exec", cde);
   frm.set_value("client_total", cm + cde);
+  update_live_breakup(frm);  // the summary tables move with the totals
 }
 
 // Live Total Min = Qty x Min/Unit, and live Phase Cost = crew-hours x the
@@ -325,10 +326,62 @@ function lock_qty(frm) {
 // group shows its lines and a bold GROUP TOTAL (Sheet Goods total, Hardware
 // total, Labor & Overhead total, …).
 function render_cost_breakup(frm) {
-  const f = frm.get_field("cost_breakup_html");
-  if (!f || !f.$wrapper) return;
   let d = null;
   try { d = JSON.parse(frm.doc.cost_breakup || "null"); } catch (e) { d = null; }
+  render_cost_breakup_data(frm, d);
+}
+
+// The cost summary must move the moment ANYTHING affecting it moves — margins
+// included. Rebuild the client side of the saved breakup from the CURRENT
+// effective markups (frm._ws_net.__markups__) + the doc's cost fields, and
+// re-render. Costs are untouched by margin edits, so this live view is exact
+// for them; the save stays authoritative for everything.
+function update_live_breakup(frm) {
+  let d = null;
+  try { d = JSON.parse(frm.doc.cost_breakup || "null"); } catch (e) { d = null; }
+  if (!d) return;
+  const mk = (frm._ws_net && frm._ws_net.__markups__) || {};
+  const gp = (d.bifurcation && d.bifurcation.gst_pct) || d.gst_pct || 18;
+  const a = {
+    material: ((frm.doc.material_cost || 0) + (frm.doc.joinery_cost || 0)) * (1 + (mk.material || 0) / 100),
+    labor: (frm.doc.labor_cost || 0) * (1 + (mk.labor || 0) / 100),
+    design: (frm.doc.design_cost || 0) * (1 + (mk.design || 0) / 100),
+    overhead: (frm.doc.overhead_cost || 0) * (1 + (mk.overhead || 0) / 100),
+    transport: d.transport || 0,
+  };
+  const labels = {
+    material: "Material (incl. joinery consumables)",
+    labor: "Labor (carpentry wages)",
+    design: "Design",
+    overhead: "Factory Overhead",
+    transport: "Transport (shared across SKUs, at cost)",
+  };
+  const rows = ["material", "labor", "design", "overhead", "transport"].map((k) => ({
+    label: labels[k], amount: a[k], gst: a[k] * gp / 100, gross: a[k] * (1 + gp / 100),
+  }));
+  const pre = rows.reduce((s, r) => s + r.amount, 0);
+  rows.forEach((r) => (r.pct = pre ? (r.amount / pre) * 100 : 0));
+  const client_total = a.material + a.labor + a.design + a.overhead;
+  d.bifurcation = { rows, pre_tax: pre, taxes: pre * gp / 100, grand_total: pre * (1 + gp / 100), gst_pct: gp };
+  d.markup_pct = Object.assign({}, mk, { __custom__: !!frm.doc.use_custom_margins });
+  d.client_material = a.material;
+  d.client_design_exec = a.labor + a.design + a.overhead;
+  d.client_total = client_total;
+  d.gst_amount = client_total * gp / 100;
+  d.client_total_with_gst = client_total * (1 + gp / 100);
+  d.profit = client_total + (d.transport || 0) - (d.internal || 0);
+  d.margin_pct = client_total ? (d.profit / client_total) * 100 : 0;
+  if (d.sqft && d.sqft.sqft) {
+    d.sqft.material_per_sqft = a.material / d.sqft.sqft;
+    d.sqft.labor_per_sqft = d.client_design_exec / d.sqft.sqft;
+    d.sqft.total_per_sqft = client_total / d.sqft.sqft;
+  }
+  render_cost_breakup_data(frm, d);
+}
+
+function render_cost_breakup_data(frm, d) {
+  const f = frm.get_field("cost_breakup_html");
+  if (!f || !f.$wrapper) return;
   if (!d || !(d.groups || []).length) { f.$wrapper.empty(); return; }
   const money = (v) => format_currency(v || 0);
   const esc = frappe.utils.escape_html;
@@ -409,6 +462,7 @@ const refetch_markups = (frm) =>
   frm.call("workstation_net_rates").then((r) => {
     frm._ws_net = (r && r.message) || {};
     update_live_totals(frm);
+    update_live_breakup(frm);
   });
 frappe.ui.form.on("Estimate SKU", {
   include_misc: (frm) => update_live_totals(frm),

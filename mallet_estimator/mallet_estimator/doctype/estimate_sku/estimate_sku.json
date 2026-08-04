@@ -60,6 +60,8 @@
   "trips_client_hw",
   "trips_outward",
   "transport_cost",
+  "decor_section",
+  "sku_decors",
   "margins_section",
   "use_custom_margins",
   "margin_material",
@@ -409,6 +411,19 @@
    "label": "Transport Cost",
    "read_only": 1,
    "hidden": 1
+  },
+  {
+   "fieldname": "decor_section",
+   "fieldtype": "Section Break",
+   "label": "Décor — real laminates & edge bands",
+   "collapsible": 1
+  },
+  {
+   "fieldname": "sku_decors",
+   "fieldtype": "Table",
+   "label": "Décor Slots",
+   "options": "Estimate SKU Decor",
+   "description": "MASTER definition of what each generic slot letter (a, b …) means for THIS SKU — design in SketchUp with the generic codes only; import substitutes the real item codes from here. OCL material descriptions still work and fill any slot not defined below."
   },
   {
    "fieldname": "margins_section",

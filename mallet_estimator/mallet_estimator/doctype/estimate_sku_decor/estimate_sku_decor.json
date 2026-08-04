@@ -1,0 +1,80 @@
+{
+ "actions": [],
+ "creation": "2026-08-04 00:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "istable": 1,
+ "module": "Mallet Estimator",
+ "name": "Estimate SKU Decor",
+ "owner": "Administrator",
+ "modified": "2026-08-04 00:00:00.000000",
+ "modified_by": "Administrator",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "permissions": [],
+ "field_order": [
+  "slot",
+  "domain",
+  "brand",
+  "code",
+  "decor_name",
+  "year",
+  "short"
+ ],
+ "fields": [
+  {
+   "fieldname": "slot",
+   "fieldtype": "Data",
+   "label": "Slot",
+   "description": "The letter in the generic OCL code: a, b, c …",
+   "in_list_view": 1,
+   "reqd": 1,
+   "columns": 1
+  },
+  {
+   "fieldname": "domain",
+   "fieldtype": "Select",
+   "label": "Applies To",
+   "options": "Laminate\nEdge Band",
+   "default": "Laminate",
+   "in_list_view": 1,
+   "reqd": 1,
+   "columns": 1
+  },
+  {
+   "fieldname": "brand",
+   "fieldtype": "Data",
+   "label": "Brand / Maker",
+   "description": "Free text — a new brand auto-creates the Manufacturer on import.",
+   "in_list_view": 1,
+   "columns": 2
+  },
+  {
+   "fieldname": "code",
+   "fieldtype": "Data",
+   "label": "Catalogue Code",
+   "in_list_view": 1,
+   "columns": 1
+  },
+  {
+   "fieldname": "decor_name",
+   "fieldtype": "Data",
+   "label": "Name",
+   "in_list_view": 1,
+   "columns": 2
+  },
+  {
+   "fieldname": "year",
+   "fieldtype": "Data",
+   "label": "Year",
+   "columns": 1
+  },
+  {
+   "fieldname": "short",
+   "fieldtype": "Data",
+   "label": "Short (override)",
+   "description": "Item-code suffix. Blank = brand initials + catalogue code (VM6534)."
+  }
+ ]
+}
