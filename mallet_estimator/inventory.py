@@ -981,6 +981,15 @@ def enrich_decor_item(item_code, decor_meta):
         if display and (item.item_name or "") == item.item_code:
             item.item_name = display[:140]
             changed = True
+        # physical spec from the décor map row (never overwrites a set value)
+        thick = (decor_meta or {}).get("thickness")
+        width = (decor_meta or {}).get("width")
+        if thick and meta.has_field("mallet_thickness_mm") and not item.get("mallet_thickness_mm"):
+            item.mallet_thickness_mm = thick
+            changed = True
+        if width and meta.has_field("mallet_sheet_width_mm") and not item.get("mallet_sheet_width_mm"):
+            item.mallet_sheet_width_mm = width
+            changed = True
         if changed:
             item.save(ignore_permissions=True)
     except Exception:

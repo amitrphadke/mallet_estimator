@@ -19,6 +19,8 @@
   "brand",
   "code",
   "decor_name",
+  "thickness",
+  "width",
   "year",
   "short"
  ],
@@ -44,11 +46,12 @@
   },
   {
    "fieldname": "brand",
-   "fieldtype": "Data",
+   "fieldtype": "Link",
    "label": "Brand / Maker",
-   "description": "Free text — a new brand auto-creates the Manufacturer on import.",
+   "description": "Selectable maker — create a new Manufacturer from here if needed.",
    "in_list_view": 1,
-   "columns": 2
+   "columns": 2,
+   "options": "Manufacturer"
   },
   {
    "fieldname": "code",
@@ -65,16 +68,35 @@
    "columns": 2
   },
   {
+   "fieldname": "thickness",
+   "fieldtype": "Float",
+   "label": "Thickness (mm)",
+   "in_list_view": 1,
+   "columns": 1,
+   "precision": "1"
+  },
+  {
+   "fieldname": "width",
+   "fieldtype": "Float",
+   "label": "Width (mm)",
+   "in_list_view": 1,
+   "columns": 1,
+   "precision": "1",
+   "description": "Edge band roll width (e.g. 22)."
+  },
+  {
    "fieldname": "year",
    "fieldtype": "Data",
    "label": "Year",
-   "columns": 1
+   "columns": 1,
+   "in_list_view": 0
   },
   {
    "fieldname": "short",
    "fieldtype": "Data",
    "label": "Short (override)",
-   "description": "Item-code suffix. Blank = brand initials + catalogue code (VM6534)."
+   "description": "Item-code suffix. Blank = brand initials + catalogue code (VM6534).",
+   "in_list_view": 0
   }
  ]
 }

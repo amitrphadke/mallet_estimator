@@ -177,6 +177,22 @@ function show_min_unit_benefit(frm, cdt, cdn) {
   }, 6);
 }
 
+// Décor map edits re-point the laminate/edge material lines ON SAVE — remind
+// the user so the change doesn't look ignored.
+const decor_changed = (frm) => {
+  if (frm.__decor_alerted) return;
+  frm.__decor_alerted = true;
+  frappe.show_alert({
+    message: __("Décor map changed — Save to re-point the laminate/edge lines."),
+    indicator: "blue",
+  }, 5);
+};
+frappe.ui.form.on("Estimate SKU Decor", {
+  slot: decor_changed, domain: decor_changed, brand: decor_changed,
+  code: decor_changed, decor_name: decor_changed, short: decor_changed,
+  sku_decors_remove: (frm) => decor_changed(frm),
+});
+
 // I3: totals update instantly. Imported material rows are FULLY read-only (the
 // PDFs are the source); extra hardware goes through the Add-material dialog —
 // priced from the stock price list, flagged is_manual so it survives re-imports.

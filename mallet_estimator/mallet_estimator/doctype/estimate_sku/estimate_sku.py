@@ -115,6 +115,7 @@ class EstimateSKU(Document):
         self.ensure_design_steps()
         self.ensure_step_remarks()
         self.maybe_import()
+        self.apply_decor_map()
         self.refresh_material_rates()
         self.compute_code()
         self.enforce_locked_qty()
@@ -301,45 +302,30 @@ class EstimateSKU(Document):
         # Descriptions (est + part list) into an SKU-wide slot→décor map; the
         # placeholder's trailing letters get replaced by the first letter's décor
         # short code (SG_LAM_V1_16mm_b_a + b=Virgo Mica 6534 → SG_LAM_V1_16mm_VM6534).
-        # Slots are SKU-wide but PER DOMAIN: the same letter can name a laminate
-        # on SG_ rows AND a different edge-band décor on EB_ rows (b = Virgo Mica
-        # 6534 laminate vs b = Rheau 2008 edge band). An EB_ row's own block wins
-        # for edge banding; otherwise it matches the laminate slot.
-        lam_decors, edge_decors = {}, {}
-        # The SKU's OWN décor table is the MASTER: design in SketchUp with the
-        # generic slot codes only and define what a/b mean HERE. Rows seed the
-        # maps first, so PDF description blocks only fill slots not defined
-        # (or upgrade a row that lacks a catalogue code).
-        for row in self.get("sku_decors") or []:
-            slot = (row.slot or "").strip().lower()[:1]
-            if not slot:
-                continue
-            parsed = {
-                "brand": (row.brand or "").strip() or None,
-                "catalogue": (row.code or "").strip() or None,
-                "name": (row.decor_name or "").strip(),
-                "year": (row.year or "").strip(),
-                "short": (row.get("short") or "").strip() or None,
-                "title": None,
-                "raw": " ".join(x for x in ((row.brand or "").strip(), (row.code or "").strip(),
-                                            (row.decor_name or "").strip()) if x),
-            }
-            tgt = edge_decors if (row.domain or "") == "Edge Band" else lam_decors
-            tgt.setdefault(slot, parsed)
+        # The DÉCOR MAP TABLE is the single source of truth for what each slot
+        # letter means (control it in the ERP — no need to model every real
+        # laminate in SketchUp). OCL description blocks are only used to PREFILL
+        # table rows that don't exist yet; substitution always reads the table.
         try:
             pl_text = views_pdf._pdf_text(pl_content) if self.partlist_pdf else ""
             est_text = estimate_pdf.read_pdf_text(_file_content(self.estimate_pdf))
             brands = frappe.get_all("Manufacturer", pluck="name")
+            existing = {((r.domain or "Laminate"), (r.slot or "").strip().lower()[:1])
+                        for r in (self.get("sku_decors") or [])}
             for d in decor.extract_slot_map(est_text + "\n" + pl_text, brands):
-                tgt = edge_decors if str(d["placeholder"]).startswith("EB_") else lam_decors
-                cur = tgt.get(d["slot"])
-                # first definition wins within a domain — unless it was truncated
-                # (no catalogue) and a later one is complete
-                if cur is None or (not cur.get("catalogue") and d.get("catalogue")):
-                    tgt[d["slot"]] = d
+                dom = "Edge Band" if str(d["placeholder"]).startswith("EB_") else "Laminate"
+                key = (dom, d["slot"])
+                if key in existing or not (d.get("brand") or d.get("catalogue")):
+                    continue
+                self.append("sku_decors", {
+                    "slot": d["slot"], "domain": dom, "brand": d.get("brand"),
+                    "code": d.get("catalogue"), "decor_name": d.get("name"),
+                    "year": d.get("year"), "short": d.get("short"),
+                })
+                existing.add(key)
         except Exception:
             frappe.log_error(frappe.get_traceback(), f"decor parse {self.name}")
-        edge_decors = {**lam_decors, **edge_decors}
+        lam_decors, edge_decors = self._decor_maps_from_table()
         lam_shorts = {k: decor.short_code(v) for k, v in lam_decors.items() if decor.short_code(v)}
         edge_shorts = {k: decor.short_code(v) for k, v in edge_decors.items() if decor.short_code(v)}
 
@@ -352,13 +338,13 @@ class EstimateSKU(Document):
         for m in materials:
             if m.get("kind") == "laminate":
                 real, letter = decor.substitute_real_code(m["name"], lam_shorts)
-                if letter:
-                    meta = lam_decors.get(letter)
-                    self._add_material_line(
-                        real, "laminate", m.get("thickness") or 0, m["qty"] or 0,
-                        f"{real} — real laminate for {m['name']}", unpriced, decor_meta=meta,
-                    )
-                    continue
+                meta = lam_decors.get(letter) if letter else None
+                self._add_material_line(
+                    m["name"], "laminate", m.get("thickness") or 0, m["qty"] or 0,
+                    (f"{real} — real laminate for {m['name']}" if letter else _pdf_desc(m)),
+                    unpriced, decor_meta=meta, real_code=real if letter else None,
+                )
+                continue
             if m.get("kind") == "hardware" and hardware:
                 # Preferred source is the part list; but NEVER silently drop an
                 # estimate-PDF hardware the part-list parse didn't cover — decide
@@ -376,9 +362,10 @@ class EstimateSKU(Document):
                 real_eb, eb_ltr = decor.substitute_real_code(m["name"], edge_shorts)
                 desc = f"{desc} — whole roll(s) of {inventory.EDGE_ROLL_METERS:g} m"[:140]
                 self._add_material_line(
-                    real_eb, "edge", m.get("thickness") or 0, qty, desc, unpriced,
+                    m["name"], "edge", m.get("thickness") or 0, qty, desc, unpriced,
                     uom="Roll", rate_factor=inventory.EDGE_ROLL_METERS,
                     decor_meta=edge_decors.get(eb_ltr) if eb_ltr else None,
+                    real_code=real_eb if eb_ltr else None,
                 )
                 continue
             self._add_material_line(
@@ -393,22 +380,25 @@ class EstimateSKU(Document):
         import math
         pdf_edge_rolls = {m["name"]: (m["qty"] or 0) for m in materials if m.get("kind") == "edge"}
         for e in pl_edges:
-            e["code"], _ltr = decor.substitute_real_code(e["code"], edge_shorts)
+            orig = e["code"]
+            real_e, _ltr = decor.substitute_real_code(orig, edge_shorts)
+            shown = real_e if _ltr else orig
             if e.get("meters"):
                 rolls = max(1, math.ceil(e["meters"] / inventory.EDGE_ROLL_METERS))
-                desc = (f"{e['code']} — {e['meters']:g} m banding on {e['parts']} part edge(s) "
+                desc = (f"{shown} — {e['meters']:g} m banding on {e['parts']} part edge(s) "
                         f"→ {rolls} whole roll(s) of {inventory.EDGE_ROLL_METERS:g} m")
-            elif pdf_edge_rolls.get(e["code"]):
-                rolls = int(pdf_edge_rolls[e["code"]])
-                desc = (f"{e['code']} — {e['parts']} part edge(s); rolls from estimate PDF "
+            elif pdf_edge_rolls.get(orig):
+                rolls = int(pdf_edge_rolls[orig])
+                desc = (f"{shown} — {e['parts']} part edge(s); rolls from estimate PDF "
                         f"({rolls} × {inventory.EDGE_ROLL_METERS:g} m)")
             else:
                 rolls = 1
-                desc = f"{e['code']} — {e['parts']} part edge(s); length unknown — VERIFY roll count"
+                desc = f"{shown} — {e['parts']} part edge(s); length unknown — VERIFY roll count"
             self._add_material_line(
-                e["code"], "edge", 0, rolls, desc[:140], unpriced,
+                orig, "edge", 0, rolls, desc[:140], unpriced,
                 uom="Roll", rate_factor=inventory.EDGE_ROLL_METERS,
                 decor_meta=edge_decors.get(_ltr) if _ltr else None,
+                real_code=real_e if _ltr else None,
             )
 
         for h in hardware:
@@ -486,15 +476,18 @@ class EstimateSKU(Document):
                 })
 
     def _add_material_line(self, name, kind, thickness, qty, desc, unpriced, dims=None,
-                           uom=None, rate_factor=1, decor_meta=None):
+                           uom=None, rate_factor=1, decor_meta=None, real_code=None):
         """Append a costed material row. A NEW code auto-creates its Item
         STRUCTURE (group, UOM, dims — zero manual setup), but the rate is NEVER
         invented: the unit cost is the STOCK PRICE LIST rate EXACTLY (no
         gross-up; GST at document level). An unpriced item enters at 0 and is
         flagged LOUDLY — key its rate on the Estimation (Assumed) list once and
         Re-import. `uom`/`rate_factor` adapt the unit (edge banding: Rolls at
-        per-meter rate x 50)."""
-        code, rate, source = inventory.ensure_material_item(name, kind=kind, thickness=thickness, dims=dims)
+        per-meter rate x 50). `real_code` = the décor-substituted item; `name`
+        stays the ORIGINAL OCL code on the line, so the décor map can re-point
+        the item any time."""
+        code, rate, source = inventory.ensure_material_item(real_code or name, kind=kind,
+                                                           thickness=thickness, dims=dims)
         if decor_meta:
             inventory.enrich_decor_item(code, decor_meta)
         rate = (rate or 0) * (rate_factor or 1)
@@ -506,6 +499,74 @@ class EstimateSKU(Document):
         })
         if source == "unset":
             unpriced.append(code)
+
+    def _decor_maps_from_table(self):
+        """(laminate_map, edge_map) — slot letter → parsed décor from the SKU's
+        Décor Slots table, THE single source of truth for what a/b/c mean."""
+        lam, edge = {}, {}
+        for row in self.get("sku_decors") or []:
+            slot = (row.slot or "").strip().lower()[:1]
+            if not slot:
+                continue
+            parsed = {
+                "brand": (row.brand or "").strip() or None,
+                "catalogue": (row.code or "").strip() or None,
+                "name": (row.decor_name or "").strip(),
+                "year": (row.year or "").strip(),
+                "short": (row.get("short") or "").strip() or None,
+                "thickness": float(row.get("thickness") or 0),
+                "width": float(row.get("width") or 0),
+                "title": None,
+                "raw": " ".join(x for x in ((row.brand or "").strip(), (row.code or "").strip(),
+                                            (row.decor_name or "").strip()) if x),
+            }
+            tgt = edge if (row.domain or "") == "Edge Band" else lam
+            tgt.setdefault(slot, parsed)
+        return lam, edge
+
+    def apply_decor_map(self):
+        """The map table DECIDES which real laminate / edge band each material
+        line carries — every save re-points lines whose ORIGINAL code (kept in
+        the `material` column) has slot letters. Editing the table therefore
+        changes the lines without any re-import; slots without a map row keep
+        the generic code and the user is warned to fill the map."""
+        if self._frozen() or not self.materials:
+            return
+        lam, edge = self._decor_maps_from_table()
+        lam_shorts = {k: decor.short_code(v) for k, v in lam.items() if decor.short_code(v)}
+        edge_shorts = {k: decor.short_code(v) for k, v in edge.items() if decor.short_code(v)}
+        missing = set()
+        for m in self.materials:
+            base = str(m.material or "")
+            up = base.upper()
+            if up.startswith("SG_PLY") or not decor.trailing_slots(base):
+                continue
+            is_edge = up.startswith("EB_")
+            if not (is_edge or up.startswith("SG_LAM")):
+                continue
+            real, letter = decor.substitute_real_code(base, edge_shorts if is_edge else lam_shorts)
+            if letter is None:
+                missing.add(f"{decor.trailing_slots(base)[0]} ({'Edge Band' if is_edge else 'Laminate'})")
+                real = base
+            if (m.item or "") == real:
+                continue
+            meta = (edge if is_edge else lam).get(letter) if letter else None
+            kind = "edge" if is_edge else "laminate"
+            code, _rate, _src = inventory.ensure_material_item(
+                real, kind=kind, thickness=(meta or {}).get("thickness") or 0)
+            if meta:
+                inventory.enrich_decor_item(code, meta)
+            old = m.item
+            if m.description and old:
+                m.description = m.description.replace(str(old), code)[:140]
+            m.item = code
+        if missing:
+            frappe.msgprint(
+                _("Décor map incomplete — slot(s) {0} have no row in the Décor Slots "
+                  "table, so those lines keep their GENERIC codes. Fill the map to "
+                  "point them at real laminates/edge bands.").format(", ".join(sorted(missing))),
+                title=_("Fill the Décor Slots map"), indicator="orange",
+            )
 
     def refresh_material_rates(self):
         """The price list is the only rate authority — until the Estimate is
