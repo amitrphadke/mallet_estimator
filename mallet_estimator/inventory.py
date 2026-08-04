@@ -367,16 +367,6 @@ def ensure_vendor_masters():
                 result["manufacturers"] += 1
         except Exception as exc:
             result["errors"].append(f"Manufacturer {name}: {exc}")
-    # scope stamps so the décor pickers only offer the right makers
-    if frappe.db.exists("DocType", "Manufacturer") and frappe.get_meta("Manufacturer").has_field("mallet_scope"):
-        known = dict({n: _SCOPE.get(k, "") for n, k in MANUFACTURERS.items()},
-                     **{"Generic": "Laminate", "Rheau": "Edge Band"})
-        for n, scope in known.items():
-            try:
-                if scope and frappe.db.exists("Manufacturer", n)                         and not frappe.db.get_value("Manufacturer", n, "mallet_scope"):
-                    frappe.db.set_value("Manufacturer", n, "mallet_scope", scope, update_modified=False)
-            except Exception as exc:
-                result["errors"].append(f"Manufacturer scope {n}: {exc}")
         try:
             if frappe.db.exists("DocType", "Brand") and not frappe.db.exists("Brand", name):
                 d = frappe.new_doc("Brand")
@@ -385,6 +375,17 @@ def ensure_vendor_masters():
                 result["brands"] += 1
         except Exception as exc:
             result["errors"].append(f"Brand {name}: {exc}")
+    # scope stamps so the décor pickers only offer the right makers
+    if frappe.db.exists("DocType", "Manufacturer") and frappe.get_meta("Manufacturer").has_field("mallet_scope"):
+        known = dict({n: _SCOPE.get(k, "") for n, k in MANUFACTURERS.items()},
+                     **{"Generic": "Laminate", "Rheau": "Edge Band"})
+        for n, scope in known.items():
+            try:
+                if scope and frappe.db.exists("Manufacturer", n) \
+                        and not frappe.db.get_value("Manufacturer", n, "mallet_scope"):
+                    frappe.db.set_value("Manufacturer", n, "mallet_scope", scope, update_modified=False)
+            except Exception as exc:
+                result["errors"].append(f"Manufacturer scope {n}: {exc}")
     sg = _default_supplier_group() if frappe.db.exists("DocType", "Supplier") else None
     for name in SUPPLIER_SCOPE:
         try:
