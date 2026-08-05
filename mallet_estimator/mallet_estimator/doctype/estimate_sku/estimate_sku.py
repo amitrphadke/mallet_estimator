@@ -177,7 +177,7 @@ class EstimateSKU(Document):
         # Labor + design steps wipe too — ensure_steps re-seeds the fresh
         # 17-step / 7-step templates during the save below.
         for table in ("materials", "joinery_items", "parts", "execution_materials",
-                      "labor", "design_labor", "sku_decors"):
+                      "labor", "design_labor", "sku_decors", "sku_decor_edges"):
             if self.meta.has_field(table):
                 self.set(table, [])
         self.unpriced_materials = ""
@@ -306,8 +306,16 @@ class EstimateSKU(Document):
             pl_text = views_pdf._pdf_text(pl_content) if self.partlist_pdf else ""
             est_text = estimate_pdf.read_pdf_text(_file_content(self.estimate_pdf))
             brands = frappe.get_all("Manufacturer", pluck="name")
-            existing = {((r.domain or "Laminate"), (r.slot or "").strip().lower())
+            existing = {("Laminate" if (r.domain or "Laminate") != "Edge Band" else "Edge Band",
+                         (r.slot or "").strip().lower())
                         for r in (self.get("sku_decors") or [])}
+            existing |= {("Edge Band", (r.slot or "").strip().lower())
+                         for r in (self.get("sku_decor_edges") or [])}
+            # edge-band physicals follow the ply: <=18 mm ply → 22 x 0.8 mm band,
+            # thicker ply → 50 x 1 mm
+            ply_max = max([float(m.get("thickness") or 0) for m in materials
+                           if m.get("kind") == "sheet"] or [16])
+            eb_thick, eb_wide = (1.0, 50.0) if ply_max > 18 else (0.8, 22.0)
             for d in decor.extract_slot_map(est_text + "\n" + pl_text, brands):
                 ph = str(d["placeholder"])
                 dom = "Edge Band" if ph.startswith("EB_") else "Laminate"
@@ -320,11 +328,18 @@ class EstimateSKU(Document):
                 key = (dom, slot)
                 if not slot or key in existing or not (d.get("brand") or d.get("catalogue")):
                     continue
-                self.append("sku_decors", {
-                    "slot": slot, "domain": dom, "brand": d.get("brand"),
-                    "code": d.get("catalogue"), "decor_name": d.get("name"),
-                    "year": d.get("year"), "short": d.get("short"),
-                })
+                if dom == "Edge Band":
+                    self.append("sku_decor_edges", {
+                        "slot": slot, "brand": d.get("brand"), "code": d.get("catalogue"),
+                        "decor_name": d.get("name"), "year": d.get("year"), "short": d.get("short"),
+                        "thickness": eb_thick, "width": eb_wide,
+                    })
+                else:
+                    self.append("sku_decors", {
+                        "slot": slot, "domain": dom, "brand": d.get("brand"),
+                        "code": d.get("catalogue"), "decor_name": d.get("name"),
+                        "year": d.get("year"), "short": d.get("short"),
+                    })
                 existing.add(key)
         except Exception:
             frappe.log_error(frappe.get_traceback(), f"decor parse {self.name}")
@@ -463,8 +478,11 @@ class EstimateSKU(Document):
         # Every slot instance present on the lines gets a map row — WITHOUT
         # descriptions in the PDF the row comes in BLANK, so the user simply
         # selects the laminate / edge band (creating the stock item if new).
-        have_rows = {((r.domain or "Laminate"), (r.slot or "").strip().lower())
+        have_rows = {("Laminate" if (r.domain or "Laminate") != "Edge Band" else "Edge Band",
+                      (r.slot or "").strip().lower())
                      for r in (self.get("sku_decors") or [])}
+        have_rows |= {("Edge Band", (r.slot or "").strip().lower())
+                      for r in (self.get("sku_decor_edges") or [])}
         for m_row in self.materials or []:
             base = str(m_row.material or "")
             up = base.upper()
@@ -475,7 +493,10 @@ class EstimateSKU(Document):
                 continue
             dom = "Edge Band" if up.startswith("EB_") else "Laminate"
             if (dom, key) not in have_rows:
-                self.append("sku_decors", {"slot": key, "domain": dom})
+                if dom == "Edge Band":
+                    self.append("sku_decor_edges", {"slot": key, "thickness": eb_thick, "width": eb_wide})
+                else:
+                    self.append("sku_decors", {"slot": key, "domain": dom})
                 have_rows.add((dom, key))
 
         self.import_drivers = json.dumps(opq)
@@ -525,11 +546,9 @@ class EstimateSKU(Document):
         """(laminate_map, edge_map) — slot letter → parsed décor from the SKU's
         Décor Slots table, THE single source of truth for what a/b/c mean."""
         lam, edge = {}, {}
-        for row in self.get("sku_decors") or []:
-            slot = (row.slot or "").strip().lower()
-            if not decor.SLOT_TOKEN_RE.match(slot):
-                continue
-            parsed = {
+
+        def parse_row(row, domain):
+            return {
                 "brand": (row.brand or "").strip() or None,
                 "catalogue": (row.code or "").strip() or None,
                 "name": (row.decor_name or "").strip(),
@@ -537,13 +556,25 @@ class EstimateSKU(Document):
                 "short": (row.get("short") or "").strip() or None,
                 "thickness": float(row.get("thickness") or 0),
                 "width": float(row.get("width") or 0),
-                "domain": row.domain or "Laminate",
+                "domain": domain,
                 "title": None,
                 "raw": " ".join(x for x in ((row.brand or "").strip(), (row.code or "").strip(),
                                             (row.decor_name or "").strip()) if x),
             }
-            tgt = edge if (row.domain or "") == "Edge Band" else lam
-            tgt.setdefault(slot, parsed)
+
+        for row in self.get("sku_decors") or []:
+            slot = (row.slot or "").strip().lower()
+            if not decor.SLOT_TOKEN_RE.match(slot):
+                continue
+            # legacy: pre-split rows could carry domain 'Edge Band' in this table
+            if (row.get("domain") or "Laminate") == "Edge Band":
+                edge.setdefault(slot, parse_row(row, "Edge Band"))
+            else:
+                lam.setdefault(slot, parse_row(row, "Laminate"))
+        for row in self.get("sku_decor_edges") or []:
+            slot = (row.slot or "").strip().lower()
+            if decor.SLOT_TOKEN_RE.match(slot):
+                edge.setdefault(slot, parse_row(row, "Edge Band"))
         return lam, edge
 
     def apply_decor_map(self):
@@ -570,6 +601,11 @@ class EstimateSKU(Document):
             if letter is None:
                 missing.add(f"{decor.slot_key(base)} ({'Edge Band' if is_edge else 'Laminate'})")
                 real = base
+            # the cross-check column: which slot produced this line
+            if m.meta.has_field("remarks"):
+                key = decor.slot_key(base)
+                m.remarks = (f"slot {key} → {real.rsplit('_', 1)[-1]}" if letter
+                             else f"slot {key}: NOT MAPPED")[:140]
             if (m.item or "") == real:
                 continue
             meta = (edge if is_edge else lam).get(letter) if letter else None
@@ -605,8 +641,8 @@ class EstimateSKU(Document):
         letters = "abcdefghijklmnopqrstuvwxyz"
         used = {"Laminate": set(), "Edge Band": set()}
         have = set()
-        for r in self.get("sku_decors") or []:
-            dom = r.domain or "Laminate"
+        for r in list(self.get("sku_decors") or []) + list(self.get("sku_decor_edges") or []):
+            dom = "Edge Band" if r.parentfield == "sku_decor_edges" else (r.get("domain") or "Laminate")
             used[dom].add((r.slot or "").strip().lower()[:1])
             have.add((dom, (r.brand or "").strip().lower(), (r.code or "").strip(),
                       (r.decor_name or "").strip().lower()))
@@ -616,8 +652,8 @@ class EstimateSKU(Document):
             if name == self.name:
                 continue
             src = frappe.get_doc("Estimate SKU", name)
-            for r in src.get("sku_decors") or []:
-                dom = r.domain or "Laminate"
+            for r in list(src.get("sku_decors") or []) + list(src.get("sku_decor_edges") or []):
+                dom = "Edge Band" if r.parentfield == "sku_decor_edges" else (r.get("domain") or "Laminate")
                 ident = (dom, (r.brand or "").strip().lower(), (r.code or "").strip(),
                          (r.decor_name or "").strip().lower())
                 if ident in have or not (r.brand or r.code):
@@ -629,11 +665,16 @@ class EstimateSKU(Document):
                     continue
                 used[dom].add(slot)
                 have.add(ident)
-                self.append("sku_decors", {
-                    "slot": slot, "domain": dom, "brand": r.brand, "code": r.code,
-                    "decor_name": r.decor_name, "year": r.year, "short": r.get("short"),
+                target = "sku_decor_edges" if dom == "Edge Band" else "sku_decors"
+                payload = {
+                    "slot": slot, "brand": r.brand, "code": r.code,
+                    "decor_name": r.decor_name, "year": r.get("year"), "short": r.get("short"),
                     "thickness": r.get("thickness"), "width": r.get("width"),
-                })
+                }
+                if target == "sku_decors":
+                    payload["domain"] = dom
+                    payload.pop("width", None)
+                self.append(target, payload)
                 register.append({"slot": slot, "domain": dom, "brand": r.brand,
                                  "code": r.code, "name": r.decor_name,
                                  "from": src.sku_code or name,
@@ -642,9 +683,12 @@ class EstimateSKU(Document):
         if added:
             self.save(ignore_permissions=True)
         return {"added": added,
-                "rows": [{"slot": r.slot, "domain": r.domain, "brand": r.brand,
-                          "code": r.code, "name": r.decor_name}
-                         for r in (self.get("sku_decors") or [])],
+                "rows": [{"slot": r.slot,
+                          "domain": "Edge Band" if r.parentfield == "sku_decor_edges"
+                                    else (r.get("domain") or "Laminate"),
+                          "brand": r.brand, "code": r.code, "name": r.decor_name}
+                         for r in list(self.get("sku_decors") or [])
+                         + list(self.get("sku_decor_edges") or [])],
                 "register": register}
 
     def refresh_material_rates(self):

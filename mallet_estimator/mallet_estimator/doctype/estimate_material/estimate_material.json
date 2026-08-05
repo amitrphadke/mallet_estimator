@@ -7,6 +7,7 @@
  "field_order": [
   "item",
   "description",
+  "remarks",
   "qty",
   "uom",
   "unit_cost",
@@ -25,7 +26,7 @@
    "fieldtype": "Link",
    "options": "Item",
    "in_list_view": 1,
-   "columns": 3,
+   "columns": 2,
    "label": "Material Item",
    "description": "The ERPNext stock Item — cost comes from its valuation / price.",
    "read_only": 1
@@ -33,10 +34,19 @@
   {
    "fieldname": "description",
    "fieldtype": "Data",
-   "in_list_view": 1,
+   "in_list_view": 0,
    "columns": 3,
    "label": "Description",
    "read_only": 1
+  },
+  {
+   "fieldname": "remarks",
+   "fieldtype": "Data",
+   "label": "Mapping",
+   "read_only": 1,
+   "in_list_view": 1,
+   "columns": 2,
+   "description": "Which décor slot produced this line (cross-check vs the map)."
   },
   {
    "fieldname": "qty",
@@ -52,7 +62,7 @@
    "fieldname": "uom",
    "fieldtype": "Link",
    "options": "UOM",
-   "in_list_view": 1,
+   "in_list_view": 0,
    "columns": 1,
    "label": "UOM",
    "read_only": 1
@@ -77,7 +87,7 @@
   {
    "fieldname": "customer_supplied",
    "fieldtype": "Check",
-   "in_list_view": 1,
+   "in_list_view": 0,
    "label": "Cust. Supplied",
    "description": "Client buys & ships this material to us — excluded from the client price."
   },
@@ -85,7 +95,9 @@
    "fieldname": "material",
    "fieldtype": "Data",
    "label": "OpenCutList Code",
-   "read_only": 1
+   "read_only": 1,
+   "columns": 2,
+   "in_list_view": 1
   },
   {
    "fieldname": "dims_section",

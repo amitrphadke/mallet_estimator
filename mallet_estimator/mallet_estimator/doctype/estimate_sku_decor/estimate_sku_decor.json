@@ -40,9 +40,10 @@
    "label": "Applies To",
    "options": "Laminate\nEdge Band",
    "default": "Laminate",
-   "in_list_view": 1,
-   "reqd": 1,
-   "columns": 1
+   "in_list_view": 0,
+   "reqd": 0,
+   "columns": 1,
+   "hidden": 1
   },
   {
    "fieldname": "brand",
@@ -65,7 +66,7 @@
    "fieldtype": "Data",
    "label": "Name",
    "in_list_view": 1,
-   "columns": 2
+   "columns": 3
   },
   {
    "fieldname": "thickness",
@@ -73,13 +74,14 @@
    "label": "Thickness (mm)",
    "in_list_view": 1,
    "columns": 1,
-   "precision": "1"
+   "precision": "1",
+   "description": "Laminate thickness (mm); sheet is always 1220 x 2440."
   },
   {
    "fieldname": "width",
    "fieldtype": "Float",
    "label": "Width (mm)",
-   "in_list_view": 1,
+   "in_list_view": 0,
    "columns": 1,
    "precision": "1",
    "description": "Edge band roll width (e.g. 22)."

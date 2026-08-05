@@ -37,3 +37,5 @@ mallet_estimator.patches.real_laminates
 mallet_estimator.patches.item_gst_backfill
 # UI hygiene — remove per-view PNG attachments (views extract at print time now).
 mallet_estimator.patches.drop_view_files
+# Décor map split: laminate vs edge-band tables; legacy rows migrated.
+mallet_estimator.patches.split_decor_tables

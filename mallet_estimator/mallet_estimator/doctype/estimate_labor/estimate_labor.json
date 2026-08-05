@@ -26,7 +26,8 @@
    "in_list_view": 1,
    "label": "Operation",
    "reqd": 1,
-   "description": "The Manufacturing Operation. Its Total Operation Time (min/unit) and Default Workstation fill in below."
+   "description": "The Manufacturing Operation. Its Total Operation Time (min/unit) and Default Workstation fill in below.",
+   "columns": 3
   },
   {
    "fieldname": "workstation",
@@ -35,7 +36,8 @@
    "in_list_view": 1,
    "label": "Workstation",
    "fetch_from": "operation.workstation",
-   "fetch_if_empty": 1
+   "fetch_if_empty": 1,
+   "columns": 2
   },
   {
    "fieldname": "qty",
@@ -43,7 +45,8 @@
    "in_list_view": 1,
    "label": "Qty",
    "default": "1",
-   "read_only_depends_on": "eval:['Sheet Lamination','Sheet Tape Removal','Sheet Cutting','Edge Banding'].includes(doc.operation)"
+   "read_only_depends_on": "eval:['Sheet Lamination','Sheet Tape Removal','Sheet Cutting','Edge Banding'].includes(doc.operation)",
+   "columns": 1
   },
   {
    "fieldname": "carp_min",
@@ -52,7 +55,8 @@
    "label": "Min / Unit",
    "fetch_from": "operation.mallet_min_per_unit",
    "fetch_if_empty": 1,
-   "description": "Minutes the workstation is occupied per unit (from the Operation's Std Time; override per SKU if needed). The crew wage is already in the workstation rate."
+   "description": "Minutes the workstation is occupied per unit (from the Operation's Std Time; override per SKU if needed). The crew wage is already in the workstation rate.",
+   "columns": 1
   },
   {
    "fieldname": "std_min",
@@ -60,27 +64,30 @@
    "in_list_view": 1,
    "label": "Std (master)",
    "read_only": 1,
-   "description": "The Operation master's Std Time (min/unit). If Min/Unit differs from this, the step is overridden for this SKU."
+   "description": "The Operation master's Std Time (min/unit). If Min/Unit differs from this, the step is overridden for this SKU.",
+   "columns": 1
   },
   {
    "fieldname": "carp_total",
    "fieldtype": "Float",
    "in_list_view": 1,
    "label": "Total Min",
-   "read_only": 1
+   "read_only": 1,
+   "columns": 1
   },
   {
    "fieldname": "op_cost",
    "fieldtype": "Currency",
    "in_list_view": 1,
    "label": "Phase Cost",
-   "read_only": 1
+   "read_only": 1,
+   "columns": 1
   },
   {
    "fieldname": "remark",
    "fieldtype": "Data",
    "label": "Remarks (what this step takes care of)",
-   "in_list_view": 1,
+   "in_list_view": 0,
    "columns": 2
   },
   {

@@ -15,10 +15,12 @@ frappe.ui.form.on("Estimate SKU", {
     // Décor brand picker shows only the makers of that ROW's domain (laminate
     // brands for Laminate rows, edge-band brands for Edge Band rows) — hardware
     // makers never appear. Unscoped makers (blank) stay visible everywhere.
-    frm.set_query("brand", "sku_decors", (doc, cdt, cdn) => {
-      const row = locals[cdt][cdn] || {};
-      return { filters: { mallet_scope: ["in", [row.domain || "Laminate", ""]] } };
-    });
+    frm.set_query("brand", "sku_decors", () => ({
+      filters: { mallet_scope: ["in", ["Laminate", ""]] },
+    }));
+    frm.set_query("brand", "sku_decor_edges", () => ({
+      filters: { mallet_scope: ["in", ["Edge Band", ""]] },
+    }));
   },
   refresh(frm) {
     setTimeout(() => { lock_qty(frm); lock_design_columns(frm); }, 300);
@@ -224,6 +226,11 @@ frappe.ui.form.on("Estimate SKU Decor", {
   slot: decor_changed, domain: decor_changed, brand: decor_changed,
   code: decor_changed, decor_name: decor_changed, short: decor_changed,
   sku_decors_remove: (frm) => decor_changed(frm),
+});
+frappe.ui.form.on("Estimate SKU Decor Edge", {
+  slot: decor_changed, brand: decor_changed, code: decor_changed,
+  decor_name: decor_changed, short: decor_changed,
+  sku_decor_edges_remove: (frm) => decor_changed(frm),
 });
 
 // I3: totals update instantly. Imported material rows are FULLY read-only (the
