@@ -126,6 +126,15 @@ class EstimateSKU(Document):
     def wipe_on_cleared_files(self):
         """Clearing a source PDF wipes what was derived from it, so the SKU never
         carries stale imported data."""
+        if not self.is_new() and (self.get("estimation_mode") or "") == "CSV-Nest" \
+                and self.has_value_changed("parts_csv") and not self.parts_csv:
+            self.set("materials", [])
+            self.set("joinery_items", [])
+            self.set("parts", [])
+            self.unpriced_materials = ""
+            for row in self.get("design_labor") or []:
+                row.qty = 0
+            self.import_drivers = ""
         if not self.is_new() and self.has_value_changed("estimate_pdf") and not self.estimate_pdf:
             self.set("materials", [])
             self.set("joinery_items", [])
@@ -216,6 +225,14 @@ class EstimateSKU(Document):
         self.maybe_extract_iso()
         if self._frozen():
             return  # quoted — rates are locked, no re-imports
+        if (self.get("estimation_mode") or "") == "CSV-Nest":
+            if not self.parts_csv:
+                return
+            if self.materials and not self.has_value_changed("parts_csv") \
+                    and not self.has_value_changed("estimation_mode"):
+                return
+            self.do_import()
+            return
         if not self.estimate_pdf:
             return
         if self.materials and not self.has_value_changed("estimate_pdf") \
@@ -258,6 +275,10 @@ class EstimateSKU(Document):
             frappe.msgprint(_("Could not extract the IsoView render from the 7 Views PDF."), indicator="orange")
 
     def do_import(self):
+        if (self.get("estimation_mode") or "") == "CSV-Nest":
+            from mallet_estimator import nest_import
+            nest_import.run(self)
+            return
         settings = frappe.get_single("Estimate Settings")
         materials = estimate_pdf.parse_estimate_pdf(estimate_pdf.read_pdf_text(_file_content(self.estimate_pdf)))
         if not materials:
@@ -1218,7 +1239,10 @@ class EstimateSKU(Document):
         """Force a re-import from the attached OpenCutList PDF + Parts CSV,
         bypassing the change-detection guard — rebuilds the material lines at the
         CURRENT import logic (e.g. designation-level hardware). Returns a summary."""
-        if not self.estimate_pdf:
+        if (self.get("estimation_mode") or "") == "CSV-Nest":
+            if not self.parts_csv:
+                frappe.throw(_("Attach the OpenCutList Part List CSV first (CSV-Nest mode)."))
+        elif not self.estimate_pdf:
             frappe.throw(_("Attach an OpenCutList Estimate PDF first."))
         self.do_import()
         self.save(ignore_permissions=True)

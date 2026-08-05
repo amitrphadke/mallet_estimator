@@ -30,6 +30,7 @@
   "article_image",
   "views_images",
   "material_section",
+  "estimation_mode",
   "estimate_pdf",
   "partlist_pdf",
   "views_pdf",
@@ -230,6 +231,14 @@
    "fieldname": "material_section",
    "fieldtype": "Section Break",
    "label": "Material"
+  },
+  {
+   "fieldname": "estimation_mode",
+   "fieldtype": "Select",
+   "label": "Estimation Mode",
+   "options": "OCL PDF (standard)\nCSV-Nest",
+   "default": "OCL PDF (standard)",
+   "description": "Standard: OCL Material Estimate PDF + Part List PDF. CSV-Nest: only the Part List CSV — sheet counts computed by the calibrated nesting engine (7Views PDF unchanged)."
   },
   {
    "fieldname": "estimate_pdf",
