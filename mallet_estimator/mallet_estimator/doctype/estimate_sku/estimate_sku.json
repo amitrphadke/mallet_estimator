@@ -10,6 +10,8 @@
   "identity_section",
   "article_name",
   "room",
+  "multi_room",
+  "rooms_covered",
   "sku_code",
   "auto_name",
   "column_break_identity",
@@ -104,8 +106,21 @@
    "fieldtype": "Link",
    "options": "Estimate Room",
    "label": "Room",
-   "reqd": 1,
-   "in_list_view": 1
+   "in_list_view": 1,
+   "mandatory_depends_on": "eval:!doc.multi_room"
+  },
+  {
+   "fieldname": "multi_room",
+   "fieldtype": "Check",
+   "label": "Multi-room (combined SKU)",
+   "description": "One SketchUp model spanning several rooms — Room becomes optional; the estimate groups this SKU under 'Multiple Rooms'."
+  },
+  {
+   "fieldname": "rooms_covered",
+   "fieldtype": "Data",
+   "label": "Rooms Covered",
+   "depends_on": "eval:doc.multi_room",
+   "description": "Free text for the prints, e.g. 'Master Bedroom, Guest BR, Living'."
   },
   {
    "fieldname": "sku_code",

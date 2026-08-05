@@ -1023,7 +1023,8 @@ class EstimateSKU(Document):
         # carries the customer initials as a prefix.
         ci = customer_initials(self.customer_display_name())
         if self.auto_name:
-            self.sku_code = sku_code(self.customer_display_name(), self.room, self.article_name)
+            room_token = "All Rooms" if self.get("multi_room") else self.room
+            self.sku_code = sku_code(self.customer_display_name(), room_token, self.article_name)
         elif self.sku_code and ci and not self.sku_code.upper().startswith(ci):
             self.sku_code = f"{ci}_{self.sku_code}"
         if not self.sku_code:

@@ -160,7 +160,7 @@ class Estimate(Document):
             blk = s.facial_sqft_block() or {}
             self._sqft_sum += float(blk.get("sqft") or 0)
             r.item = s.item
-            r.room = s.room
+            r.room = ("Multiple Rooms" if s.get("multi_room") else s.room)
             r.article_name = s.article_name
             r.internal_cost = s.internal_cost
             r.client_total = s.client_total
@@ -170,7 +170,7 @@ class Estimate(Document):
             r.profit = float(s.client_total or 0) + transport - float(s.internal_cost or 0)
             r.margin_pct = (r.profit / float(s.client_total) * 100.0) if s.client_total else 0
             # room-wise rollup for the on-screen summary
-            rn = s.room or "Unassigned"
+            rn = "Multiple Rooms" if s.get("multi_room") else (s.room or "Unassigned")
             if rn not in self._room_groups:
                 self._room_groups[rn] = {"room": rn, "count": 0, "subtotal": 0.0, "sqft": 0.0}
                 self._room_order.append(rn)
@@ -220,7 +220,9 @@ class Estimate(Document):
             blk = s.facial_sqft_block() or {}
             sqft = float(blk.get("sqft") or 0)
             price = float(s.client_total or 0) * spread
-            rn = s.room or "Unassigned"
+            rn = "Multiple Rooms" if s.get("multi_room") else (s.room or "Unassigned")
+            if s.get("multi_room") and s.get("rooms_covered"):
+                rn = f"Multiple Rooms ({s.rooms_covered})"
             if rn not in rooms:
                 rooms[rn] = {"room": rn, "rows": [], "subtotal": 0.0, "sqft": 0.0}
                 order.append(rn)
