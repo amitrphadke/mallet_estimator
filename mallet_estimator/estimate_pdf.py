@@ -33,6 +33,20 @@ def read_pdf_text(content):
 def parse_estimate_pdf(text):
     """Return a list of {name, thickness, qty, kind} from the estimate PDF text."""
     lines = [l.strip() for l in text.splitlines() if l.strip()]
+    # Some exports wrap the thickness unit: 'SG_LAM_V0_12mm_a_a / 1' + next line
+    # 'mm' — the stray '1' then reads as the QUANTITY (every laminate qty 1).
+    # Re-join the spec before parsing.
+    merged, i = [], 0
+    while i < len(lines):
+        l = lines[i]
+        if re.search(r"/\s*\d+(?:\.\d+)?$", l) and i + 1 < len(lines) \
+                and lines[i + 1].lower().startswith("mm"):
+            l = f"{l} {lines[i + 1]}"
+            i += 2
+        else:
+            i += 1
+        merged.append(l)
+    lines = merged
     section = None
     out = []
     i = 0
