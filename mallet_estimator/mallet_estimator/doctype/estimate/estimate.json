@@ -21,12 +21,12 @@
   "total_allowance",
   "transport_section",
   "transport_items",
+  "transport_total_section",
+  "total_transport",
   "trips_tempo",
   "trips_ext_lam",
-  "column_break_transport",
   "trips_client_hw",
   "trips_outward",
-  "total_transport",
   "totals_section",
   "total_material",
   "total_labor",
@@ -143,6 +143,11 @@
    "options": "Estimate Transport Trip"
   },
   {
+   "fieldname": "transport_total_section",
+   "fieldtype": "Section Break",
+   "label": ""
+  },
+  {
    "fieldname": "trips_tempo",
    "fieldtype": "Int",
    "label": "Tempo Trips (ply/int-lam/joinery)",
@@ -153,10 +158,6 @@
    "fieldtype": "Int",
    "label": "External Laminate Trips",
    "hidden": 1
-  },
-  {
-   "fieldname": "column_break_transport",
-   "fieldtype": "Column Break"
   },
   {
    "fieldname": "trips_client_hw",
