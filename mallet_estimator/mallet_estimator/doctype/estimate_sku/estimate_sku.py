@@ -694,7 +694,7 @@ class EstimateSKU(Document):
 
     @frappe.whitelist()
     def map_slot(self, domain, slot, brand=None, code=None, decor_name=None,
-                 thickness=None, width=None):
+                 thickness=None, width=None, short=None):
         """Map a décor slot STRAIGHT FROM THE MATERIAL LINES: pick brand / code /
         name (+ thickness, and width for edge bands) in one dialog — no table
         hopping, no code-order memorising. Upserts the row in the right map
@@ -715,6 +715,10 @@ class EstimateSKU(Document):
         row.brand = brand
         row.code = code
         row.decor_name = decor_name
+        # exact suffix override — set when the user picked an EXISTING item, so
+        # substitution reuses that item family instead of creating a duplicate
+        if short not in (None, ""):
+            row.short = short
         if thickness not in (None, ""):
             row.thickness = float(thickness)
         if width not in (None, "") and table == "sku_decor_edges":
@@ -723,6 +727,28 @@ class EstimateSKU(Document):
         prefix = ("edge " if domain == "Edge Band" else "lam ") + slot + " →"
         mapped = [m.item for m in self.materials or [] if str(m.get("remarks") or "").startswith(prefix)]
         return {"mapped_lines": len(mapped), "items": mapped[:6]}
+
+    @frappe.whitelist()
+    def decor_from_item(self, item_code):
+        """Prefill for 'Use existing item' in the mapping dialog: the décor
+        identity of an EXISTING laminate/edge Item — suffix (short), brand,
+        catalogue code, name, physicals — so mapping reuses it instead of
+        creating a near-duplicate in stock."""
+        if not frappe.db.exists("Item", item_code):
+            frappe.throw(_("Item {0} not found.").format(item_code))
+        it = frappe.db.get_value(
+            "Item", item_code,
+            ["item_name", "default_item_manufacturer", "default_manufacturer_part_no",
+             "mallet_thickness_mm", "mallet_sheet_width_mm"], as_dict=True) or {}
+        suffix = str(item_code).rsplit("_", 1)[-1]
+        return {
+            "short": suffix,
+            "brand": it.get("default_item_manufacturer"),
+            "code": it.get("default_manufacturer_part_no"),
+            "decor_name": (it.get("item_name") or "")[:100],
+            "thickness": it.get("mallet_thickness_mm"),
+            "width": it.get("mallet_sheet_width_mm"),
+        }
 
     def refresh_material_rates(self):
         """The price list is the only rate authority — until the Estimate is

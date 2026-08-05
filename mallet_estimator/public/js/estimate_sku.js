@@ -332,9 +332,29 @@ function map_slot_dialog(frm, slots) {
             d.fields_dict.brand.get_query = () => ({
               filters: { mallet_scope: ["in", [s.domain, ""]] },
             });
+            d.fields_dict.existing.get_query = () => ({
+              filters: { item_group: s.domain === "Edge Band" ? "Edge Banding" : "Laminate" },
+            });
             if (s.domain === "Edge Band" && !d.get_value("width")) d.set_value("width", 22);
             if (s.domain === "Edge Band" && !d.get_value("thickness")) d.set_value("thickness", 0.8);
           }
+        } },
+      { fieldname: "existing", fieldtype: "Link", options: "Item",
+        label: __("Use existing item (search — avoids duplicates)"),
+        description: __("Many décors already exist in stock. Picking one reuses its code family — brand/code/name prefill and NO new duplicate is created."),
+        get_query: () => ({ filters: { item_group: first.domain === "Edge Band" ? "Edge Banding" : "Laminate" } }),
+        onchange() {
+          const code = d.get_value("existing");
+          if (!code) return;
+          frm.call("decor_from_item", { item_code: code }).then((r) => {
+            const m = (r && r.message) || {};
+            if (m.brand) d.set_value("brand", m.brand);
+            if (m.code) d.set_value("code", m.code);
+            if (m.decor_name) d.set_value("decor_name", m.decor_name);
+            if (m.thickness) d.set_value("thickness", m.thickness);
+            if (m.width && d.get_value("pick") && by_id[d.get_value("pick")].domain === "Edge Band") d.set_value("width", m.width);
+            d.__short = m.short || null;
+          });
         } },
       { fieldname: "brand", fieldtype: "Link", options: "Manufacturer", label: __("Brand / Maker"), reqd: 1,
         get_query: () => ({ filters: { mallet_scope: ["in", [first.domain, ""]] } }) },
@@ -352,6 +372,7 @@ function map_slot_dialog(frm, slots) {
       frm.call("map_slot", {
         domain: s.domain, slot: s.slot, brand: v.brand, code: v.code,
         decor_name: v.decor_name, thickness: v.thickness, width: v.width,
+        short: d.__short || null,
       }).then((r) => {
         const m = (r && r.message) || {};
         frappe.show_alert({
