@@ -42,7 +42,7 @@
   <table>
     <thead><tr>
       <th>Sr No</th><th>Estimate SKU</th><th>Room</th><th>Item</th>
-      <th>Dimensions (W x D x H)</th><th class="r">Area (sq ft)</th><th class="r">Price</th>
+      <th>Dimensions (W x D x H)</th><th class="r">Area (sq ft)</th><th class="r">Days</th><th class="r">Price</th>
     </tr></thead>
     <tbody>
     {% for g in p.rooms %}
@@ -51,12 +51,13 @@
         <tr>
           <td>{{ ns.sr }}</td><td>{{ row.sku }}</td><td>{{ row.article }} ({{ g.room }})</td>
           <td>{{ row.item }}</td><td>{{ row.dims_ftin or row.dims }} <span class="muted">({{ row.dims }} mm)</span></td>
-          <td class="r">{{ "%.2f"|format(row.sqft) }}</td><td class="r">{{ money(row.price) }}</td>
+          <td class="r">{{ "%.2f"|format(row.sqft) }}</td><td class="r">{{ "%.1f"|format(row.days) }}</td><td class="r">{{ money(row.price) }}</td>
         </tr>
       {% endfor %}
       <tr class="roomrow">
         <td colspan="5">{{ g.room }} — subtotal</td>
         <td class="r">{{ "%.2f"|format(g.sqft) }}</td>
+        <td class="r">{{ "%.1f"|format(g.days) }}</td>
         <td class="r">{{ money(g.subtotal) }}{% if g.per_sqft %} <span class="muted">({{ money(g.per_sqft) }}/sq ft)</span>{% endif %}</td>
       </tr>
     {% endfor %}
@@ -65,6 +66,7 @@
 
   <table class="grand">
     <tr><td>Subtotal (all rooms{% if p.total_sqft %}, {{ "%.2f"|format(p.total_sqft) }} sq ft{% endif %})</td><td class="r">{{ money(p.subtotal) }}</td></tr>
+    <tr><td>Estimated build time</td><td class="r">{{ "%.1f"|format(p.total_days) }} days</td></tr>
     <tr><td>Transport</td><td class="r">{{ money(p.transport) }}</td></tr>
     <tr><td>GST {{ "%g"|format(p.gst_pct) }}%</td><td class="r">{{ money(p.gst) }}</td></tr>
     <tr class="tot"><td>Grand Total</td><td class="r">{{ money(p.grand_total) }}</td></tr>

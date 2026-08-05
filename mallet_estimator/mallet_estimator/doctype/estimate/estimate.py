@@ -228,7 +228,7 @@ class Estimate(Document):
             if s.get("multi_room") and s.get("rooms_covered"):
                 rn = f"Multiple Rooms ({s.rooms_covered})"
             if rn not in rooms:
-                rooms[rn] = {"room": rn, "rows": [], "subtotal": 0.0, "sqft": 0.0}
+                rooms[rn] = {"room": rn, "rows": [], "subtotal": 0.0, "sqft": 0.0, "days": 0.0}
                 order.append(rn)
             from mallet_estimator.estimator import dims_ftin
             rooms[rn]["rows"].append({
@@ -236,9 +236,11 @@ class Estimate(Document):
                 "item": s.item or "", "dims": "%d x %d x %d" % (s.outer_w or 0, s.outer_d or 0, s.outer_h or 0),
                 "dims_ftin": dims_ftin(s.outer_w, s.outer_d, s.outer_h),
                 "price": price, "sqft": sqft,
+                "days": float(s.get("est_days") or 0),
             })
             rooms[rn]["subtotal"] += price
             rooms[rn]["sqft"] += sqft
+            rooms[rn]["days"] += float(s.get("est_days") or 0)
             choose_rows, internal_rows = [], []
             for m in s.materials or []:
                 bucket = inventory.material_bucket(m.item, m.material)
@@ -288,6 +290,7 @@ class Estimate(Document):
         return {
             "kind": kind, "status": status, "is_draft": self.docstatus == 0,
             "rooms": room_list, "total_sqft": sum(g["sqft"] for g in room_list),
+            "total_days": sum(g.get("days") or 0 for g in room_list),
             "subtotal": subtotal, "transport": transport,
             "gst_pct": gst_pct, "gst": gst, "grand_total": subtotal + transport + gst,
             "assumed_rates": sorted(rate_rows.values(), key=lambda x: (x["bucket"], x["item"])),
