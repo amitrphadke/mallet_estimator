@@ -236,6 +236,7 @@ class Estimate(Document):
                 "item": s.item or "", "dims": "%d x %d x %d" % (s.outer_w or 0, s.outer_d or 0, s.outer_h or 0),
                 "dims_ftin": dims_ftin(s.outer_w, s.outer_d, s.outer_h),
                 "price": price, "sqft": sqft,
+                "per_sqft": (price / sqft) if sqft else 0,
                 "days": float(s.get("est_days") or 0),
             })
             rooms[rn]["subtotal"] += price
@@ -291,6 +292,8 @@ class Estimate(Document):
             "kind": kind, "status": status, "is_draft": self.docstatus == 0,
             "rooms": room_list, "total_sqft": sum(g["sqft"] for g in room_list),
             "total_days": sum(g.get("days") or 0 for g in room_list),
+            "per_sqft_total": (subtotal / sum(g["sqft"] for g in room_list))
+                              if sum(g["sqft"] for g in room_list) else 0,
             "subtotal": subtotal, "transport": transport,
             "gst_pct": gst_pct, "gst": gst, "grand_total": subtotal + transport + gst,
             "assumed_rates": sorted(rate_rows.values(), key=lambda x: (x["bucket"], x["item"])),

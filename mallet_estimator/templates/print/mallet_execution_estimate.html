@@ -36,19 +36,20 @@
 
   {% set ns = namespace(sr=0) %}
   <table>
-    <thead><tr><th>Sr</th><th>SKU</th><th>Room</th><th>Item</th><th>Dimensions</th><th class="r">Sq ft</th><th class="r">Days</th><th class="r">Client Price</th></tr></thead>
+    <thead><tr><th>Sr</th><th>SKU</th><th>Room</th><th>Item</th><th>Dimensions</th><th class="r">Sq ft</th><th class="r">Days</th><th class="r">₹ / sq ft</th><th class="r">Client Price</th></tr></thead>
     <tbody>
     {% for g in p.rooms %}
       {% for row in g.rows %}
         {% set ns.sr = ns.sr + 1 %}
         <tr><td>{{ ns.sr }}</td><td>{{ row.sku }}</td><td>{{ g.room }}</td><td>{{ row.item }}</td>
-            <td>{{ row.dims }} mm <span class="muted">({{ row.dims_ftin }})</span></td><td class="r">{{ "%.2f"|format(row.sqft) }}</td><td class="r">{{ "%.1f"|format(row.days) }}</td><td class="r">{{ money(row.price) }}</td></tr>
+            <td>{{ row.dims }} mm <span class="muted">({{ row.dims_ftin }})</span></td><td class="r">{{ "%.2f"|format(row.sqft) }}</td><td class="r">{{ "%.1f"|format(row.days) }}</td><td class="r">{{ money(row.per_sqft) }}</td><td class="r">{{ money(row.price) }}</td></tr>
       {% endfor %}
-      <tr class="roomrow"><td colspan="5">{{ g.room }} — subtotal</td><td class="r">{{ "%.2f"|format(g.sqft) }}</td><td class="r">{{ "%.1f"|format(g.days) }}</td><td class="r">{{ money(g.subtotal) }}</td></tr>
+      <tr class="roomrow"><td colspan="5">{{ g.room }} — subtotal</td><td class="r">{{ "%.2f"|format(g.sqft) }}</td><td class="r">{{ "%.1f"|format(g.days) }}</td><td class="r">{{ money(g.per_sqft) if g.per_sqft else "" }}</td><td class="r">{{ money(g.subtotal) }}</td></tr>
     {% endfor %}
     </tbody>
   </table>
   <table class="grand">
+    <tr><td>Rate / sq ft (pre-tax)</td><td class="r">{{ money(p.per_sqft_total) }}</td></tr>
     <tr><td>Estimated build time</td><td class="r">{{ "%.1f"|format(p.total_days) }} days</td></tr>
     <tr><td>Subtotal</td><td class="r">{{ money(p.subtotal) }}</td></tr>
     <tr><td>Transport</td><td class="r">{{ money(p.transport) }}</td></tr>
