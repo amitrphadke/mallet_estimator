@@ -83,6 +83,14 @@ frappe.ui.form.on("Estimate SKU", {
     if (!frm.is_new()) {
       frm.add_custom_button(__("Add material row"), () => add_material_dialog(frm), __("Materials"));
     }
+    // Map a décor slot straight from the lines: one dialog — Brand, Code, Name,
+    // Thickness (+ Width for edge bands). No table hopping, no code-order recall.
+    if (!frm.is_new() && !frm.doc.rates_frozen) {
+      const slots = decor_slots_from_lines(frm);
+      if (slots.length) {
+        frm.add_custom_button(__("Map décor slot"), () => map_slot_dialog(frm, slots), __("Materials")).addClass("btn-primary");
+      }
+    }
     // Combined model: pull every distinct décor of the project into THIS SKU's
     // map (one letter per décor project-wide) and show the letter register to
     // use while assigning generic materials in the combined SketchUp file.
@@ -270,6 +278,86 @@ function target_price_dialog(frm) {
             m.below_cost ? "<br><b style='color:var(--red-600,#c0392b)'>" + __("TARGET IS BELOW INTERNAL COST") + "</b>" : "",
           ]),
         });
+        frm.reload_doc();
+      });
+    },
+  });
+  d.show();
+}
+
+// The slot instances present on the lam/edge material lines, with their current
+// mapping state (read from the Mapping column the server stamps).
+function decor_slots_from_lines(frm) {
+  const seen = {};
+  (frm.doc.materials || []).forEach((m) => {
+    const base = String(m.material || "");
+    const up = base.toUpperCase();
+    if (!up.startsWith("SG_LAM") && !up.startsWith("EB_")) return;
+    const toks = base.split("_");
+    let trail = [];
+    for (let i = toks.length - 1; i >= 0; i--) {
+      if (/^[a-z]\d*$/.test(toks[i])) trail.unshift(toks[i]);
+      else break;
+    }
+    if (!trail.length) return;
+    const key = trail[0][0] + trail[trail.length - 1].replace(/^[a-z]/, "");
+    const domain = up.startsWith("EB_") ? "Edge Band" : "Laminate";
+    const id = `${domain}::${key}`;
+    if (!seen[id]) {
+      seen[id] = {
+        domain, slot: key, example: base,
+        mapped: !String(m.remarks || "").includes("NOT MAPPED") && !!m.remarks,
+      };
+    }
+  });
+  return Object.values(seen).sort((a, b) => (a.domain + a.slot).localeCompare(b.domain + b.slot));
+}
+
+function map_slot_dialog(frm, slots) {
+  const first = slots.find((s) => !s.mapped) || slots[0];
+  const label = (s) =>
+    `${s.domain === "Edge Band" ? "Edge Band" : "Laminate"} ${s.slot}` +
+    ` — ${s.example}${s.mapped ? " (mapped)" : " (NOT MAPPED)"}`;
+  const by_id = {};
+  slots.forEach((s) => (by_id[label(s)] = s));
+  const d = new frappe.ui.Dialog({
+    title: __("Map décor slot — item is created on Apply"),
+    fields: [
+      { fieldname: "pick", fieldtype: "Select", label: __("Slot (from the material lines)"),
+        options: Object.keys(by_id).join("\n"), default: label(first), reqd: 1,
+        onchange() {
+          const s = by_id[d.get_value("pick")];
+          if (s) {
+            d.set_df_property("width", "hidden", s.domain !== "Edge Band");
+            d.fields_dict.brand.get_query = () => ({
+              filters: { mallet_scope: ["in", [s.domain, ""]] },
+            });
+            if (s.domain === "Edge Band" && !d.get_value("width")) d.set_value("width", 22);
+            if (s.domain === "Edge Band" && !d.get_value("thickness")) d.set_value("thickness", 0.8);
+          }
+        } },
+      { fieldname: "brand", fieldtype: "Link", options: "Manufacturer", label: __("Brand / Maker"), reqd: 1,
+        get_query: () => ({ filters: { mallet_scope: ["in", [first.domain, ""]] } }) },
+      { fieldname: "code", fieldtype: "Data", label: __("Catalogue Code"), reqd: 1 },
+      { fieldname: "decor_name", fieldtype: "Data", label: __("Name") },
+      { fieldname: "thickness", fieldtype: "Float", label: __("Thickness (mm)"),
+        default: first.domain === "Edge Band" ? 0.8 : null },
+      { fieldname: "width", fieldtype: "Float", label: __("Width (mm)"),
+        default: 22, hidden: first.domain !== "Edge Band" },
+    ],
+    primary_action_label: __("Apply (creates the stock item)"),
+    primary_action(v) {
+      const s = by_id[v.pick];
+      d.hide();
+      frm.call("map_slot", {
+        domain: s.domain, slot: s.slot, brand: v.brand, code: v.code,
+        decor_name: v.decor_name, thickness: v.thickness, width: v.width,
+      }).then((r) => {
+        const m = (r && r.message) || {};
+        frappe.show_alert({
+          message: __("Mapped {0} {1}: {2} line(s) → {3}", [s.domain, s.slot, m.mapped_lines || 0, (m.items || []).join(", ")]),
+          indicator: "green",
+        }, 7);
         frm.reload_doc();
       });
     },

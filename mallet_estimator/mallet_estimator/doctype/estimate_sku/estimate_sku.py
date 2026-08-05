@@ -604,8 +604,9 @@ class EstimateSKU(Document):
             # the cross-check column: which slot produced this line
             if m.meta.has_field("remarks"):
                 key = decor.slot_key(base)
-                m.remarks = (f"slot {key} → {real.rsplit('_', 1)[-1]}" if letter
-                             else f"slot {key}: NOT MAPPED")[:140]
+                kind_lbl = "edge" if is_edge else "lam"
+                m.remarks = (f"{kind_lbl} {key} → {real.rsplit('_', 1)[-1]}" if letter
+                             else f"{kind_lbl} {key}: NOT MAPPED")[:140]
             if (m.item or "") == real:
                 continue
             meta = (edge if is_edge else lam).get(letter) if letter else None
@@ -690,6 +691,38 @@ class EstimateSKU(Document):
                          for r in list(self.get("sku_decors") or [])
                          + list(self.get("sku_decor_edges") or [])],
                 "register": register}
+
+    @frappe.whitelist()
+    def map_slot(self, domain, slot, brand=None, code=None, decor_name=None,
+                 thickness=None, width=None):
+        """Map a décor slot STRAIGHT FROM THE MATERIAL LINES: pick brand / code /
+        name (+ thickness, and width for edge bands) in one dialog — no table
+        hopping, no code-order memorising. Upserts the row in the right map
+        table and saves, which re-points the lines AND creates the stock Item
+        right away."""
+        if self._frozen():
+            frappe.throw(_("Rates are frozen (quoted) — amend/cancel the Estimate first."))
+        slot = (slot or "").strip().lower()
+        if not decor.SLOT_TOKEN_RE.match(slot):
+            frappe.throw(_("Slot must be a letter with optional digits (a, b, b1 …)."))
+        table = "sku_decor_edges" if domain == "Edge Band" else "sku_decors"
+        row = next((r for r in (self.get(table) or [])
+                    if (r.slot or "").strip().lower() == slot), None)
+        if row is None:
+            row = self.append(table, {"slot": slot})
+            if table == "sku_decors":
+                row.domain = "Laminate"
+        row.brand = brand
+        row.code = code
+        row.decor_name = decor_name
+        if thickness not in (None, ""):
+            row.thickness = float(thickness)
+        if width not in (None, "") and table == "sku_decor_edges":
+            row.width = float(width)
+        self.save(ignore_permissions=True)
+        prefix = ("edge " if domain == "Edge Band" else "lam ") + slot + " →"
+        mapped = [m.item for m in self.materials or [] if str(m.get("remarks") or "").startswith(prefix)]
+        return {"mapped_lines": len(mapped), "items": mapped[:6]}
 
     def refresh_material_rates(self):
         """The price list is the only rate authority — until the Estimate is

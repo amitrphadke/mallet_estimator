@@ -84,7 +84,8 @@
    "in_list_view": 0,
    "columns": 1,
    "precision": "1",
-   "description": "Edge band roll width (e.g. 22)."
+   "description": "Edge band roll width (e.g. 22).",
+   "hidden": 1
   },
   {
    "fieldname": "year",

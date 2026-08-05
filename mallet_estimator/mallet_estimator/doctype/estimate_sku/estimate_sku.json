@@ -261,7 +261,7 @@
    "fieldname": "execution_section",
    "fieldtype": "Section Break",
    "label": "Execution Design — actual materials (after approval)",
-   "collapsible": 1,
+   "collapsible": 0,
    "description": "After the estimate is approved, choose the real client-selected item for each generic estimate line. Variance vs the estimate is tracked so invoicing has no surprises. Use the 'Build execution design' button to seed this from the estimate."
   },
   {
@@ -287,7 +287,7 @@
    "fieldname": "parts_section",
    "fieldtype": "Section Break",
    "label": "Execution — Parts (from earlier imports)",
-   "collapsible": 1,
+   "collapsible": 0,
    "collapsible_depends_on": "eval:false",
    "description": "Execution-phase inputs. The Parts CSV, cut diagrams and labels are used on the shop floor after the estimate is approved — they do not affect the estimate.",
    "hidden": 1
@@ -391,7 +391,7 @@
    "fieldname": "transport_section",
    "fieldtype": "Section Break",
    "label": "Transport (standalone view — consolidated on the Estimate)",
-   "collapsible": 1,
+   "collapsible": 0,
    "description": "Inward trips: big tempo ₹/trip (ply + internal laminate + joinery), external laminate trip, client-hardware trip; plus outward delivery. Rates live in Estimate Settings. Multiple SKUs share trips — the Estimate consolidates.",
    "hidden": 1
   },
@@ -435,7 +435,7 @@
    "fieldname": "decor_section",
    "fieldtype": "Section Break",
    "label": "Décor Map — laminates first, then edge bands",
-   "collapsible": 1
+   "collapsible": 0
   },
   {
    "fieldname": "sku_decors",
@@ -455,7 +455,7 @@
    "fieldname": "margins_section",
    "fieldtype": "Section Break",
    "label": "Margins & Pricing",
-   "collapsible": 1
+   "collapsible": 0
   },
   {
    "fieldname": "use_custom_margins",
