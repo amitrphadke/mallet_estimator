@@ -101,9 +101,13 @@ class Estimate(Document):
         if self.docstatus == 0:
             self.total_internal = (self.total_internal or 0) + self.total_transport
             self.total_client = (self.total_client or 0) + self.total_transport
-        base = (self.total_client or 0)
-        gst_pct = self.gst_pct if self.gst_pct is not None else 18
-        self.total_gst = base * (gst_pct or 0) / 100.0
+        base = float(self.total_client or 0)
+        # a NEW doc arrives with gst_pct as the STRING "18" — coerce defensively
+        try:
+            gst_pct = 18.0 if self.gst_pct in (None, "") else float(self.gst_pct)
+        except (TypeError, ValueError):
+            gst_pct = 18.0
+        self.total_gst = base * gst_pct / 100.0
         self.total_with_gst = base + self.total_gst
 
     @frappe.whitelist()
