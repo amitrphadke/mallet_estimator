@@ -12,6 +12,7 @@
   "room",
   "multi_room",
   "rooms_covered",
+  "facial_sqft_override",
   "sku_code",
   "auto_name",
   "column_break_identity",
@@ -121,6 +122,13 @@
    "label": "Rooms Covered",
    "depends_on": "eval:doc.multi_room",
    "description": "Free text for the prints, e.g. 'Master Bedroom, Guest BR, Living'."
+  },
+  {
+   "fieldname": "facial_sqft_override",
+   "fieldtype": "Float",
+   "label": "Facial Area Override (sq ft)",
+   "precision": "2",
+   "description": "Blank = automatic: two greatest outer dims; for a multi-room SKU, the SUM of the project's individual SKUs' facial areas. Key a value to override either."
   },
   {
    "fieldname": "sku_code",

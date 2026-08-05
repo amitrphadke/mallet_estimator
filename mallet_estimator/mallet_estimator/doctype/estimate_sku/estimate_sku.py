@@ -998,11 +998,24 @@ class EstimateSKU(Document):
     def facial_sqft_block(self):
         """Facial area per the interior-design convention: the product of the two
         GREATEST outer dimensions (mm) → sq ft, with the client per-sqft rates
-        (all pre-tax). None when outer dims aren't keyed yet."""
-        dims = sorted([float(self.get(f) or 0) for f in ("outer_w", "outer_d", "outer_h")], reverse=True)
-        if not (dims[0] and dims[1]):
-            return None
-        sqft = dims[0] * dims[1] / 92903.04  # mm² per sq ft
+        (all pre-tax). A MULTI-ROOM (combined) SKU has no meaningful outer dims —
+        its area is the SUM of the project's individual SKUs' facial areas. The
+        Facial Area Override field beats both. None when nothing resolves."""
+        sqft = float(self.get("facial_sqft_override") or 0)
+        if not sqft and self.get("multi_room") and self.project:
+            for name in frappe.get_all(
+                "Estimate SKU",
+                filters={"project": self.project, "name": ["!=", self.name], "multi_room": ["!=", 1]},
+                pluck="name",
+            ):
+                other = frappe.get_doc("Estimate SKU", name)
+                blk = other.facial_sqft_block() or {}
+                sqft += float(blk.get("sqft") or 0)
+        if not sqft:
+            dims = sorted([float(self.get(f) or 0) for f in ("outer_w", "outer_d", "outer_h")], reverse=True)
+            if not (dims[0] and dims[1]):
+                return None
+            sqft = dims[0] * dims[1] / 92903.04  # mm² per sq ft
         if not sqft:
             return None
         return {
