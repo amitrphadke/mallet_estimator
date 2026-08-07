@@ -117,8 +117,10 @@ class EstimateSKU(Document):
         self.ensure_custom_operations()
         self.maybe_import()
         self.pull_decor_masters()
+        self.pull_line_decors()
         self.apply_decor_map()
         self.refresh_material_rates()
+        self.price_material_lines()
         self.compute_code()
         self.enforce_locked_qty()
         self.derive_joinery()
@@ -724,82 +726,6 @@ class EstimateSKU(Document):
                 title=_("Fill the Décor Slots map"), indicator="orange",
             )
 
-    @staticmethod
-    def _next_free_slot(letters, dom_used):
-        """Next unused slot token: a..z, then a1..z1, a2..z2 … — the suffixed
-        rounds keep combined models with more than 26 décors per domain working
-        (slot_key treats b1 as a distinct décor from b)."""
-        for suffix in ("",) + tuple(str(i) for i in range(1, 10)):
-            for l in letters:
-                if l + suffix not in dom_used:
-                    return l + suffix
-        return None
-
-    @frappe.whitelist()
-    def prefill_decor_from_project(self):
-        """COMBINED-MODEL helper: one SketchUp file holding every SKU reuses slot
-        letters PROJECT-WIDE — one letter per DISTINCT décor (not per article).
-        Pull every distinct décor from this project's other SKUs into this SKU's
-        map: a letter is kept when it doesn't collide, otherwise the next free
-        letter (per domain) is assigned. Returns the register — the exact
-        generic material letters to use while building the combined model."""
-        if self._frozen():
-            frappe.throw(_("Rates are frozen (quoted) — amend/cancel the Estimate first."))
-        if not self.project:
-            frappe.throw(_("Set the Project first."))
-        letters = "abcdefghijklmnopqrstuvwxyz"
-        used = {"Laminate": set(), "Edge Band": set()}
-        have = set()
-        for r in list(self.get("sku_decors") or []) + list(self.get("sku_decor_edges") or []):
-            dom = "Edge Band" if r.parentfield == "sku_decor_edges" else (r.get("domain") or "Laminate")
-            used[dom].add((r.slot or "").strip().lower())
-            have.add((dom, (r.brand or "").strip().lower(), (r.code or "").strip(),
-                      (r.decor_name or "").strip().lower()))
-        register, added = [], 0
-        for name in frappe.get_all("Estimate SKU", filters={"project": self.project},
-                                   order_by="room asc, article_name asc", pluck="name"):
-            if name == self.name:
-                continue
-            src = frappe.get_doc("Estimate SKU", name)
-            for r in list(src.get("sku_decors") or []) + list(src.get("sku_decor_edges") or []):
-                dom = "Edge Band" if r.parentfield == "sku_decor_edges" else (r.get("domain") or "Laminate")
-                ident = (dom, (r.brand or "").strip().lower(), (r.code or "").strip(),
-                         (r.decor_name or "").strip().lower())
-                if ident in have or not (r.brand or r.code):
-                    continue
-                pref = (r.slot or "").strip().lower()
-                slot = pref if pref and pref not in used[dom] else \
-                    self._next_free_slot(letters, used[dom])
-                if not slot:
-                    continue
-                used[dom].add(slot)
-                have.add(ident)
-                target = "sku_decor_edges" if dom == "Edge Band" else "sku_decors"
-                payload = {
-                    "slot": slot, "brand": r.brand, "code": r.code,
-                    "decor_name": r.decor_name, "year": r.get("year"), "short": r.get("short"),
-                    "thickness": r.get("thickness"), "width": r.get("width"),
-                }
-                if target == "sku_decors":
-                    payload["domain"] = dom
-                    payload.pop("width", None)
-                self.append(target, payload)
-                register.append({"slot": slot, "domain": dom, "brand": r.brand,
-                                 "code": r.code, "name": r.decor_name,
-                                 "from": src.sku_code or name,
-                                 "relettered": bool(pref and pref != slot)})
-                added += 1
-        if added:
-            self.save(ignore_permissions=True)
-        return {"added": added,
-                "rows": [{"slot": r.slot,
-                          "domain": "Edge Band" if r.parentfield == "sku_decor_edges"
-                                    else (r.get("domain") or "Laminate"),
-                          "brand": r.brand, "code": r.code, "name": r.decor_name}
-                         for r in list(self.get("sku_decors") or [])
-                         + list(self.get("sku_decor_edges") or [])],
-                "register": register}
-
     @frappe.whitelist()
     def map_slot(self, domain, slot, brand=None, code=None, decor_name=None,
                  thickness=None, width=None, short=None):
@@ -858,6 +784,105 @@ class EstimateSKU(Document):
             "width": it.get("mallet_sheet_width_mm"),
         }
 
+    def pull_line_decors(self):
+        """Assign décor straight from a MATERIAL LINE: picking a Mallet Decor
+        on an SG_/EB_ line writes it into the SKU's décor map for that line's
+        slot, so apply_decor_map (next in the pipeline) re-points the item.
+        Ply carries two faces — `decor` maps the deciding slot, `decor_ext`
+        the second one. No table hopping, and the map stays the single source
+        of truth."""
+        if self._frozen():
+            return
+        for m in self.materials or []:
+            if not (m.get("decor") or m.get("decor_ext")):
+                continue
+            code = str(m.material or "")
+            toks = decor.trailing_slots(code)
+            if not toks:
+                continue
+            up = code.upper()
+            domain = "Edge Band" if up.startswith("EB_") else "Laminate"
+            pairs = []
+            if m.get("decor"):
+                pairs.append((decor.slot_key(code), m.decor, domain))
+            if m.get("decor_ext") and len(toks) > 1:
+                # the second face's own slot instance
+                pairs.append((toks[-1], m.decor_ext, "Laminate"))
+            for slot, decor_name, dom in pairs:
+                if slot and decor_name:
+                    self._upsert_decor_slot(slot, decor_name, dom)
+
+    def _upsert_decor_slot(self, slot, decor_name, domain):
+        """Point one slot at a Mallet Decor, creating the row when missing."""
+        d = frappe.db.get_value(
+            "Mallet Decor", decor_name,
+            ["brand", "code", "decor_name", "thickness", "width", "year", "short"],
+            as_dict=True)
+        if not d:
+            return
+        table = "sku_decor_edges" if domain == "Edge Band" else "sku_decors"
+        slot = (slot or "").strip().lower()
+        for row in self.get(table) or []:
+            if (row.slot or "").strip().lower() == slot:
+                target = row
+                break
+        else:
+            target = self.append(table, {"slot": slot})
+            if table == "sku_decors":
+                target.domain = domain
+        target.decor = decor_name
+        target.brand, target.code, target.decor_name = d.brand, d.code, d.decor_name
+        if d.get("short"):
+            target.short = d.short
+        if d.get("year"):
+            target.year = d.year
+        if d.get("thickness"):
+            target.thickness = d.thickness
+        if table == "sku_decor_edges" and d.get("width"):
+            target.width = d.width
+
+    def price_material_lines(self):
+        """Per-line discount and tax on top of the price-list rate.
+
+        Stock prices are kept PRE-tax, so tax is what is added on top. The
+        policy rate is the item's own mallet_gst_pct when set, else the house
+        GST%; a line may override it, and both are shown so the difference is
+        visible. Discount applies to THIS line only — the price list keeps its
+        rate, which stays the single rate authority."""
+        house_gst = 18.0
+        try:
+            settings = frappe.get_single("Estimate Settings")
+            if settings.meta.has_field("gst_pct") and settings.get("gst_pct") not in (None, ""):
+                house_gst = float(settings.gst_pct)
+        except Exception:
+            pass
+        disc_total = tax_total = net_total = 0.0
+        for m in self.materials or []:
+            qty = float(m.qty or 0)
+            rate = float(m.unit_cost or 0)
+            disc = max(0.0, min(100.0, float(m.get("discount_pct") or 0)))
+            m.net_rate = rate * (1 - disc / 100.0)
+            m.discount_amount = qty * rate * disc / 100.0
+            m.line_cost = qty * m.net_rate
+            policy = None
+            if m.item and frappe.db.has_column("Item", "mallet_gst_pct"):
+                policy = frappe.db.get_value("Item", m.item, "mallet_gst_pct")
+            m.tax_rate_policy = float(policy) if policy not in (None, "") else house_gst
+            applied = m.get("tax_rate")
+            m.tax_amount = float(m.line_cost or 0) * (
+                float(applied) if applied not in (None, "") else float(m.tax_rate_policy)) / 100.0
+            # A client-supplied line is not bought by us: it carries no cost,
+            # no discount and no input tax of ours.
+            if m.get("customer_supplied"):
+                m.line_cost = m.discount_amount = m.tax_amount = 0
+            disc_total += float(m.discount_amount or 0)
+            tax_total += float(m.tax_amount or 0)
+            net_total += float(m.line_cost or 0)
+        if self.meta.has_field("material_discount_total"):
+            self.material_discount_total = disc_total
+        if self.meta.has_field("material_tax_total"):
+            self.material_tax_total = tax_total
+
     def refresh_material_rates(self):
         """The price list is the only rate authority — until the Estimate is
         quoted (rates_frozen), every save re-reads each material line's rate,
@@ -874,6 +899,8 @@ class EstimateSKU(Document):
             rate, source = inventory.material_rate(row.item)
             factor = inventory.EDGE_ROLL_METERS if (row.uom or "") == "Roll" else 1
             row.unit_cost = (rate or 0) * factor
+            # line_cost is set by price_material_lines (discount-aware), which
+            # runs immediately after this in validate().
             row.line_cost = (row.qty or 0) * row.unit_cost
             if source == "unset" and row.item not in unpriced:
                 unpriced.append(row.item)

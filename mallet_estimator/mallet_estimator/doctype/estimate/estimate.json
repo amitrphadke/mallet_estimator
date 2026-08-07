@@ -31,6 +31,8 @@
   "trips_outward",
   "totals_section",
   "total_material",
+  "total_material_tax",
+  "total_material_discount",
   "total_labor",
   "total_overhead",
   "total_design",
@@ -307,6 +309,20 @@
    "options": "Estimate SKU Intake",
    "label": "Add SKUs — select existing or create",
    "description": "One row per SKU: pick an <b>Existing SKU</b>, or fill Room + Name and attach either a <b>Part List CSV</b> (CSV-Nest — nested here, shared material across the estimate) or a <b>Material Estimate PDF</b> (OCL PDF — standalone, packed by OpenCutList). Add as many rows as you need, then Save. An estimate holds ONE mode; the first SKU decides it."
+  },
+  {
+   "fieldname": "total_material_discount",
+   "fieldtype": "Currency",
+   "label": "Total Material Discount",
+   "read_only": 1,
+   "description": "Every SKU's per-line material discounts, summed."
+  },
+  {
+   "fieldname": "total_material_tax",
+   "fieldtype": "Currency",
+   "label": "Total Material Tax (input)",
+   "read_only": 1,
+   "description": "Tax on purchased material at each line's applied rate — the input-side view; the client-facing GST stays the document-level charge below."
   }
  ],
  "links": [],

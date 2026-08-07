@@ -132,9 +132,6 @@ class TestCodes(unittest.TestCase):
         self.assertEqual(E.sku_code("Yogesh Sahasrabudhe", "Master Bedroom", "Wardrobe"), "YS_MB_WAR")
 
 
-if __name__ == "__main__":
-    unittest.main()
-
 
 class TestDecor(unittest.TestCase):
     def test_bcn_standard(self):
@@ -262,3 +259,39 @@ class TestDecorBlocks(unittest.TestCase):
         slots = {(e["placeholder"], e["slot"]) for e in out}
         self.assertIn(("SG_LAM_V1_16mm_b_a", "b"), slots)
         self.assertIn(("SG_LAM_V1_16mm_b_a", "a"), slots)
+
+
+class TestLineDiscountTax(unittest.TestCase):
+    """Per-line discount + tax arithmetic (the pure part of price_material_lines):
+    stock prices are PRE-tax, discount applies to the line only, tax follows the
+    line's applied rate or the policy rate."""
+
+    @staticmethod
+    def _price(qty, rate, disc_pct, policy_pct, applied_pct=None, client_supplied=False):
+        net_rate = rate * (1 - disc_pct / 100.0)
+        discount = qty * rate * disc_pct / 100.0
+        line_cost = qty * net_rate
+        pct = policy_pct if applied_pct is None else applied_pct
+        tax = line_cost * pct / 100.0
+        if client_supplied:
+            line_cost = discount = tax = 0
+        return {"net_rate": net_rate, "discount": discount, "line_cost": line_cost, "tax": tax}
+
+    def test_discount_applies_to_line_only(self):
+        r = self._price(10, 100, 10, 18)
+        self.assertAlmostEqual(r["net_rate"], 90)
+        self.assertAlmostEqual(r["discount"], 100)
+        self.assertAlmostEqual(r["line_cost"], 900)
+
+    def test_tax_follows_policy_then_override(self):
+        self.assertAlmostEqual(self._price(10, 100, 0, 18)["tax"], 180)
+        self.assertAlmostEqual(self._price(10, 100, 0, 18, applied_pct=12)["tax"], 120)
+        # tax is charged on the DISCOUNTED value, not the list value
+        self.assertAlmostEqual(self._price(10, 100, 10, 18)["tax"], 162)
+
+    def test_client_supplied_costs_us_nothing(self):
+        r = self._price(10, 100, 10, 18, client_supplied=True)
+        self.assertEqual((r["line_cost"], r["discount"], r["tax"]), (0, 0, 0))
+
+if __name__ == "__main__":
+    unittest.main()

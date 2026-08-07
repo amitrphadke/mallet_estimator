@@ -42,6 +42,8 @@
   "sku_decor_edges",
   "apply_decor_map_btn",
   "material_cost",
+  "material_tax_total",
+  "material_discount_total",
   "import_drivers",
   "execution_section",
   "execution_materials",
@@ -629,6 +631,20 @@
    "fieldtype": "Button",
    "label": "Apply Décor Map",
    "description": "Saves and re-points the laminate/edge material lines at the mapped décors — check the Materials table after."
+  },
+  {
+   "fieldname": "material_discount_total",
+   "fieldtype": "Currency",
+   "label": "Material Discount (this SKU)",
+   "read_only": 1,
+   "description": "Sum of the per-line discounts on this SKU's material lines."
+  },
+  {
+   "fieldname": "material_tax_total",
+   "fieldtype": "Currency",
+   "label": "Material Tax (this SKU)",
+   "read_only": 1,
+   "description": "Tax on the discounted material lines at each line's applied rate (stock prices are pre-tax)."
   }
  ],
  "links": [],

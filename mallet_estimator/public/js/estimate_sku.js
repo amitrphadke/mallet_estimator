@@ -18,6 +18,14 @@ frappe.ui.form.on("Estimate SKU", {
     // The in-row Décor picker: laminate rows search laminates, edge rows edge
     // bands. "Create a new Mallet Decor" appears in the same dropdown.
     frm.set_query("decor", "sku_decors", () => ({ filters: { domain: "Laminate" } }));
+    // Assign décor straight on a material line (SG_/EB_ codes): laminate for
+    // ply/laminate lines, edge band for EB_ lines. Save re-points the item.
+    frm.set_query("decor", "materials", (doc, cdt, cdn) => {
+      const row = locals[cdt][cdn] || {};
+      const eb = String(row.material || "").toUpperCase().startsWith("EB_");
+      return { filters: { domain: eb ? "Edge Band" : "Laminate" } };
+    });
+    frm.set_query("decor_ext", "materials", () => ({ filters: { domain: "Laminate" } }));
     frm.set_query("decor", "sku_decor_edges", () => ({ filters: { domain: "Edge Band" } }));
     frm.set_query("brand", "sku_decors", () => ({
       filters: { mallet_scope: ["in", ["Laminate", ""]] },
@@ -90,30 +98,6 @@ frappe.ui.form.on("Estimate SKU", {
     // Décor mapping lives IN the Décor Slots rows now: each row's "Décor" link
     // searches existing laminates/edge bands and can create one inline; the
     // 'Apply Décor Map' button under the tables saves + re-points the lines.
-    // Combined model: pull every distinct décor of the project into THIS SKU's
-    // map (one letter per décor project-wide) and show the letter register to
-    // use while assigning generic materials in the combined SketchUp file.
-    if (!frm.is_new() && !frm.doc.rates_frozen && frm.doc.project) {
-      frm.add_custom_button(__("Prefill décor map from project SKUs"), () => {
-        frm.call("prefill_decor_from_project").then((r) => {
-          const m = (r && r.message) || {};
-          const esc = frappe.utils.escape_html;
-          const rows = (m.rows || []).map((x) => `
-            <tr><td><b>${esc(x.slot)}</b></td><td>${esc(x.domain)}</td>
-                <td>${esc(x.brand || "")} ${esc(x.code || "")} ${esc(x.name || "")}</td></tr>`).join("");
-          frappe.msgprint({
-            title: __("Project décor register — use these letters in the combined SketchUp model"),
-            message: `<p>${__("{0} décor(s) pulled from the project's SKUs.", [m.added || 0])}</p>
-              <table class="table table-bordered" style="font-size:12.5px">
-                <thead><tr><th>${__("Slot letter")}</th><th>${__("Domain")}</th><th>${__("Décor")}</th></tr></thead>
-                <tbody>${rows}</tbody></table>
-              <p class="text-muted" style="font-size:11.5px">${__("Generic materials in the combined model must use THESE letters (SG_LAM_V1_16mm_c_a, EB_PVC_EX_d …) — one letter per décor across the whole project.")}</p>`,
-          });
-          frm.reload_doc();
-        });
-      }, __("Materials"));
-    }
-
     // Price backwards from revenue: type the pre-tax price you want (₹ or
     // ₹/sq ft) — margins are back-solved onto THIS SKU as custom margins
     // (material stays put; labor/overhead/design carry the uplift).
@@ -236,8 +220,14 @@ frappe.ui.form.on("Estimate SKU", {
         `<tr><td>${frappe.utils.escape_html(m.material || "")}</td>
              <td>${frappe.utils.escape_html(m.item || "")}</td>
              <td class="text-right">${format_number(m.qty || 0)}</td></tr>`).join("");
+      const unmapped = lines.filter((m) => {
+        const c = String(m.material || "");
+        return /_[a-z]\d*(_[a-z]\d*)?$/.test(String(m.item || c)); // still generic
+      });
       frappe.msgprint({
-        title: __("Décor map applied to the material lines"),
+        title: unmapped.length
+          ? __("Décor applied — {0} line(s) still generic", [unmapped.length])
+          : __("Décor applied — every laminate/edge line points at a real item"),
         message: rows
           ? `<table class="table table-bordered" style="font-size:12.5px">
                <thead><tr><th>${__("Generic code")}</th><th>${__("Item now used")}</th>

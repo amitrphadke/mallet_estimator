@@ -176,7 +176,8 @@ class Estimate(Document):
                 seen.add(r.estimate_sku)
                 rows.append(r)
         self.set("skus", rows)
-        totals = dict(material=0, labor=0, overhead=0, design=0, internal=0, client=0)
+        totals = dict(material=0, labor=0, overhead=0, design=0, internal=0, client=0,
+                      mat_discount=0, mat_tax=0)
         # Client buckets are summed PER SKU (each at its own effective margins —
         # house default or SKU override) — never re-derived from house margins.
         self._client_buckets = dict(material=0.0, labor=0.0, design=0.0, overhead=0.0)
@@ -241,6 +242,8 @@ class Estimate(Document):
             g["subtotal"] += float(s.client_total or 0)
             g["sqft"] += float(blk.get("sqft") or 0)
             totals["material"] += s.material_cost or 0
+            totals["mat_discount"] += float(s.get("material_discount_total") or 0)
+            totals["mat_tax"] += float(s.get("material_tax_total") or 0)
             totals["labor"] += s.labor_cost or 0
             totals["overhead"] += s.overhead_cost or 0
             totals["design"] += s.design_cost or 0
@@ -250,6 +253,10 @@ class Estimate(Document):
             totals["internal"] += (s.internal_cost or 0) - (s.get("transport_cost") or 0)
             totals["client"] += s.client_total or 0
         self.total_material = totals["material"]
+        if self.meta.has_field("total_material_discount"):
+            self.total_material_discount = totals["mat_discount"]
+        if self.meta.has_field("total_material_tax"):
+            self.total_material_tax = totals["mat_tax"]
         self.total_labor = totals["labor"]
         self.total_overhead = totals["overhead"]
         self.total_design = totals["design"]
