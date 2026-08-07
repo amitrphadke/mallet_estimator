@@ -9,6 +9,8 @@
   "room",
   "article_name",
   "parts_csv",
+  "estimate_pdf",
+  "partlist_pdf",
   "views_pdf"
  ],
  "fields": [
@@ -19,7 +21,7 @@
    "in_list_view": 1,
    "columns": 2,
    "label": "Existing SKU",
-   "description": "Pick an SKU that already exists (CSV-Nest only) — leave blank to create a new one from the columns to the right."
+   "description": "Pick an SKU that already exists — it must match this estimate's mode. Leave blank to create one from the columns to the right."
   },
   {
    "fieldname": "room",
@@ -34,7 +36,7 @@
    "fieldname": "article_name",
    "fieldtype": "Data",
    "in_list_view": 1,
-   "columns": 3,
+   "columns": 2,
    "label": "SKU / Article Name",
    "description": "Required when creating a new SKU — the SKU code (YS_MB_WAR) is generated on save."
   },
@@ -42,15 +44,30 @@
    "fieldname": "parts_csv",
    "fieldtype": "Attach",
    "in_list_view": 1,
-   "columns": 3,
-   "label": "Part List CSV",
-   "description": "Required when creating a new SKU: the OpenCutList Part List export (CSV-Nest)."
+   "columns": 2,
+   "label": "Part List CSV (CSV-Nest)",
+   "description": "Creates a CSV-Nest SKU: sheets are nested here and re-nested across the estimate's SKUs (shared-material saving)."
+  },
+  {
+   "fieldname": "estimate_pdf",
+   "fieldtype": "Attach",
+   "in_list_view": 1,
+   "columns": 2,
+   "label": "Material Estimate PDF (OCL)",
+   "description": "Creates an OCL-PDF SKU instead: sheet counts come already packed from OpenCutList — standalone, no shared-material saving."
+  },
+  {
+   "fieldname": "partlist_pdf",
+   "fieldtype": "Attach",
+   "columns": 2,
+   "label": "Part List PDF (OCL)",
+   "description": "Optional companion of the Material Estimate PDF — identifies hardware designations and edge-band metres."
   },
   {
    "fieldname": "views_pdf",
    "fieldtype": "Attach",
    "in_list_view": 1,
-   "columns": 3,
+   "columns": 2,
    "label": "7 Views PDF",
    "description": "SketchUp Layout 7-views export with annotated outer dimensions."
   }

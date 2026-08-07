@@ -129,3 +129,17 @@ def split_by_mode(modes):
 def is_mixed(modes):
     csv_nest, pdf = split_by_mode(modes)
     return bool(csv_nest) and bool(pdf)
+
+
+def intake_row_mode(has_csv, has_estimate_pdf):
+    """Which mode an Add-SKUs row creates, from the files it carries:
+    Part List CSV -> CSV-Nest; Material Estimate PDF -> OCL PDF. Returns None
+    when the row has neither (incomplete) and raises on both (ambiguous —
+    a single SKU cannot be packed by two authorities)."""
+    if has_csv and has_estimate_pdf:
+        raise ValueError("both")
+    if has_csv:
+        return CSV_MODE
+    if has_estimate_pdf:
+        return PDF_MODE
+    return None

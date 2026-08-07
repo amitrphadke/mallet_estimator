@@ -341,52 +341,65 @@ class Estimate(Document):
         if not self.meta.has_field("intake") or not self.get("intake"):
             return
         from mallet_estimator import consolidate as cons
-        # The grid only ever creates CSV-Nest SKUs — refuse before creating
-        # anything if this estimate is already an OCL-PDF estimate.
-        if self.estimate_mode() == cons.PDF_MODE:
-            frappe.throw(
-                _("This estimate already carries OCL PDF SKUs, and the two modes "
-                  "cannot be mixed (their material packing comes from different "
-                  "places). Start a separate estimate for CSV-Nest SKUs."),
-                title=_("Mixed estimation modes"))
+        # The estimate's mode is decided by its first SKU and every later row
+        # must match it (mixing is refused with an explanation).
+        mode = self.estimate_mode()
         existing_rows = {r.estimate_sku for r in (self.skus or []) if r.estimate_sku}
         remaining, created, picked = [], [], []
         for row in self.intake:
             # (a) the row simply POINTS at an SKU that already exists
             if row.get("existing_sku"):
                 name = row.existing_sku
-                mode = frappe.db.get_value("Estimate SKU", name, "estimation_mode")
-                if (mode or cons.PDF_MODE) != cons.CSV_MODE:
+                row_mode = frappe.db.get_value("Estimate SKU", name, "estimation_mode") or cons.PDF_MODE
+                if mode and row_mode != mode:
                     frappe.throw(
-                        _("<b>{0}</b> is an OCL PDF SKU — this grid adds CSV-Nest SKUs only, "
-                          "and the two modes cannot share an estimate.").format(name),
+                        _("<b>{0}</b> is a {1} SKU but this estimate is {2} — the two modes "
+                          "cannot share an estimate, because their material packing comes from "
+                          "different places. Put it on its own estimate.").format(name, row_mode, mode),
                         title=_("Mixed estimation modes"))
+                mode = mode or row_mode
                 if name not in existing_rows:
                     self.append("skus", {"estimate_sku": name})
                     existing_rows.add(name)
                     picked.append(name)
                 continue
-            # (b) or CREATES one from room + name + CSV (+ views)
-            if not (row.get("article_name") and row.get("parts_csv") and row.get("room")):
+            # (b) or CREATES one — the attached file decides the mode
+            try:
+                row_mode = cons.intake_row_mode(bool(row.get("parts_csv")),
+                                                bool(row.get("estimate_pdf")))
+            except ValueError:
+                frappe.throw(
+                    _("Row <b>{0}</b> has both a Part List CSV and a Material Estimate PDF — "
+                      "an SKU is packed by one authority or the other, never both. Keep one.")
+                    .format(row.get("article_name") or row.idx),
+                    title=_("Which packing applies?"))
+            if not (row.get("article_name") and row.get("room") and row_mode):
                 remaining.append(row)
                 continue
+            if mode and row_mode != mode:
+                frappe.throw(
+                    _("Row <b>{0}</b> would create a {1} SKU but this estimate is {2} — "
+                      "one estimate holds one mode. Start a separate estimate for it.")
+                    .format(row.get("article_name"), row_mode, mode),
+                    title=_("Mixed estimation modes"))
             try:
                 sku = frappe.new_doc("Estimate SKU")
                 sku.article_name = row.article_name.strip()
                 if sku.meta.has_field("estimation_mode"):
-                    sku.estimation_mode = "CSV-Nest"
+                    sku.estimation_mode = row_mode
                 if self.get("project"):
                     sku.project = self.project
                 if self.get("customer") and sku.meta.has_field("customer"):
                     sku.customer = self.customer
                 sku.room = row.room
-                sku.parts_csv = row.parts_csv
-                if row.get("views_pdf"):
-                    sku.views_pdf = row.views_pdf
+                for fieldname in ("parts_csv", "estimate_pdf", "partlist_pdf", "views_pdf"):
+                    if row.get(fieldname):
+                        sku.set(fieldname, row.get(fieldname))
                 sku.insert()
-                _reattach_file(row.parts_csv, sku.name, "parts_csv")
-                if row.get("views_pdf"):
-                    _reattach_file(row.views_pdf, sku.name, "views_pdf")
+                mode = mode or row_mode
+                for fieldname in ("parts_csv", "estimate_pdf", "partlist_pdf", "views_pdf"):
+                    if row.get(fieldname):
+                        _reattach_file(row.get(fieldname), sku.name, fieldname)
                 self.append("skus", {"estimate_sku": sku.name})
                 existing_rows.add(sku.name)
                 created.append(f"{sku.article_name} ({sku.name})")

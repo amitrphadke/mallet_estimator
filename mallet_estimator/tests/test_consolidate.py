@@ -92,5 +92,16 @@ class TestModeGuard(unittest.TestCase):
         self.assertFalse(consolidate.is_mixed({"A": None, "B": ""}))
         self.assertTrue(consolidate.is_mixed({"A": None, "B": "CSV-Nest"}))
 
+
+class TestIntakeRowMode(unittest.TestCase):
+    def test_files_decide_the_mode(self):
+        self.assertEqual(consolidate.intake_row_mode(True, False), "CSV-Nest")
+        self.assertEqual(consolidate.intake_row_mode(False, True), "OCL PDF (standard)")
+        self.assertIsNone(consolidate.intake_row_mode(False, False))
+
+    def test_both_files_is_ambiguous(self):
+        with self.assertRaises(ValueError):
+            consolidate.intake_row_mode(True, True)
+
 if __name__ == "__main__":
     unittest.main()

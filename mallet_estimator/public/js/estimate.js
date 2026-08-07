@@ -20,12 +20,11 @@ frappe.ui.form.on("Estimate", {
     // The Add-SKUs grid: an 'Existing SKU' row picks a CSV-Nest SKU that
     // already exists (same project first); leave it blank to create one from
     // the columns beside it. Either way you never leave this screen.
-    frm.set_query("existing_sku", "intake", () => ({
-      filters: Object.assign(
-        { estimation_mode: "CSV-Nest" },
-        frm.doc.project ? { project: frm.doc.project } : {}
-      ),
-    }));
+    frm.set_query("existing_sku", "intake", () => {
+      const f = frm.doc.project ? { project: frm.doc.project } : {};
+      if (frm.__estimate_mode) f.estimation_mode = frm.__estimate_mode;
+      return { filters: f };
+    });
 
     // The two prints, clearly separated. Both carry ONLY client-shared numbers
     // by construction (leak-safe); the execution copy adds views + purchase data.
@@ -89,7 +88,7 @@ frappe.ui.form.on("Estimate", {
         });
       });
       frm.dashboard.add_comment(
-        __("Draft — use the <b>Add SKUs</b> grid above: each row either picks an <b>existing</b> CSV-Nest SKU or <b>creates</b> one (Room · Name · Part List CSV · 7 Views PDF). Add as many rows as you need, then <b>Save</b> — created SKUs arrive priced, with operations, workstations and décor map seeded. An estimate holds ONE mode: CSV-Nest and OCL PDF SKUs never mix, because their material packing comes from different places. Every save re-nests all the CSV-Nest SKUs together, so each price reflects the shared material. <b>Submit</b> to approve and freeze before quoting."),
+        __("Draft — use the <b>Add SKUs</b> grid above: each row either picks an <b>existing</b> SKU or <b>creates</b> one (Room · Name · then either a <b>Part List CSV</b> for CSV-Nest or a <b>Material Estimate PDF</b> for OCL-PDF; 7 Views PDF either way). Add as many rows as you need, then <b>Save</b> — created SKUs arrive priced, with operations, workstations and décor map seeded. One estimate holds ONE mode: <b>CSV-Nest</b> nests all its SKUs together (shared-material saving, valid when the set is ordered together), <b>OCL PDF</b> prices each article standalone (what an article costs if ordered on its own later). <b>Submit</b> to approve and freeze before quoting."),
         "blue", true
       );
     }
@@ -334,10 +333,18 @@ function render_sku_files(frm) {
         <td class="text-right">${row.client_total != null ? format_currency(row.client_total) : ""}${badges}</td>
       </tr>`;
     }).join("");
-    const mode_note = modes.length === 1
-      ? `<div class="text-muted small" style="margin-top:6px">${esc(__("Estimation mode:"))} <b>${esc(modes[0])}</b>${
-          modes[0] === "CSV-Nest" ? " — " + esc(__("sheets nested here, across all these SKUs")) : " — " + esc(__("sheet counts come from each SKU's OpenCutList PDF"))}</div>`
-      : `<div class="text-danger small" style="margin-top:6px">${esc(__("Mixed estimation modes — save will refuse this; keep one mode per estimate."))}</div>`;
+    let mode_note;
+    if (modes.length !== 1) {
+      mode_note = `<div class="text-danger small" style="margin-top:6px">${esc(
+        __("Mixed estimation modes — save will refuse this; keep one mode per estimate."))}</div>`;
+    } else if (modes[0] === "CSV-Nest") {
+      mode_note = `<div class="text-muted small" style="margin-top:6px">${esc(__("Estimation mode:"))}
+        <b>CSV-Nest</b> — ${esc(__("parts of ALL these SKUs are nested together, so each price already includes the shared-material saving. Valid only if the client orders this set together."))}</div>`;
+    } else {
+      mode_note = `<div class="small" style="margin-top:6px;padding:6px 8px;border-left:3px solid #e69500;background:#fff8ec">
+        ${esc(__("Estimation mode:"))} <b>OCL PDF (standard)</b> — ${esc(
+        __("sheet counts come already packed from each SKU's OpenCutList PDF. These prices are STANDALONE: no shared-material saving, because an article ordered on its own needs its own purchase → cutting → installation run. Use this basis when quoting articles the client may pick individually later."))}</div>`;
+    }
     $w.html(`
       ${mode_note}
       <div style="overflow-x:auto">
