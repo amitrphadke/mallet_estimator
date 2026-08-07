@@ -51,9 +51,12 @@ frappe.provide("frappe.boot");
           if (document.getElementById("mallet-version-badge")) return;
           const el = document.createElement("span");
           el.id = "mallet-version-badge";
-          el.textContent = "MEst @ " + (v.commit || v.version);
+          // No commit means the built image kept no git tree — say so plainly
+          // instead of showing a version that looks like it might be a commit.
+          el.textContent = v.commit ? "MEst @ " + v.commit : "MEst v" + (v.version || "?") + " (no commit)";
           el.title = "mallet_estimator v" + (v.version || "?") +
-            (v.branch ? " · " + v.branch : "") + (v.commit ? " · " + v.commit : "");
+            (v.branch ? " · " + v.branch : "") + (v.commit ? " · " + v.commit : "") +
+            " · source: " + (v.source || "?");
           el.style.cssText =
             "margin-left:8px;font-size:11px;opacity:.55;align-self:center;white-space:nowrap;";
           navbar.appendChild(el);

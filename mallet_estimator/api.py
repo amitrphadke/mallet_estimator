@@ -18,28 +18,91 @@ import frappe
 from frappe import _
 
 
-@frappe.whitelist()
+@frappe.whitelist(allow_guest=False)
 def version_info():
-    """The estimator code actually running on this site: package version plus
-    the git commit/branch of the deployed app tree (when the bench keeps the
-    repo). Drives the navbar 'MEst @ <commit>' badge — at-a-glance proof of
-    what a deploy landed (the antidote to false-green deploys)."""
+    """The estimator code ACTUALLY running on this site — the antidote to a
+    deploy that claims success. Frappe Cloud builds an image from the repo and
+    the container may carry no git binary and no .git tree, so the commit is
+    resolved by falling back through every source that can exist there:
+      1. `git rev-parse` (dev benches)
+      2. .git/HEAD + refs/packed-refs read as plain files (no git binary)
+      3. the bench's apps.json (what FC's image build recorded)
+    `source` says which one answered, so a missing badge is diagnosable."""
+    import json as _json
     import os
     import subprocess
 
     from mallet_estimator import __version__
 
-    out = {"version": __version__, "commit": None, "branch": None}
+    out = {"version": __version__, "commit": None, "branch": None, "source": "none"}
     try:
         app_root = os.path.dirname(frappe.get_app_path("mallet_estimator"))
+    except Exception:
+        return out
+
+    # 1) real git
+    try:
         def git(*args):
             return subprocess.check_output(
                 ["git", "-C", app_root] + list(args),
                 text=True, stderr=subprocess.DEVNULL, timeout=5).strip()
         out["commit"] = git("rev-parse", "--short", "HEAD")
         out["branch"] = git("rev-parse", "--abbrev-ref", "HEAD")
+        out["source"] = "git"
+        return out
     except Exception:
-        pass  # no git in the built image — version alone still shows
+        pass
+
+    # 2) plain-file read of .git (no git binary needed)
+    try:
+        head_path = os.path.join(app_root, ".git", "HEAD")
+        with open(head_path) as fh:
+            head = fh.read().strip()
+        sha = None
+        if head.startswith("ref:"):
+            ref = head.split(" ", 1)[1].strip()
+            out["branch"] = ref.rsplit("/", 1)[-1]
+            ref_file = os.path.join(app_root, ".git", ref)
+            if os.path.exists(ref_file):
+                with open(ref_file) as fh:
+                    sha = fh.read().strip()
+            else:  # packed refs
+                packed = os.path.join(app_root, ".git", "packed-refs")
+                if os.path.exists(packed):
+                    with open(packed) as fh:
+                        for line in fh:
+                            if line.rstrip().endswith(" " + ref):
+                                sha = line.split(" ", 1)[0].strip()
+                                break
+        else:
+            sha = head
+        if sha:
+            out["commit"] = sha[:7]
+            out["source"] = "git-files"
+            return out
+    except Exception:
+        pass
+
+    # 3) whatever the image build recorded
+    try:
+        bench_root = os.path.dirname(os.path.dirname(app_root))  # …/apps/<app> -> bench
+        for candidate in (os.path.join(bench_root, "apps.json"),
+                          os.path.join(bench_root, "sites", "apps.json")):
+            if not os.path.exists(candidate):
+                continue
+            with open(candidate) as fh:
+                data = _json.load(fh)
+            entry = data.get("mallet_estimator") if isinstance(data, dict) else None
+            if isinstance(entry, dict):
+                sha = entry.get("commit") or entry.get("hash") or entry.get("version")
+                if sha:
+                    out["commit"] = str(sha)[:7]
+                    out["branch"] = entry.get("branch") or out["branch"]
+                    out["source"] = "apps.json"
+                    return out
+    except Exception:
+        pass
+
     return out
 
 
