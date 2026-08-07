@@ -9,6 +9,24 @@ frappe.ui.form.on("Estimate", {
     render_estimate_bifurcation(frm);
     if (!frm.is_new()) render_sku_files(frm);
 
+    // CSV-Nest and OCL-PDF SKUs are EXCLUSIVE on one estimate (packing is
+    // computed here for CSV-Nest, by OpenCutList for PDF — the counts can't be
+    // added together). Once the estimate carries SKUs, the picker only offers
+    // the matching mode; the server enforces it either way.
+    frm.set_query("estimate_sku", "skus", () => {
+      const mode = frm.__estimate_mode;
+      return mode ? { filters: { estimation_mode: mode } } : {};
+    });
+    // The Add-SKUs grid: an 'Existing SKU' row picks a CSV-Nest SKU that
+    // already exists (same project first); leave it blank to create one from
+    // the columns beside it. Either way you never leave this screen.
+    frm.set_query("existing_sku", "intake", () => ({
+      filters: Object.assign(
+        { estimation_mode: "CSV-Nest" },
+        frm.doc.project ? { project: frm.doc.project } : {}
+      ),
+    }));
+
     // The two prints, clearly separated. Both carry ONLY client-shared numbers
     // by construction (leak-safe); the execution copy adds views + purchase data.
     if (!frm.is_new()) {
@@ -63,14 +81,15 @@ frappe.ui.form.on("Estimate", {
         frm.call("refresh_skus").then((r) => {
           const m = (r && r.message) || {};
           frappe.show_alert({
-            message: __("Added {0} SKU(s) · {1} total · {2}", [m.added || 0, m.count || 0, format_currency(m.client || 0)]),
+            message: __("Added {0} SKU(s) · {1} total · {2}{3}", [m.added || 0, m.count || 0, format_currency(m.client || 0),
+              m.skipped ? __(" · {0} skipped (other mode)", [m.skipped]) : ""]),
             indicator: "green",
           });
           frm.reload_doc();
         });
       });
       frm.dashboard.add_comment(
-        __("Draft — add SKUs in the <b>Add SKUs</b> grid above: one row per SKU (Room · Name · Part List CSV · 7 Views PDF); add as many rows as you need, then <b>Save</b>. Each complete row becomes a priced SKU with operations, workstations and décor map seeded, and moves into the table below. The panel under it shows every SKU on one line (📎 attaches a missing file in place). Every save re-nests the CSV-Nest SKUs together, so each price reflects the shared material. <b>Submit</b> to approve and freeze before quoting."),
+        __("Draft — use the <b>Add SKUs</b> grid above: each row either picks an <b>existing</b> CSV-Nest SKU or <b>creates</b> one (Room · Name · Part List CSV · 7 Views PDF). Add as many rows as you need, then <b>Save</b> — created SKUs arrive priced, with operations, workstations and décor map seeded. An estimate holds ONE mode: CSV-Nest and OCL PDF SKUs never mix, because their material packing comes from different places. Every save re-nests all the CSV-Nest SKUs together, so each price reflects the shared material. <b>Submit</b> to approve and freeze before quoting."),
         "blue", true
       );
     }
@@ -281,9 +300,12 @@ function render_sku_files(frm) {
   frm.call("sku_files_overview").then((r) => {
     const rows = (r && r.message) || [];
     if (!rows.length) {
+      frm.__estimate_mode = null;
       $w.empty();
       return;
     }
+    const modes = Array.from(new Set(rows.map((x) => x.mode || "OCL PDF (standard)")));
+    frm.__estimate_mode = modes.length === 1 ? modes[0] : null;
     const draft = frm.doc.docstatus === 0;
     const file_cell = (row, fieldname, label) => {
       const url = row[fieldname];
@@ -312,7 +334,12 @@ function render_sku_files(frm) {
         <td class="text-right">${row.client_total != null ? format_currency(row.client_total) : ""}${badges}</td>
       </tr>`;
     }).join("");
+    const mode_note = modes.length === 1
+      ? `<div class="text-muted small" style="margin-top:6px">${esc(__("Estimation mode:"))} <b>${esc(modes[0])}</b>${
+          modes[0] === "CSV-Nest" ? " — " + esc(__("sheets nested here, across all these SKUs")) : " — " + esc(__("sheet counts come from each SKU's OpenCutList PDF"))}</div>`
+      : `<div class="text-danger small" style="margin-top:6px">${esc(__("Mixed estimation modes — save will refuse this; keep one mode per estimate."))}</div>`;
     $w.html(`
+      ${mode_note}
       <div style="overflow-x:auto">
         <table class="table table-bordered" style="margin-top:6px">
           <thead><tr>

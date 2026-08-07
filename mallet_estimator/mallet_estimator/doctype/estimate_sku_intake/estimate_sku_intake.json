@@ -5,6 +5,7 @@
  "editable_grid": 1,
  "engine": "InnoDB",
  "field_order": [
+  "existing_sku",
   "room",
   "article_name",
   "parts_csv",
@@ -12,13 +13,22 @@
  ],
  "fields": [
   {
+   "fieldname": "existing_sku",
+   "fieldtype": "Link",
+   "options": "Estimate SKU",
+   "in_list_view": 1,
+   "columns": 2,
+   "label": "Existing SKU",
+   "description": "Pick an SKU that already exists (CSV-Nest only) — leave blank to create a new one from the columns to the right."
+  },
+  {
    "fieldname": "room",
    "fieldtype": "Link",
    "options": "Estimate Room",
    "in_list_view": 1,
    "columns": 2,
    "label": "Room",
-   "reqd": 1
+   "description": "Required when creating a new SKU."
   },
   {
    "fieldname": "article_name",
@@ -26,8 +36,7 @@
    "in_list_view": 1,
    "columns": 3,
    "label": "SKU / Article Name",
-   "reqd": 1,
-   "description": "e.g. Wardrobe — the SKU code (YS_MB_WAR) is generated on save."
+   "description": "Required when creating a new SKU — the SKU code (YS_MB_WAR) is generated on save."
   },
   {
    "fieldname": "parts_csv",
@@ -35,8 +44,7 @@
    "in_list_view": 1,
    "columns": 3,
    "label": "Part List CSV",
-   "reqd": 1,
-   "description": "OpenCutList Part List export — the only estimation input (CSV-Nest)."
+   "description": "Required when creating a new SKU: the OpenCutList Part List export (CSV-Nest)."
   },
   {
    "fieldname": "views_pdf",

@@ -73,5 +73,24 @@ class TestConsolidate(unittest.TestCase):
         self.assertEqual(consolidate.batch_factor(None, 5), 1.0)
 
 
+
+class TestModeGuard(unittest.TestCase):
+    def test_split_and_mixed(self):
+        modes = {"A": "CSV-Nest", "B": "OCL PDF (standard)", "C": "CSV-Nest"}
+        csv_nest, pdf = consolidate.split_by_mode(modes)
+        self.assertEqual(csv_nest, ["A", "C"])
+        self.assertEqual(pdf, ["B"])
+        self.assertTrue(consolidate.is_mixed(modes))
+
+    def test_homogeneous_is_not_mixed(self):
+        self.assertFalse(consolidate.is_mixed({"A": "CSV-Nest", "B": "CSV-Nest"}))
+        self.assertFalse(consolidate.is_mixed({"A": "OCL PDF (standard)"}))
+        self.assertFalse(consolidate.is_mixed({}))
+
+    def test_blank_mode_counts_as_pdf(self):
+        # legacy SKUs predate the field: they are PDF-mode by definition
+        self.assertFalse(consolidate.is_mixed({"A": None, "B": ""}))
+        self.assertTrue(consolidate.is_mixed({"A": None, "B": "CSV-Nest"}))
+
 if __name__ == "__main__":
     unittest.main()

@@ -68,6 +68,7 @@ class Estimate(Document):
         # submitted the list and totals are frozen as the baseline.
         if self.docstatus == 0:
             self.process_intake()
+            self.enforce_single_mode()
             self.refresh_sku_rows()
         # Provisional allowances (F6) — amounts are a simple qty x assumed rate,
         # recomputed every save so the client-print subtotal is always right.
@@ -132,17 +133,38 @@ class Estimate(Document):
         automatically."""
         if self.docstatus != 0:
             frappe.throw(_("This estimate is approved (submitted). Amend it to change the SKUs."))
+        from mallet_estimator import consolidate as cons
         existing = {r.estimate_sku for r in (self.skus or [])}
-        added = 0
-        for name in frappe.get_all(
+        mode = self.estimate_mode()
+        added, skipped = 0, []
+        candidates = frappe.get_all(
             "Estimate SKU", filters={"project": self.project},
-            order_by="room asc, article_name asc", pluck="name",
-        ) if self.project else []:
-            if name not in existing:
-                self.append("skus", {"estimate_sku": name})
-                added += 1
+            fields=["name", "estimation_mode"],
+            order_by="room asc, article_name asc",
+        ) if self.project else []
+        # An estimate is single-mode; when it is still empty the FIRST SKU
+        # decides which mode it becomes, and the rest must match.
+        if not mode:
+            for c in candidates:
+                if c.name not in existing:
+                    mode = c.get("estimation_mode") or cons.PDF_MODE
+                    break
+        for c in candidates:
+            if c.name in existing:
+                continue
+            if (c.get("estimation_mode") or cons.PDF_MODE) != mode:
+                skipped.append(c.name)
+                continue
+            self.append("skus", {"estimate_sku": c.name})
+            added += 1
         self.save(ignore_permissions=True)
-        return {"count": len(self.skus), "added": added, "client": self.total_client}
+        if skipped:
+            frappe.msgprint(
+                _("Skipped {0} SKU(s) of the other estimation mode — an estimate "
+                  "cannot mix CSV-Nest and OCL PDF: {1}").format(len(skipped), ", ".join(skipped)),
+                indicator="orange")
+        return {"count": len(self.skus), "added": added, "skipped": len(skipped),
+                "mode": mode, "client": self.total_client}
 
     def refresh_sku_rows(self):
         """Refresh the DATA of the rows this estimate carries (dedupe, reprice
@@ -266,6 +288,49 @@ class Estimate(Document):
         self.save()
         return sku.name
 
+    def sku_modes(self):
+        """{sku: estimation_mode} for the rows this estimate carries."""
+        names = [r.estimate_sku for r in (self.skus or []) if r.estimate_sku]
+        if not names:
+            return {}
+        return {
+            d.name: d.get("estimation_mode")
+            for d in frappe.get_all("Estimate SKU", filters={"name": ["in", names]},
+                                    fields=["name", "estimation_mode"])
+        }
+
+    def estimate_mode(self):
+        """The mode this estimate is committed to (None while it has no SKUs)."""
+        from mallet_estimator import consolidate as cons
+        csv_nest, pdf = cons.split_by_mode(self.sku_modes())
+        if csv_nest and not pdf:
+            return cons.CSV_MODE
+        if pdf and not csv_nest:
+            return cons.PDF_MODE
+        return None
+
+    def enforce_single_mode(self):
+        """CSV-Nest and OCL-PDF SKUs are mutually exclusive on one estimate.
+        Their material packing is decided by different authorities — CSV-Nest
+        sheets are nested (and re-nested estimate-wide) HERE, PDF sheet counts
+        come already packed from OpenCutList per SKU — so a mixed estimate
+        would sum quantities that were never packed together and would show
+        the shared-material saving on only part of the job."""
+        from mallet_estimator import consolidate as cons
+        modes = self.sku_modes()
+        if not cons.is_mixed(modes):
+            return
+        csv_nest, pdf = cons.split_by_mode(modes)
+        frappe.throw(
+            _("An estimate cannot mix estimation modes — material packing is "
+              "computed here for CSV-Nest SKUs and by OpenCutList for PDF SKUs, "
+              "so their sheet counts can't be added up together.<br><br>"
+              "<b>CSV-Nest:</b> {0}<br><b>OCL PDF:</b> {1}<br><br>"
+              "Keep one mode per estimate — remove the odd ones out, or build a "
+              "second estimate for them (the same SKU may serve many estimates).")
+            .format(", ".join(csv_nest), ", ".join(pdf)),
+            title=_("Mixed estimation modes"))
+
     def process_intake(self):
         """The intake grid IS the estimation UX: one row = Room + Article name
         + Part List CSV (+ views PDF). On save, every complete row becomes a
@@ -275,8 +340,33 @@ class Estimate(Document):
         save). Incomplete rows stay in the grid for the user to finish."""
         if not self.meta.has_field("intake") or not self.get("intake"):
             return
-        remaining, created = [], []
+        from mallet_estimator import consolidate as cons
+        # The grid only ever creates CSV-Nest SKUs — refuse before creating
+        # anything if this estimate is already an OCL-PDF estimate.
+        if self.estimate_mode() == cons.PDF_MODE:
+            frappe.throw(
+                _("This estimate already carries OCL PDF SKUs, and the two modes "
+                  "cannot be mixed (their material packing comes from different "
+                  "places). Start a separate estimate for CSV-Nest SKUs."),
+                title=_("Mixed estimation modes"))
+        existing_rows = {r.estimate_sku for r in (self.skus or []) if r.estimate_sku}
+        remaining, created, picked = [], [], []
         for row in self.intake:
+            # (a) the row simply POINTS at an SKU that already exists
+            if row.get("existing_sku"):
+                name = row.existing_sku
+                mode = frappe.db.get_value("Estimate SKU", name, "estimation_mode")
+                if (mode or cons.PDF_MODE) != cons.CSV_MODE:
+                    frappe.throw(
+                        _("<b>{0}</b> is an OCL PDF SKU — this grid adds CSV-Nest SKUs only, "
+                          "and the two modes cannot share an estimate.").format(name),
+                        title=_("Mixed estimation modes"))
+                if name not in existing_rows:
+                    self.append("skus", {"estimate_sku": name})
+                    existing_rows.add(name)
+                    picked.append(name)
+                continue
+            # (b) or CREATES one from room + name + CSV (+ views)
             if not (row.get("article_name") and row.get("parts_csv") and row.get("room")):
                 remaining.append(row)
                 continue
@@ -298,6 +388,7 @@ class Estimate(Document):
                 if row.get("views_pdf"):
                     _reattach_file(row.views_pdf, sku.name, "views_pdf")
                 self.append("skus", {"estimate_sku": sku.name})
+                existing_rows.add(sku.name)
                 created.append(f"{sku.article_name} ({sku.name})")
             except Exception:
                 frappe.log_error(frappe.get_traceback(), f"estimate intake {row.get('article_name')}")
@@ -306,10 +397,14 @@ class Estimate(Document):
                     _("Could not create SKU for <b>{0}</b> — row kept; see the Error Log.").format(
                         row.get("article_name")), indicator="red")
         self.set("intake", remaining)
-        if created:
-            frappe.msgprint(
-                _("Created {0} SKU(s): {1}").format(len(created), ", ".join(created)),
-                indicator="green", alert=True)
+        if created or picked:
+            parts = []
+            if created:
+                parts.append(_("created {0}: {1}").format(len(created), ", ".join(created)))
+            if picked:
+                parts.append(_("added {0} existing: {1}").format(len(picked), ", ".join(picked)))
+            frappe.msgprint(_("SKUs — {0}").format("; ".join(parts)),
+                            indicator="green", alert=True)
 
     @frappe.whitelist()
     def sku_files_overview(self):

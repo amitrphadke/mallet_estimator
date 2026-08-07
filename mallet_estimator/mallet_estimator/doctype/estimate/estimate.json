@@ -305,8 +305,8 @@
    "fieldname": "intake",
    "fieldtype": "Table",
    "options": "Estimate SKU Intake",
-   "label": "Add SKUs — Room · Name · Part List CSV · Views PDF",
-   "description": "One row per SKU, then Save: each complete row becomes a CSV-Nest SKU (nested, priced, décor prefilled, operations seeded) and moves into the table below. Incomplete rows stay here."
+   "label": "Add SKUs — select existing or create (CSV-Nest only)",
+   "description": "One row per SKU: either pick an <b>Existing SKU</b> or fill Room + Name + Part List CSV (+ Views PDF) to create one. Add as many rows as you need, then Save — created SKUs are nested, priced and seeded with operations/workstations/décor map, and every row moves into the table below. An estimate holds ONE mode: CSV-Nest and OCL PDF SKUs cannot be mixed (packing is computed here vs by OpenCutList)."
   }
  ],
  "links": [],

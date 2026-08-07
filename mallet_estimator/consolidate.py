@@ -104,3 +104,28 @@ def batch_factor(tiers, qty):
         if fac > 0 and f <= float(qty) and f > best_from:
             best_from, best = f, fac
     return best
+
+
+CSV_MODE = "CSV-Nest"
+PDF_MODE = "OCL PDF (standard)"
+
+
+def split_by_mode(modes):
+    """`modes` = {sku: estimation_mode}. Returns (csv_nest, pdf) name lists.
+
+    The two modes carry material packing by DIFFERENT authorities: CSV-Nest
+    sheets are nested here (and re-nested across the estimate's SKUs), while
+    PDF-mode sheet counts come from OpenCutList's own nesting, already baked
+    into the PDF per SKU. An estimate holding both would add sheet counts
+    that were never packed together — and only the CSV subset would show the
+    shared-material saving, so the totals read as if the PDF SKUs simply
+    never benefit. Estimates must therefore be single-mode."""
+    csv_nest, pdf = [], []
+    for sku, mode in sorted((modes or {}).items()):
+        (csv_nest if (mode or PDF_MODE) == CSV_MODE else pdf).append(sku)
+    return csv_nest, pdf
+
+
+def is_mixed(modes):
+    csv_nest, pdf = split_by_mode(modes)
+    return bool(csv_nest) and bool(pdf)
