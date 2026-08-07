@@ -31,3 +31,14 @@ class TestNesting(unittest.TestCase):
         self.assertEqual(nesting.edge_rolls(0), 0)
         self.assertEqual(nesting.edge_rolls(49.9), 1)
         self.assertEqual(nesting.edge_rolls(50.1), 2)
+
+    def test_envelope_check(self):
+        ply = {("SG_PLY_V1_a_b", 18.0): [(2100, 580), (2400, 600)]}
+        # wardrobe 2133 x 580 x 2133: the 2400 part cannot build it
+        bad = nesting.envelope_check((2133, 580, 2133), ply)
+        self.assertEqual(len(bad), 1)
+        self.assertEqual(bad[0][1], 2400)
+        # within tolerance passes; missing dims -> no check
+        self.assertEqual(nesting.envelope_check((2133, 580, 2133),
+                                                {("X", 18.0): [(2150, 580)]}), [])
+        self.assertEqual(nesting.envelope_check((0, 0, 0), ply), [])

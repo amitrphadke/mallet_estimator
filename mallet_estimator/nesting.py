@@ -87,6 +87,24 @@ def edge_rolls(total_meters, roll_m=EDGE_ROLL_M):
     return max(1, math.ceil(float(total_meters) / roll_m)) if total_meters else 0
 
 
+def envelope_check(outer_dims, ply, tol=25.0):
+    """Part-list-vs-views cross-check. A rectangular panel spans at most two
+    axes of the W x D x H box, so every part must fit within the two GREATEST
+    outer dims (tol mm absorbs annotation rounding). `outer_dims` = (w, d, h)
+    from the annotated views PDF, `ply` = {(code, th): [(l, w), ...]}.
+    Returns [(code, l, w, dim0, dim1)] for parts that cannot build the SKU."""
+    dims = sorted((float(d or 0) for d in outer_dims), reverse=True)
+    if not (dims[0] and dims[1]):
+        return []
+    bad = []
+    for (code, _th), parts in sorted(ply.items()):
+        for (l, w) in parts:
+            big, small = max(float(l), float(w)), min(float(l), float(w))
+            if big > dims[0] + tol or small > dims[1] + tol:
+                bad.append((code, float(l), float(w), dims[0], dims[1]))
+    return bad
+
+
 def laminate_faces(ply_parts_by_code):
     """Laminate consumption from the ply parts themselves: every ply part face
     is laminated per its code's slots (SG_PLY_V0_a_a → both faces slot 'a';

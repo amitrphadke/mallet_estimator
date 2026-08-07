@@ -55,6 +55,18 @@ def collect(rows):
     return ply, lam, edges, hw, banded
 
 
+def envelope_issues(doc, ply):
+    """Part-list-vs-views cross-check (engine in nesting.envelope_check):
+    parts that exceed the outer envelope annotated on the 7 Views PDF cannot
+    build the SKU the views show."""
+    outer = (doc.get("outer_w"), doc.get("outer_d"), doc.get("outer_h"))
+    return [
+        _("{0}: part {1:g} × {2:g} mm exceeds the outer envelope "
+          "{3:g} × {4:g} mm from the views PDF").format(code, l, w, d0, d1)
+        for (code, l, w, d0, d1) in nesting.envelope_check(outer, ply)
+    ]
+
+
 def run(doc):
     """The CSV-Nest import: mirrors do_import()'s contract (lines, parts table,
     décor blank rows, op drivers, design qty, unpriced flag) with quantities
@@ -70,6 +82,7 @@ def run(doc):
     ply, lam, edges, hw, banded_edges = collect(rows)
     if not ply:
         frappe.throw(_("No sheet-good parts found in the CSV."))
+    issues = envelope_issues(doc, ply)
 
     manual_rows = [m.as_dict() for m in (doc.materials or []) if m.get("is_manual")]
     doc.set("materials", [])
@@ -77,6 +90,8 @@ def run(doc):
 
     for (code, th), parts in sorted(ply.items()):
         r = nesting.pack_sheets(parts, kerf=KERF_MM, trim=TRIM_MM, allow_rotate=False)
+        for (l, w) in r["too_big"]:
+            issues.append(_("{0}: part {1:g} × {2:g} mm cannot fit a sheet at all").format(code, l, w))
         nest_info[f"{code}@{th:g}mm"] = {"sheets": r["sheets"], "util": round(r["utilization"], 3),
                                          "parts": len(parts)}
         doc._add_material_line(
@@ -151,6 +166,16 @@ def run(doc):
         if op in opq:
             row.qty = opq[op]
     opq["__nest__"] = nest_info
+    # Estimate-level consolidation re-nests ALL its SKUs' parts together, so
+    # the raw nesting inputs ride along (part dims per material, lam faces,
+    # edge meters). JSON-in-hidden-Code is the house pattern for driver blobs.
+    opq["__nest_inputs__"] = {
+        "ply": {f"{code}@{th:g}": parts for (code, th), parts in ply.items()},
+        "lam": lam,
+        "edges": edges,
+    }
+    if issues:
+        opq["__issues__"] = issues
     doc.import_drivers = json.dumps(opq)
 
     for row in doc.get("design_labor") or []:
@@ -175,3 +200,8 @@ def run(doc):
             ", ".join(f"{k}: {v['sheets']}" for k, v in nest_info.items()),
             KERF_MM, TRIM_MM),
         title=_("Nest details"), indicator="blue")
+    if issues:
+        frappe.msgprint(
+            _("Part list vs views check — {0} issue(s):<br>{1}").format(
+                len(issues), "<br>".join(issues[:12]) + ("<br>…" if len(issues) > 12 else "")),
+            title=_("Part list may not build this SKU"), indicator="orange")
