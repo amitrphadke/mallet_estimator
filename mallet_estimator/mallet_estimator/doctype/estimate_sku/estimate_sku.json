@@ -31,6 +31,7 @@
   "views_images",
   "material_section",
   "estimation_mode",
+  "parts_csv",
   "estimate_pdf",
   "partlist_pdf",
   "views_pdf",
@@ -46,7 +47,6 @@
   "execution_material_cost",
   "execution_variance",
   "parts_section",
-  "parts_csv",
   "parts",
   "labor_section",
   "labor",
@@ -244,13 +244,15 @@
    "fieldname": "estimate_pdf",
    "fieldtype": "Attach",
    "label": "Material Estimate PDF (estimation source)",
-   "description": "OpenCutList Material Estimate export — sheets, laminate, edge banding and hardware totals."
+   "description": "OpenCutList Material Estimate export — sheets, laminate, edge banding and hardware totals.",
+   "depends_on": "eval:doc.estimation_mode!='CSV-Nest' || doc.estimate_pdf"
   },
   {
    "fieldname": "partlist_pdf",
    "fieldtype": "Attach",
    "label": "Part List PDF (hardware identification)",
-   "description": "OpenCutList Parts List export — identifies hardware correctly: the real stock item designation (HWD_AH_SC_0), not just its group (HWD_Hinge)."
+   "description": "OpenCutList Parts List export — identifies hardware correctly: the real stock item designation (HWD_AH_SC_0), not just its group (HWD_Hinge).",
+   "depends_on": "eval:doc.estimation_mode!='CSV-Nest' || doc.partlist_pdf"
   },
   {
    "fieldname": "views_pdf",
