@@ -58,6 +58,11 @@ class TestMasters(MalletTestCase):
         report = install.verify_setup()
         self.assertTrue(report["all_ok"], f"verify_setup failed: {report['failed']}")
 
+    def test_batch_tier_masters(self):
+        self.assertTrue(frappe.db.exists("DocType", "Mallet Operation Batch Tier"))
+        self.assertTrue(frappe.get_meta("Operation").has_field("mallet_batch_tiers"),
+                        "missing Operation.mallet_batch_tiers")
+
     def test_ensure_warehouses_idempotent(self):
         before = frappe.db.count("Warehouse")
         inventory.ensure_warehouses(_ensure_company())

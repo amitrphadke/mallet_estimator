@@ -30,6 +30,10 @@ OPERATION_CUSTOM_FIELDS = {
         {"fieldname": "mallet_min_per_unit", "fieldtype": "Float", "label": "Std Time (min/unit)",
          "insert_after": "total_operation_time",
          "description": "Standard minutes the workstation is occupied per unit — the estimator's per-step time."},
+        {"fieldname": "mallet_batch_tiers", "fieldtype": "Table", "label": "Batch Efficiency Tiers",
+         "options": "Mallet Operation Batch Tier", "insert_after": "mallet_min_per_unit",
+         "description": "Bulk speed-ups: from this estimate-wide qty, minutes/unit scale by this "
+                        "factor (e.g. 10 sheets → 0.85). Applied during CSV-Nest consolidation."},
     ]
 }
 
@@ -521,6 +525,10 @@ def verify_setup():
 
     n_ops = frappe.db.count("Operation")
     chk("Operations", n_ops >= len(STEP_TEMPLATE), f"{n_ops} operations")
+    chk("Batch tiers (CSV-Nest)",
+        frappe.db.exists("DocType", "Mallet Operation Batch Tier")
+        and frappe.get_meta("Operation").has_field("mallet_batch_tiers"),
+        "Operation.mallet_batch_tiers → Mallet Operation Batch Tier")
     chk("Routing", frappe.db.exists("Routing", ROUTING_NAME), ROUTING_NAME)
     chk("Print format", frappe.db.exists("Print Format", PRINT_FORMAT_NAME), PRINT_FORMAT_NAME)
     chk("Job Card print", frappe.db.exists("Print Format", JOB_CARD_PRINT_FORMAT_NAME), JOB_CARD_PRINT_FORMAT_NAME)

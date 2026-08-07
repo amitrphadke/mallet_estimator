@@ -114,6 +114,7 @@ class EstimateSKU(Document):
         self.ensure_steps()
         self.ensure_design_steps()
         self.ensure_step_remarks()
+        self.ensure_custom_operations()
         self.maybe_import()
         self.apply_decor_map()
         self.refresh_material_rates()
@@ -122,6 +123,50 @@ class EstimateSKU(Document):
         self.derive_joinery()
         self.compute_costs()
         self.build_cost_breakup()
+
+    def ensure_custom_operations(self):
+        """Extra work means extra ROWS — and an ad-hoc row (e.g. 'Cut glass
+        square in wardrobe door') becomes a first-class master on first save:
+        its Operation (+ Workstation, if named) is created when missing, with
+        the row's minutes stored as Operation.mallet_min_per_unit, so BOMs and
+        every later SKU see it like any standard step. Template steps and the
+        misc row are untouched; existing masters are never overwritten."""
+        if self._frozen():
+            return
+        template_ops = {t["phase"] for t in STEP_TEMPLATE} | \
+                       {t["phase"] for t in DESIGN_STEP_TEMPLATE}
+        for row in list(self.labor or []) + list(self.get("design_labor") or []):
+            if row.get("is_misc"):
+                continue
+            op = (row.get("operation") or "").strip()
+            if not op or op in template_ops:
+                continue
+            if row.meta.has_field("is_custom"):
+                row.is_custom = 1
+            ws = (row.get("workstation") or "").strip()
+            try:
+                if ws and not frappe.db.exists("Workstation", ws):
+                    w = frappe.new_doc("Workstation")
+                    w.workstation_name = ws
+                    w.insert(ignore_permissions=True)
+                    frappe.msgprint(
+                        _("Created Workstation <b>{0}</b> — key its operating "
+                          "costs so the operation prices correctly.").format(ws),
+                        indicator="orange")
+                if not frappe.db.exists("Operation", op):
+                    o = frappe.new_doc("Operation")
+                    o.name = op
+                    if ws and frappe.db.exists("Workstation", ws):
+                        o.workstation = ws
+                    if o.meta.has_field("mallet_min_per_unit") and float(row.get("carp_min") or 0):
+                        o.mallet_min_per_unit = float(row.carp_min)
+                    o.insert(ignore_permissions=True, set_name=op)
+                    frappe.msgprint(
+                        _("Created Operation <b>{0}</b> ({1} min/unit) — available "
+                          "on every SKU from now on.").format(op, row.get("carp_min") or 0),
+                        indicator="blue")
+            except Exception:
+                frappe.log_error(frappe.get_traceback(), f"ensure_custom_operations {op}")
 
     def wipe_on_cleared_files(self):
         """Clearing a source PDF wipes what was derived from it, so the SKU never
