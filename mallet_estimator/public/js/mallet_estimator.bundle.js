@@ -39,8 +39,16 @@ frappe.provide("frappe.boot");
   function version_badge() {
     try {
       if (document.getElementById("mallet-version-badge") || badge_inflight) return;
-      const navbar = document.querySelector(".navbar .container, header.navbar, .navbar");
-      if (!navbar || !frappe.session || frappe.session.user === "Guest") return;
+      if (!frappe.session || frappe.session.user === "Guest") return;
+      // The desk navbar is a flex row whose RIGHT-HAND <ul class="navbar-nav">
+      // holds the items. Appending a bare span to the CONTAINER put the badge
+      // outside that row, where it never showed; insert a real nav item.
+      const host = document.querySelector(".navbar .navbar-nav")
+        || document.querySelector("header .navbar-nav")
+        || document.querySelector(".navbar .container")
+        || document.querySelector("header.navbar")
+        || document.querySelector(".navbar");
+      if (!host) return;
       badge_inflight = true;
       frappe.call({
         method: "mallet_estimator.api.version_info",
@@ -58,8 +66,17 @@ frappe.provide("frappe.boot");
             (v.branch ? " · " + v.branch : "") + (v.commit ? " · " + v.commit : "") +
             " · source: " + (v.source || "?");
           el.style.cssText =
-            "margin-left:8px;font-size:11px;opacity:.55;align-self:center;white-space:nowrap;";
-          navbar.appendChild(el);
+            "font-size:11px;opacity:.7;white-space:nowrap;letter-spacing:.2px;";
+          if (host.tagName === "UL") {
+            const li = document.createElement("li");
+            li.className = "nav-item";
+            li.style.cssText = "display:flex;align-items:center;margin-right:10px;";
+            li.appendChild(el);
+            host.insertBefore(li, host.firstChild);
+          } else {
+            el.style.cssText += "margin-left:8px;align-self:center;";
+            host.appendChild(el);
+          }
         },
         error() {
           badge_inflight = false; // never let a badge break the desk
