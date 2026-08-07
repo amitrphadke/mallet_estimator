@@ -31,4 +31,37 @@ frappe.provide("frappe.boot");
   $(document).on("startup", fix);
   $(document).ready(fix);
   if (frappe.after_ajax) frappe.after_ajax(fix);
+
+  // "What is running right now?" — a muted badge in the navbar with the
+  // estimator's deployed commit (e.g. "MEst @ ce08c1c"), so the running code
+  // is visible at a glance on every desk page. Hover shows version + branch.
+  function version_badge() {
+    try {
+      if (document.getElementById("mallet-version-badge")) return;
+      const navbar = document.querySelector(".navbar .container, .navbar");
+      if (!navbar || !frappe.session || frappe.session.user === "Guest") return;
+      frappe.call({
+        method: "mallet_estimator.api.version_info",
+        callback(r) {
+          const v = (r && r.message) || {};
+          if (!v.commit && !v.version) return;
+          if (document.getElementById("mallet-version-badge")) return;
+          const el = document.createElement("span");
+          el.id = "mallet-version-badge";
+          el.textContent = "MEst @ " + (v.commit || v.version);
+          el.title = "mallet_estimator v" + (v.version || "?") +
+            (v.branch ? " · " + v.branch : "") + (v.commit ? " · " + v.commit : "");
+          el.style.cssText =
+            "margin-left:8px;font-size:11px;opacity:.55;align-self:center;white-space:nowrap;";
+          navbar.appendChild(el);
+        },
+        error() {}, // never let a badge break the desk
+      });
+    } catch (e) {
+      // eslint-disable-next-line no-console
+      console.warn("mallet_estimator version badge:", e);
+    }
+  }
+  $(document).ready(version_badge);
+  $(document).on("startup", version_badge);
 })();

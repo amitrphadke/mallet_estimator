@@ -19,6 +19,31 @@ from frappe import _
 
 
 @frappe.whitelist()
+def version_info():
+    """The estimator code actually running on this site: package version plus
+    the git commit/branch of the deployed app tree (when the bench keeps the
+    repo). Drives the navbar 'MEst @ <commit>' badge — at-a-glance proof of
+    what a deploy landed (the antidote to false-green deploys)."""
+    import os
+    import subprocess
+
+    from mallet_estimator import __version__
+
+    out = {"version": __version__, "commit": None, "branch": None}
+    try:
+        app_root = os.path.dirname(frappe.get_app_path("mallet_estimator"))
+        def git(*args):
+            return subprocess.check_output(
+                ["git", "-C", app_root] + list(args),
+                text=True, stderr=subprocess.DEVNULL, timeout=5).strip()
+        out["commit"] = git("rev-parse", "--short", "HEAD")
+        out["branch"] = git("rev-parse", "--abbrev-ref", "HEAD")
+    except Exception:
+        pass  # no git in the built image — version alone still shows
+    return out
+
+
+@frappe.whitelist()
 def import_parts_csv(sku, csv_content, filename=None):
     """Attach an OpenCutList Part List CSV to the SKU, switch it to CSV-Nest
     mode, run the import (nesting, décor slots, ops, costing) and return the
