@@ -35,14 +35,17 @@ frappe.provide("frappe.boot");
   // "What is running right now?" — a muted badge in the navbar with the
   // estimator's deployed commit (e.g. "MEst @ ce08c1c"), so the running code
   // is visible at a glance on every desk page. Hover shows version + branch.
+  let badge_inflight = false;
   function version_badge() {
     try {
-      if (document.getElementById("mallet-version-badge")) return;
-      const navbar = document.querySelector(".navbar .container, .navbar");
+      if (document.getElementById("mallet-version-badge") || badge_inflight) return;
+      const navbar = document.querySelector(".navbar .container, header.navbar, .navbar");
       if (!navbar || !frappe.session || frappe.session.user === "Guest") return;
+      badge_inflight = true;
       frappe.call({
         method: "mallet_estimator.api.version_info",
         callback(r) {
+          badge_inflight = false;
           const v = (r && r.message) || {};
           if (!v.commit && !v.version) return;
           if (document.getElementById("mallet-version-badge")) return;
@@ -55,13 +58,27 @@ frappe.provide("frappe.boot");
             "margin-left:8px;font-size:11px;opacity:.55;align-self:center;white-space:nowrap;";
           navbar.appendChild(el);
         },
-        error() {}, // never let a badge break the desk
+        error() {
+          badge_inflight = false; // never let a badge break the desk
+        },
       });
     } catch (e) {
       // eslint-disable-next-line no-console
       console.warn("mallet_estimator version badge:", e);
     }
   }
+  // The desk navbar renders LATE (same lesson as fix() above): hook every
+  // signal fix() uses AND retry on a bounded timer until the badge lands.
   $(document).ready(version_badge);
   $(document).on("startup", version_badge);
+  if (frappe.after_ajax) frappe.after_ajax(version_badge);
+  let badge_tries = 0;
+  const badge_timer = setInterval(() => {
+    badge_tries += 1;
+    if (document.getElementById("mallet-version-badge") || badge_tries > 20) {
+      clearInterval(badge_timer);
+    } else {
+      version_badge();
+    }
+  }, 1500);
 })();
