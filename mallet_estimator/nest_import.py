@@ -27,8 +27,13 @@ TRIM_MM = 10.0
 def collect(rows):
     """Aggregate the CSV part rows into nesting inputs:
     (ply {(code, th): [(l,w)..]}, lam {code: [(l,w)..]}, edges {code: meters},
-    hardware {code: qty}, banded_edge_count)."""
-    ply, lam, edges, hw = {}, {}, {}, {}
+    hardware [ {code, category, qty, ...} ], banded_edge_count).
+
+    Hardware comes from opencutlist.hardware_list — the same aggregator the
+    PDF path uses — so a line is the REAL designation (HWD_AH_SC_0 = Auto
+    Hinge Soft Close 0°), never the coarse Material name (HWD_Hinge), which
+    can hide several distinct SKUs at different rates."""
+    ply, lam, edges = {}, {}, {}
     banded = 0
     for r in rows:
         name = (r.get("Material name") or "").strip()
@@ -50,8 +55,7 @@ def collect(rows):
                 lc = _material_from(r.get(col))
                 if lc:
                     lam.setdefault(lc, []).append((l, w))
-        elif name.upper().startswith(("HWD", "JH_")):
-            hw[name] = hw.get(name, 0) + 1
+    hw = opencutlist.hardware_list(rows)
     return ply, lam, edges, hw, banded
 
 
@@ -117,9 +121,16 @@ def run(doc):
             unpriced, uom="Roll", rate_factor=inventory.EDGE_ROLL_METERS)
         mats_shape.append({"name": code, "kind": "edge", "thickness": 0, "qty": rolls})
 
-    for code, qty in sorted(hw.items()):
-        doc._add_material_line(code, "hardware", 0, qty, f"{code} — {qty} nos [CSV-Nest]", unpriced)
-        mats_shape.append({"name": code, "kind": "hardware", "thickness": 0, "qty": qty})
+    # Designation-level hardware lines, matching the PDF path exactly (the
+    # category rides along as the item's group, so rates resolve per SKU).
+    for h in hw:
+        cat = f" · {h['category']}" if h.get("category") and h["category"] != h["code"] else ""
+        doc._add_material_line(
+            h["code"], "hardware", 0, h["qty"],
+            f"{h['code']} — {h['qty']} nos{cat} [CSV-Nest]", unpriced,
+            dims={"category": h.get("category")})
+        mats_shape.append({"name": h.get("category") or h["code"], "kind": "hardware",
+                           "thickness": 0, "qty": h["qty"]})
 
     for r in manual_rows:
         doc.append("materials", {

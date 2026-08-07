@@ -454,6 +454,33 @@ class Estimate(Document):
         return rows
 
     @frappe.whitelist()
+    def sku_materials(self, sku):
+        """READ-ONLY material lines of one of this estimate's SKUs, for the
+        inline panel — check what a SKU is made of without leaving the
+        estimate. Quantities are the SKU's own (stored) values; the estimate's
+        consolidated allocation is reported separately in cost_breakup."""
+        if sku not in {r.estimate_sku for r in (self.skus or [])}:
+            frappe.throw(_("{0} is not on this estimate.").format(sku))
+        doc = frappe.get_doc("Estimate SKU", sku)
+        doc.check_permission("read")
+        return {
+            "sku": doc.name,
+            "article": doc.article_name,
+            "code": doc.get("sku_code"),
+            "mode": doc.get("estimation_mode") or "OCL PDF (standard)",
+            "material_cost": doc.get("material_cost"),
+            "rows": [
+                {"material": m.get("material"), "item": m.get("item"),
+                 "description": m.get("description"), "qty": m.get("qty"),
+                 "uom": m.get("uom"), "rate": m.get("unit_cost"),
+                 "amount": m.get("line_cost"),
+                 "manual": bool(m.get("is_manual")),
+                 "client_supplied": bool(m.get("customer_supplied"))}
+                for m in (doc.get("materials") or [])
+            ],
+        }
+
+    @frappe.whitelist()
     def add_skus_from_files(self, files, room=None):
         """Bulk estimate-first intake: `files` = [{file_url, file_name}] just
         uploaded against this estimate — every CSV becomes a CSV-Nest SKU

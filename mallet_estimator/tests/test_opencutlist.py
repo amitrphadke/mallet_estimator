@@ -105,3 +105,33 @@ class TestClassifyHardware(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestCsvHardwareDesignations(unittest.TestCase):
+    """CSV-Nest must aggregate hardware by DESIGNATION (HWD_AH_SC_0), never by
+    the coarse Material name (HWD_Hinge) — several distinct SKUs at different
+    rates can hide inside one category."""
+
+    CSV = (
+        "Material type;Material name;Designation;Length;Width;Thickness\n"
+        "Hardware;HWD_Hinge;HWD_AH_SC_0;0;0;0\n"
+        "Hardware;HWD_Hinge;HWD_AH_SC_0#2;0;0;0\n"
+        "Hardware;HWD_Hinge;HWD_AH_SC_165;0;0;0\n"
+        "Hardware;HWD_Handle;HWD_HDL_128;0;0;0\n"
+    )
+
+    def test_designations_not_categories(self):
+        rows = OCL.parse_opencutlist_csv(self.CSV)
+        hw = OCL.hardware_list(rows)
+        by_code = {h["code"]: h for h in hw}
+        self.assertIn("HWD_AH_SC_0", by_code)
+        self.assertIn("HWD_AH_SC_165", by_code)
+        self.assertNotIn("HWD_Hinge", by_code)      # the category is never a line
+        self.assertEqual(by_code["HWD_AH_SC_0"]["qty"], 2)   # '#2' rolls up
+        self.assertEqual(by_code["HWD_AH_SC_0"]["category"], "HWD_Hinge")
+
+    def test_category_still_classifies_the_driver(self):
+        # the operation driver must still see these as hinges/handles
+        self.assertEqual(OCL.classify_hardware("HWD_AH_SC_0 · HWD_Hinge"), "hinges")
+        self.assertEqual(OCL.classify_hardware("HWD_HDL_128 · HWD_Handle"), "handles")
+        self.assertEqual(OCL.classify_hardware("HWD_AH_SC_0"), "other")

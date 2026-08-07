@@ -323,14 +323,21 @@ function render_sku_files(frm) {
         (row.frozen ? ` <span class="badge">${esc(__("frozen"))}</span>` : "") +
         (row.unpriced ? ` <span class="badge" style="background:#e24c4c;color:#fff">${esc(__("unpriced"))}</span>` : "") +
         (row.issues ? ` <span class="badge" style="background:#e69500;color:#fff">${row.issues} ${esc(__("issue(s)"))}</span>` : "");
-      return `<tr>
-        <td><a href="/app/estimate-sku/${encodeURIComponent(row.sku)}">${esc(row.article || row.sku)}</a>
-            <div class="small text-muted">${esc(row.code || "")}</div></td>
+      return `<tr class="sku-line" data-sku="${esc(row.sku)}" style="cursor:pointer"
+                  title="${esc(__("Click to show this SKU's material lines here"))}">
+        <td><span class="sku-caret" style="display:inline-block;width:12px">▸</span>
+            <b>${esc(row.article || row.sku)}</b>
+            <div class="small text-muted" style="margin-left:12px">${esc(row.code || "")}
+              · <a href="/app/estimate-sku/${encodeURIComponent(row.sku)}"
+                   onclick="event.stopPropagation()">${esc(__("open"))}</a></div></td>
         <td>${esc(row.room || "")}</td>
         <td>${file_cell(row, "parts_csv", __("Part CSV"))}</td>
         <td>${file_cell(row, "views_pdf", __("Views PDF"))}</td>
         <td class="text-right">${row.sheets ? cstr(Math.round(row.sheets * 100) / 100) : ""}</td>
         <td class="text-right">${row.client_total != null ? format_currency(row.client_total) : ""}${badges}</td>
+      </tr>
+      <tr class="sku-mats" data-for="${esc(row.sku)}" style="display:none">
+        <td colspan="6" style="background:#fbfbfb"></td>
       </tr>`;
     }).join("");
     let mode_note;
@@ -358,8 +365,28 @@ function render_sku_files(frm) {
           <tbody>${body}</tbody>
         </table>
       </div>`);
-    $w.find(".sku-attach").on("click", function () {
+    $w.find(".sku-attach").on("click", function (e) {
+      e.stopPropagation();
       sku_attach_uploader(frm, $(this).data("sku"), $(this).data("field"));
+    });
+    // Click a line to read its material lines right here — no page jump.
+    $w.find("tr.sku-line").on("click", function () {
+      const sku = $(this).data("sku");
+      const $slot = $w.find(`tr.sku-mats[data-for="${sku}"]`);
+      const $caret = $(this).find(".sku-caret");
+      if ($slot.is(":visible")) {
+        $slot.hide();
+        $caret.text("▸");
+        return;
+      }
+      $slot.show();
+      $caret.text("▾");
+      if ($slot.data("loaded")) return;
+      $slot.find("td").html(`<span class="text-muted">${esc(__("Loading…"))}</span>`);
+      frm.call("sku_materials", { sku }).then((r) => {
+        $slot.data("loaded", 1);
+        $slot.find("td").html(render_sku_materials((r && r.message) || {}));
+      });
     });
   });
 }
@@ -386,3 +413,44 @@ function sku_attach_uploader(frm, sku, fieldname) {
   });
 }
 
+
+// Read-only material lines of one SKU, rendered inside the files panel. Costed
+// exactly as the SKU stores them (the estimate's consolidated allocation is
+// reported separately in the cost breakup); nothing here is editable — the SKU
+// form remains the only place material lines can change.
+function render_sku_materials(m) {
+  const rows = m.rows || [];
+  if (!rows.length) {
+    return `<span class="text-muted">${esc(__("No material lines yet — attach this SKU's Part List CSV."))}</span>`;
+  }
+  const body = rows.map((r) => {
+    const flags =
+      (r.manual ? ` <span class="badge">${esc(__("manual"))}</span>` : "") +
+      (r.client_supplied ? ` <span class="badge">${esc(__("client-supplied"))}</span>` : "");
+    return `<tr>
+      <td><code>${esc(r.material || "")}</code>${flags}
+          <div class="small text-muted">${esc(r.description || "")}</div></td>
+      <td>${esc(r.item || "")}</td>
+      <td class="text-right">${format_number(r.qty || 0)}</td>
+      <td>${esc(r.uom || "")}</td>
+      <td class="text-right">${format_currency(r.rate || 0)}</td>
+      <td class="text-right">${format_currency(r.amount || 0)}</td>
+    </tr>`;
+  }).join("");
+  return `
+    <div class="small text-muted" style="margin-bottom:4px">
+      ${esc(__("Material lines"))} — <b>${esc(m.article || m.sku)}</b> · ${esc(m.mode || "")}
+      · ${esc(__("material cost"))} ${format_currency(m.material_cost || 0)}
+      · <i>${esc(__("read-only; edit on the SKU form"))}</i>
+    </div>
+    <div style="overflow-x:auto">
+      <table class="table table-bordered" style="font-size:12px;margin:0">
+        <thead><tr>
+          <th>${esc(__("Generic code"))}</th><th>${esc(__("Item"))}</th>
+          <th class="text-right">${esc(__("Qty"))}</th><th>${esc(__("UOM"))}</th>
+          <th class="text-right">${esc(__("Rate"))}</th><th class="text-right">${esc(__("Amount"))}</th>
+        </tr></thead>
+        <tbody>${body}</tbody>
+      </table>
+    </div>`;
+}

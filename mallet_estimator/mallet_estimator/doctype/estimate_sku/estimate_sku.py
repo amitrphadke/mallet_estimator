@@ -879,18 +879,29 @@ class EstimateSKU(Document):
                 unpriced.append(row.item)
         self.unpriced_materials = ", ".join(unpriced)
 
+    # classify_hardware's buckets -> the driver keys used by the locked ops
+    _HW_BUCKETS = {"minifix": "minifix", "screws": "screw", "hinges": "hinge",
+                   "rails": "rail", "handles": "handle", "shelf_supports": "shelf"}
+
     def _hw_line_counts(self):
         """Hardware quantities summed from the CURRENT material lines (imported
-        AND manual) by designation substring — HWD_MiniFix, HWD_Screw…"""
+        AND manual).
+
+        Lines carry the REAL designation (HWD_AH_SC_0 = Auto Hinge Soft Close),
+        which contains none of the words the driver buckets look for — so the
+        line's DESCRIPTION (which carries the OCL category, '… · HWD_Hinge')
+        is part of the haystack. Without it, designation-level hardware scored
+        zero hinges/rails and Install Hardware, Minifix Boring and Drilling
+        silently lost their quantities."""
         tot = {"minifix": 0, "screw": 0, "hinge": 0, "rail": 0, "handle": 0, "shelf": 0}
         for m in self.materials or []:
             code = str(m.item or m.material or "")
             if not code.upper().startswith("HWD"):
                 continue
-            name = f"{m.item or ''} {m.material or ''}".lower()
-            for k in tot:
-                if k in name:
-                    tot[k] += m.qty or 0
+            haystack = f"{m.item or ''} {m.material or ''} {m.description or ''}"
+            key = self._HW_BUCKETS.get(opencutlist.classify_hardware(haystack))
+            if key:
+                tot[key] += m.qty or 0
         return tot
 
     def enforce_locked_qty(self):
