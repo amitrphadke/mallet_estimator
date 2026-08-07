@@ -341,11 +341,13 @@ class EstimateSKU(Document):
                 ph = str(d["placeholder"])
                 dom = "Edge Band" if ph.startswith("EB_") else "Laminate"
                 # A description block that describes the placeholder's DECIDING
-                # letter maps to its slot INSTANCE (b on ..._b_a1 → row b1 —
+                # slot maps to its slot INSTANCE (b on ..._b_a1 → row b1 —
                 # SketchUp's paste-rename suffix namespaces the whole material);
-                # other blocks (the non-deciding side) fill their plain letter.
-                first = (decor.trailing_slots(ph) or [""])[0][:1]
-                slot = decor.slot_key(ph) if d["slot"] == first else d["slot"]
+                # other blocks (the non-deciding side) fill their own token.
+                # Description slots may themselves carry suffixes (b1 = …).
+                first_tok = (decor.trailing_slots(ph) or [""])[0]
+                inst = decor.slot_key(ph)
+                slot = inst if d["slot"] in (first_tok[:1], first_tok, inst) else d["slot"]
                 key = (dom, slot)
                 if not slot or key in existing or not (d.get("brand") or d.get("catalogue")):
                     continue
@@ -648,6 +650,17 @@ class EstimateSKU(Document):
                 title=_("Fill the Décor Slots map"), indicator="orange",
             )
 
+    @staticmethod
+    def _next_free_slot(letters, dom_used):
+        """Next unused slot token: a..z, then a1..z1, a2..z2 … — the suffixed
+        rounds keep combined models with more than 26 décors per domain working
+        (slot_key treats b1 as a distinct décor from b)."""
+        for suffix in ("",) + tuple(str(i) for i in range(1, 10)):
+            for l in letters:
+                if l + suffix not in dom_used:
+                    return l + suffix
+        return None
+
     @frappe.whitelist()
     def prefill_decor_from_project(self):
         """COMBINED-MODEL helper: one SketchUp file holding every SKU reuses slot
@@ -665,7 +678,7 @@ class EstimateSKU(Document):
         have = set()
         for r in list(self.get("sku_decors") or []) + list(self.get("sku_decor_edges") or []):
             dom = "Edge Band" if r.parentfield == "sku_decor_edges" else (r.get("domain") or "Laminate")
-            used[dom].add((r.slot or "").strip().lower()[:1])
+            used[dom].add((r.slot or "").strip().lower())
             have.add((dom, (r.brand or "").strip().lower(), (r.code or "").strip(),
                       (r.decor_name or "").strip().lower()))
         register, added = [], 0
@@ -680,9 +693,9 @@ class EstimateSKU(Document):
                          (r.decor_name or "").strip().lower())
                 if ident in have or not (r.brand or r.code):
                     continue
-                pref = (r.slot or "").strip().lower()[:1]
+                pref = (r.slot or "").strip().lower()
                 slot = pref if pref and pref not in used[dom] else \
-                    next((l for l in letters if l not in used[dom]), None)
+                    self._next_free_slot(letters, used[dom])
                 if not slot:
                     continue
                 used[dom].add(slot)

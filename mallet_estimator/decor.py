@@ -14,8 +14,8 @@
 
 import re
 
-_SLOT_DEF_RE = re.compile(r"^\s*([a-z])\s*=\s*([^;\n]+)", re.M)
-_INLINE_SLOT_RE = re.compile(r"\b([a-z])\s*=\s*([^;\n]+)")
+_SLOT_DEF_RE = re.compile(r"^\s*([a-z]\d*)\s*=\s*([^;\n]+)", re.M)
+_INLINE_SLOT_RE = re.compile(r"\b([a-z]\d*)\s*=\s*([^;\n]+)")
 _LABEL_RE = re.compile(r"^\s*(brand|code|name|year|short)\s*=\s*(.+)$", re.I)
 _PLACEHOLDER_RE = re.compile(r"^\s*(SG_LAM_[A-Za-z0-9_]+|SG_PLY_[A-Za-z0-9_]+|EB_[A-Za-z0-9_]+)")
 _CODE_TOKEN_RE = re.compile(r"^[0-9][0-9A-Za-z\-]*$")
@@ -55,8 +55,8 @@ def parse_slot_value(value, brands=None):
     {brand, catalogue, name, raw}; brand None when unrecognised (legacy freeform
     keeps working via the raw text)."""
     raw = (value or "").strip()
-    # a leaked "b=" / "c =" prefix must never enter the identity slug
-    raw = re.sub(r"^[a-z]\s*=\s*", "", raw)
+    # a leaked "b=" / "c =" / "b1 =" prefix must never enter the identity slug
+    raw = re.sub(r"^[a-z]\d*\s*=\s*", "", raw)
     tokens = raw.split()
     if not tokens:
         return None
@@ -78,10 +78,11 @@ def parse_slot_value(value, brands=None):
 
 
 def material_slots(code):
-    """The placeholder letters a material code carries (non-'a'): SG_PLY_V2_b_c →
-    ['b','c']; SG_LAM_V1_16mm_b_a → ['b']; EB_PVC_EX_c → ['c']."""
+    """The placeholder slot tokens a material code carries (non-'a'), incl.
+    paste-rename suffixes: SG_PLY_V2_b_c → ['b','c']; SG_LAM_V1_16mm_b_a →
+    ['b']; EB_PVC_EX_c1 → ['c1']."""
     tokens = str(code or "").split("_")
-    return [t for t in tokens if len(t) == 1 and t.isalpha() and t.islower() and t != "a"]
+    return [t for t in tokens if SLOT_TOKEN_RE.match(t) and t != "a"]
 
 
 def parse_description(desc, placeholder_code, brands=None):
@@ -127,7 +128,7 @@ def parse_description(desc, placeholder_code, brands=None):
                 block[lm.group(1).lower()] = lm.group(2).strip()
                 continue
             sm = _INLINE_SLOT_RE.match(seg)
-            if sm and len(sm.group(1)) == 1:
+            if sm and SLOT_TOKEN_RE.match(sm.group(1)):
                 close_block()
                 slot, value = sm.group(1), sm.group(2).strip()
                 parsed = parse_slot_value(value, brands)

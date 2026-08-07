@@ -173,6 +173,20 @@ class TestDecor(unittest.TestCase):
         self.assertEqual(out["b"]["brand"], "Merino")
         self.assertEqual(out["c"]["catalogue"], "6575")
 
+    def test_suffixed_slots(self):
+        # paste-rename décor instances: b1 is a DIFFERENT décor than b, in the
+        # description parser and the slot extractors alike
+        from mallet_estimator import decor
+        out = decor.parse_description("b1=Merino 6534; c1=RT 6575", "SG_PLY_V2_b1_c1")
+        self.assertEqual(out["b1"]["brand"], "Merino")
+        self.assertEqual(out["c1"]["catalogue"], "6575")
+        self.assertEqual(decor.material_slots("SG_PLY_V2_b1_c1"), ["b1", "c1"])
+        self.assertEqual(decor.material_slots("EB_PVC_EX_c1"), ["c1"])
+        # single letters untouched (backward compatible)
+        self.assertEqual(decor.material_slots("SG_PLY_V2_b_c"), ["b", "c"])
+        v = decor.parse_slot_value("b1 = Merino 1834 Moonlit Gray")
+        self.assertEqual((v["brand"], v["catalogue"]), ("Merino", "1834"))
+
     def test_real_code_substitution(self):
         # S9v2 — the user's exact convention: trailing letters replaced by the
         # FIRST letter's décor short code; one PO code per laminate.
