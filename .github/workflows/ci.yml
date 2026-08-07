@@ -25,7 +25,7 @@ jobs:
         with:
           python-version: "3.11"
       - name: Run pure unit tests
-        run: python -m unittest mallet_estimator.tests.test_estimator mallet_estimator.tests.test_opencutlist -v
+        run: python -m unittest mallet_estimator.tests.test_estimator mallet_estimator.tests.test_opencutlist mallet_estimator.tests.test_nesting mallet_estimator.tests.test_consolidate -v
 
   integration:
     name: Integration (Frappe v16 + ERPNext)

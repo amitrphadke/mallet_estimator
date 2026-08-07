@@ -327,9 +327,10 @@
   {
    "fieldname": "parts_csv",
    "fieldtype": "Attach",
-   "label": "OpenCutList Parts CSV (execution)",
-   "hidden": 1,
-   "print_hide": 1
+   "label": "OpenCutList Part List CSV",
+   "print_hide": 1,
+   "depends_on": "eval:doc.estimation_mode=='CSV-Nest' || doc.parts_csv",
+   "description": "CSV-Nest mode: the ONLY estimation input — sheet counts come from the calibrated nesting engine. Standard mode: execution aid (parts table + edge-band op count)."
   },
   {
    "fieldname": "parts",

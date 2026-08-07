@@ -180,6 +180,22 @@ warehouses under Board & Sheet Store — the app won't clash with them.)
    computes **Material + Execution + Design = internal cost → client price**. Steps 1–4 are
    locked (computed); the rest you can fine-tune. Phase costs auto-refresh when you re-open the SKU.
 
+### CSV-Nest mode — per-SKU costing that gets cheaper together
+
+Set **Estimation Mode = CSV-Nest** on the SKU and attach ONLY the OpenCutList
+**Part List CSV** (views PDF unchanged): sheet counts come from the calibrated
+server-side nesting engine (MaxRects, kerf 4 / trim 10, grain-locked) instead
+of the per-SKU Estimate PDF. The payoff is on the **Estimate**: with two or
+more CSV-Nest SKUs, all parts nest **together** per material — each SKU pays
+its parts' area directly and offcut waste splits by part-area share, edge-band
+meters combine before roll rounding, sheet-count operations follow the shared
+sheets, and Operations' **Batch Efficiency Tiers** (Operation master) scale
+minutes/unit at combined quantities. Each save reports standalone vs combined
+client totals — the customer sees what estimating articles together saves.
+A part that exceeds the outer envelope annotated on the views PDF is flagged
+("this part list can't build this SKU"). The same import is callable at
+`mallet_estimator.api.import_parts_csv` (the mcft-ocl plugin contract).
+
 ---
 
 ## 5. Quote the project (Quote-to-Cash)
