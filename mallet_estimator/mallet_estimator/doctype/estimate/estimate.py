@@ -147,6 +147,8 @@ class Estimate(Document):
         self._sqft_sum = 0.0
         self._room_groups = {}
         self._room_order = []
+        # PASS 1 — load + standalone reprice; collect CSV-Nest inputs
+        loaded, nest_inputs = [], {}
         for r in rows:
             if not frappe.db.exists("Estimate SKU", r.estimate_sku):
                 continue
@@ -159,6 +161,26 @@ class Estimate(Document):
                     s.compute_costs()
                 except Exception:
                     frappe.log_error(frappe.get_traceback(), f"estimate reprice {s.name}")
+                if (s.get("estimation_mode") or "") == "CSV-Nest":
+                    try:
+                        ni = (json.loads(s.import_drivers or "{}") or {}).get("__nest_inputs__")
+                    except Exception:
+                        ni = None
+                    if ni:
+                        nest_inputs[s.name] = ni
+            loaded.append((r, s))
+        # PASS 2 — cross-SKU consolidation: nest all the estimate's CSV-Nest
+        # SKUs' parts together, so shared sheets/rolls make every SKU cheaper
+        # than it is alone. IN MEMORY ONLY — an SKU can serve many estimates,
+        # so its stored standalone numbers are never overwritten.
+        self._consolidation = None
+        if len(nest_inputs) >= 2:
+            try:
+                self._apply_consolidation(loaded, nest_inputs)
+            except Exception:
+                frappe.log_error(frappe.get_traceback(), f"estimate consolidation {self.name}")
+        # PASS 3 — roll up (combined values wherever consolidation ran)
+        for (r, s) in loaded:
             for k, v in _sku_client_buckets(s).items():
                 self._client_buckets[k] += v
             blk = s.facial_sqft_block() or {}
@@ -201,6 +223,107 @@ class Estimate(Document):
         self.total_client = totals["client"]
         if self.meta.has_field("total_days"):
             self.total_days = sum(float(r.est_days or 0) for r in rows)
+
+    def _apply_consolidation(self, loaded, nest_inputs):
+        """Nest every CSV-Nest SKU's parts TOGETHER per material and re-price
+        each SKU at its allocated share: parts area is paid directly, offcut
+        waste splits pro-rata by part-area share per material (decision
+        2026-08-07). Sheet-count operations follow the allocated sheets, and
+        batch-efficiency tiers on the Operation master scale minutes/unit at
+        the estimate's combined quantities. Everything happens on the loaded
+        in-memory docs — nothing is saved back to the SKUs."""
+        from mallet_estimator import consolidate as cons
+        from mallet_estimator.estimator import op_phase
+
+        result = cons.consolidate(nest_inputs)
+        mats = result["materials"]
+        by_name = {s.name: s for (_r, s) in loaded}
+        standalone = {n: float(by_name[n].client_total or 0) for n in nest_inputs}
+
+        sheet_ops = ("Sheet Lamination", "Sheet Tape Removal", "Sheet Cutting")
+        for name in nest_inputs:
+            s = by_name[name]
+            for m in s.materials or []:
+                if m.get("is_manual"):
+                    continue
+                key = f"{m.material}@{float(m.thickness or 0):g}"
+                info = mats.get(key) or mats.get(str(m.material or ""))
+                if info and name in info["alloc"]:
+                    m.qty = info["alloc"][name]
+                    m.line_cost = float(m.qty or 0) * float(m.unit_cost or 0)
+            ratio = result["sheet_ratio"].get(name, 1.0)
+            for row in s.labor or []:
+                if op_phase(row) in sheet_ops:
+                    row.qty = round(float(row.qty or 0) * ratio, 2)
+
+        self._apply_batch_tiers([by_name[n] for n in nest_inputs])
+
+        per_sku = []
+        for name in nest_inputs:
+            s = by_name[name]
+            try:
+                s.derive_joinery()   # Fevicol/Abrotape follow the shrunk lamination qty
+                s.compute_costs()
+            except Exception:
+                frappe.log_error(frappe.get_traceback(), f"consolidated reprice {name}")
+            per_sku.append({
+                "sku": name, "article": s.article_name,
+                "standalone": standalone[name],
+                "combined": float(s.client_total or 0),
+                "saving": standalone[name] - float(s.client_total or 0),
+            })
+        self._consolidation = {
+            "materials": {
+                k: {kk: v[kk] for kk in ("kind", "combined", "standalone", "util")}
+                for k, v in mats.items()
+            },
+            "per_sku": per_sku,
+            "standalone_client": sum(p["standalone"] for p in per_sku),
+            "combined_client": sum(p["combined"] for p in per_sku),
+        }
+        self._consolidation["savings"] = (self._consolidation["standalone_client"]
+                                          - self._consolidation["combined_client"])
+        sheets_saved = sum(
+            (v["standalone"] - v["combined"])
+            for v in mats.values() if v["kind"] in ("sheet", "laminate"))
+        frappe.msgprint(
+            _("Consolidated nesting across {0} SKUs: {1:g} sheet(s) saved vs "
+              "standalone; client total ₹{2:,.0f} vs ₹{3:,.0f} alone "
+              "(₹{4:,.0f} saved).").format(
+                len(per_sku), sheets_saved,
+                self._consolidation["combined_client"],
+                self._consolidation["standalone_client"],
+                self._consolidation["savings"]),
+            title=_("CSV-Nest consolidation"), indicator="green")
+
+    def _apply_batch_tiers(self, sku_docs):
+        """Batch-efficiency: an Operation's mallet_batch_tiers rows say 'from
+        this combined qty, minutes/unit scale by this factor' (bulk sheets
+        paste/cut faster; more SKUs shipped and installed take less transport
+        and installation time per SKU). Tiers are keyed on the ESTIMATE-wide
+        qty of that operation across the consolidated SKUs."""
+        from mallet_estimator import consolidate as cons
+        from mallet_estimator.estimator import op_phase
+
+        if not frappe.db.exists("DocType", "Mallet Operation Batch Tier"):
+            return
+        totals = {}
+        for s in sku_docs:
+            for row in s.labor or []:
+                op = op_phase(row)
+                if op:
+                    totals[op] = totals.get(op, 0.0) + float(row.qty or 0)
+        for op, total in totals.items():
+            tiers = [(t.from_qty, t.factor) for t in frappe.get_all(
+                "Mallet Operation Batch Tier", filters={"parent": op, "parenttype": "Operation"},
+                fields=["from_qty", "factor"])]
+            factor = cons.batch_factor([(t[0], t[1]) for t in tiers], total)
+            if factor == 1.0:
+                continue
+            for s in sku_docs:
+                for row in s.labor or []:
+                    if op_phase(row) == op:
+                        row.carp_min = round(float(row.carp_min or 0) * factor, 2)
 
     def print_payload(self, kind="client"):
         """Everything the two print formats render, computed once server-side.
@@ -382,7 +505,12 @@ class Estimate(Document):
             g = self._room_groups[rn]
             g["per_sqft"] = (g["subtotal"] / g["sqft"]) if g["sqft"] else 0
             rooms.append(g)
-        self.cost_breakup = json.dumps({"bifurcation": bif, "sqft": sq, "rooms": rooms})
+        payload = {"bifurcation": bif, "sqft": sq, "rooms": rooms}
+        # CSV-Nest consolidation story (prompt 219): what each SKU would cost
+        # alone vs combined — the client-visible saving of estimating together.
+        if getattr(self, "_consolidation", None):
+            payload["consolidation"] = self._consolidation
+        self.cost_breakup = json.dumps(payload)
 
     @frappe.whitelist()
     def create_quotation(self):
