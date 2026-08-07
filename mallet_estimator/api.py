@@ -88,6 +88,30 @@ def import_parts_csv(sku, csv_content, filename=None):
 
 
 @frappe.whitelist()
+def attach_sku_file(sku, fieldname, file_url):
+    """Attach/replace one of an SKU's source files from the Estimate's
+    per-SKU files panel; saving runs the normal import pipeline."""
+    if fieldname not in ("parts_csv", "views_pdf"):
+        frappe.throw(_("fieldname must be parts_csv or views_pdf"))
+    doc = frappe.get_doc("Estimate SKU", sku)
+    doc.check_permission("write")
+    if doc.get("rates_frozen"):
+        frappe.throw(_("Rates are frozen (quoted) — amend/cancel the Estimate first."))
+    doc.set(fieldname, file_url)
+    if fieldname == "parts_csv" and not doc.get("estimation_mode"):
+        doc.estimation_mode = "CSV-Nest"
+    for fname in frappe.get_all("File", filters={"file_url": file_url}, pluck="name"):
+        frappe.db.set_value("File", fname, {
+            "attached_to_doctype": "Estimate SKU",
+            "attached_to_name": doc.name,
+            "attached_to_field": fieldname,
+        }, update_modified=False)
+    doc.save()
+    return {"sku": doc.name, "client_total": doc.get("client_total"),
+            "unpriced": doc.get("unpriced_materials") or ""}
+
+
+@frappe.whitelist()
 def get_sku_context(sku):
     """Everything the SketchUp side needs to set a model up for this SKU:
     identity (customer/project/room/code), the décor slot map (which generic

@@ -16,6 +16,7 @@
   "execution_company",
   "skus_section",
   "skus",
+  "sku_files_html",
   "allowances_section",
   "allowances",
   "total_allowance",
@@ -293,6 +294,11 @@
    "no_copy": 1,
    "print_hide": 1,
    "read_only": 1
+  },
+  {
+   "fieldname": "sku_files_html",
+   "fieldtype": "HTML",
+   "label": "SKU Files & Status"
   }
  ],
  "links": [],

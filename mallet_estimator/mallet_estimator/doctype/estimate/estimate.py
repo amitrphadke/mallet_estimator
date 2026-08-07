@@ -252,6 +252,121 @@ class Estimate(Document):
         self.save()
         return sku.name
 
+    @frappe.whitelist()
+    def sku_files_overview(self):
+        """One line per SKU for the estimate screen — files present, nest
+        state, issues, totals. Drives the 'SKU Files & Status' panel."""
+        rows = []
+        for r in self.skus or []:
+            if not r.estimate_sku or not frappe.db.exists("Estimate SKU", r.estimate_sku):
+                continue
+            s = frappe.db.get_value(
+                "Estimate SKU", r.estimate_sku,
+                ["name", "article_name", "room", "multi_room", "estimation_mode",
+                 "parts_csv", "views_pdf", "estimate_pdf", "import_drivers",
+                 "unpriced_materials", "client_total", "rates_frozen", "sku_code"],
+                as_dict=True)
+            drivers = {}
+            try:
+                drivers = json.loads(s.import_drivers or "{}") or {}
+            except Exception:
+                pass
+            nest = drivers.get("__nest__") or {}
+            rows.append({
+                "sku": s.name, "article": s.article_name, "code": s.sku_code,
+                "room": "Multiple Rooms" if s.multi_room else s.room,
+                "mode": s.estimation_mode or "OCL PDF (standard)",
+                "parts_csv": s.parts_csv, "views_pdf": s.views_pdf,
+                "estimate_pdf": s.estimate_pdf,
+                "sheets": sum(float(v.get("sheets") or 0) for v in nest.values()),
+                "issues": len(drivers.get("__issues__") or []),
+                "unpriced": bool(s.unpriced_materials),
+                "client_total": s.client_total,
+                "frozen": bool(s.rates_frozen),
+            })
+        return rows
+
+    @frappe.whitelist()
+    def add_skus_from_files(self, files, room=None):
+        """Bulk estimate-first intake: `files` = [{file_url, file_name}] just
+        uploaded against this estimate — every CSV becomes a CSV-Nest SKU
+        named after its file, and a PDF sharing the CSV's name-stem becomes
+        that SKU's 7 Views PDF. Each SKU imports (nesting, décor prefill,
+        ops, costing) on insert; files are re-attached to their SKU so its
+        attachment GC owns them. Returns a per-SKU summary for the dialog."""
+        if isinstance(files, str):
+            files = json.loads(files or "[]")
+        if self.docstatus != 0:
+            frappe.throw(_("This estimate is submitted — amend it first."))
+
+        def stem(f):
+            n = (f.get("file_name") or f.get("file_url") or "").rsplit("/", 1)[-1]
+            return n.rsplit(".", 1)[0].strip().lower()
+
+        def is_ext(f, ext):
+            return (f.get("file_name") or f.get("file_url") or "").lower().endswith(ext)
+
+        csvs = [f for f in files if is_ext(f, ".csv")]
+        pdfs = [f for f in files if is_ext(f, ".pdf")]
+        if not csvs:
+            frappe.throw(_("No CSV part lists among the uploaded files."))
+
+        def reattach(url, sku_name, fieldname):
+            for fname in frappe.get_all("File", filters={"file_url": url}, pluck="name"):
+                frappe.db.set_value("File", fname, {
+                    "attached_to_doctype": "Estimate SKU",
+                    "attached_to_name": sku_name,
+                    "attached_to_field": fieldname,
+                }, update_modified=False)
+
+        used_pdf, out = set(), []
+        for f in csvs:
+            cs = stem(f)
+            views = None
+            for p in pdfs:
+                if p.get("file_url") in used_pdf:
+                    continue
+                ps = stem(p)
+                base = ps.replace("views", "").replace("view", "").strip(" _-")
+                if ps.startswith(cs) or cs.startswith(base) or (base and base.startswith(cs)):
+                    views = p
+                    used_pdf.add(p.get("file_url"))
+                    break
+            article = stem(f).replace("_", " ").replace("-", " ").strip().title() or stem(f)
+            sku = frappe.new_doc("Estimate SKU")
+            sku.article_name = article
+            if sku.meta.has_field("estimation_mode"):
+                sku.estimation_mode = "CSV-Nest"
+            if self.get("project"):
+                sku.project = self.project
+            if self.get("customer") and sku.meta.has_field("customer"):
+                sku.customer = self.customer
+            if room:
+                sku.room = room
+            sku.parts_csv = f.get("file_url")
+            if views:
+                sku.views_pdf = views.get("file_url")
+            sku.insert()
+            reattach(f.get("file_url"), sku.name, "parts_csv")
+            if views:
+                reattach(views.get("file_url"), sku.name, "views_pdf")
+            self.append("skus", {"estimate_sku": sku.name})
+            drivers = {}
+            try:
+                drivers = json.loads(sku.import_drivers or "{}") or {}
+            except Exception:
+                pass
+            nest = drivers.get("__nest__") or {}
+            out.append({
+                "sku": sku.name, "article": sku.article_name, "views": bool(views),
+                "sheets": sum(float(v.get("sheets") or 0) for v in nest.values()),
+                "issues": len(drivers.get("__issues__") or []),
+                "unpriced": sku.get("unpriced_materials") or "",
+                "client_total": sku.get("client_total"),
+            })
+        self.save()
+        return out
+
     def _apply_consolidation(self, loaded, nest_inputs):
         """Nest every CSV-Nest SKU's parts TOGETHER per material and re-price
         each SKU at its allocated share: parts area is paid directly, offcut

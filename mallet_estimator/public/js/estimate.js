@@ -7,6 +7,7 @@ frappe.ui.form.on("Estimate", {
     const approved = frm.doc.docstatus === 1;
 
     render_estimate_bifurcation(frm);
+    if (!frm.is_new()) render_sku_files(frm);
 
     // The two prints, clearly separated. Both carry ONLY client-shared numbers
     // by construction (leak-safe); the execution copy adds views + purchase data.
@@ -58,6 +59,13 @@ frappe.ui.form.on("Estimate", {
 
     // --- Draft: SKUs are born HERE (estimate-first CSV-Nest flow) -----------
     if (draft && !frm.is_new()) {
+      frm.add_custom_button(__("Add SKUs from files…"), () => {
+        if (frm.is_dirty()) {
+          frappe.msgprint(__("Save the estimate first."));
+          return;
+        }
+        add_skus_from_files_dialog(frm);
+      }).addClass("btn-primary");
       frm.add_custom_button(__("Add SKU (CSV-Nest)"), () => {
         if (frm.is_dirty()) {
           frappe.msgprint(__("Save the estimate first."));
@@ -85,7 +93,7 @@ frappe.ui.form.on("Estimate", {
           },
         });
         d.show();
-      }).addClass("btn-primary");
+      });
       frm.add_custom_button(__("Add all project SKUs"), () => {
         frm.call("refresh_skus").then((r) => {
           const m = (r && r.message) || {};
@@ -97,7 +105,7 @@ frappe.ui.form.on("Estimate", {
         });
       });
       frm.dashboard.add_comment(
-        __("Draft — add SKUs from here: <b>Add SKU (CSV-Nest)</b> creates one on this estimate (attach its Part List CSV + views PDF, then fill the décor map); every SKU save re-prices this estimate with consolidated nesting, so adding/removing SKUs shows how shared material moves each price. The same SKU can serve many estimates. <b>Submit</b> to approve and freeze before quoting."),
+        __("Draft — add SKUs from here: <b>Add SKUs from files…</b> takes every Part List CSV (+ matching views PDFs) in one go, one SKU per CSV; the panel under the SKU table shows each SKU's files, sheets and price on one line (📎 to attach/replace without leaving this screen). Every SKU save re-prices this estimate with consolidated nesting, so adding/removing SKUs shows how shared material moves each price. <b>Submit</b> to approve and freeze before quoting."),
         "blue", true
       );
     }
@@ -286,4 +294,150 @@ function update_estimate_totals(frm) {
   frm.set_value("total_internal", skus_internal + transport);
   frm.set_value("total_gst", gst);
   frm.set_value("total_with_gst", client + gst);
+}
+
+// --- Estimation v2: per-SKU files panel + bulk intake ----------------------
+
+function esc(s) {
+  return frappe.utils.escape_html ? frappe.utils.escape_html(String(s == null ? "" : s)) : String(s == null ? "" : s);
+}
+
+// One line per SKU right on the estimate: article | room | Part CSV | Views
+// PDF | sheets | issues | total | open. Attach/replace either file without
+// leaving this screen; the SKU save re-prices the estimate (consolidation
+// included) and the panel re-renders on reload.
+function render_sku_files(frm) {
+  const $w = frm.get_field("sku_files_html") && frm.get_field("sku_files_html").$wrapper;
+  if (!$w) return;
+  if (!(frm.doc.skus || []).length) {
+    $w.empty();
+    return;
+  }
+  frm.call("sku_files_overview").then((r) => {
+    const rows = (r && r.message) || [];
+    if (!rows.length) {
+      $w.empty();
+      return;
+    }
+    const draft = frm.doc.docstatus === 0;
+    const file_cell = (row, fieldname, label) => {
+      const url = row[fieldname];
+      const chip = url
+        ? `<a href="${encodeURI(url)}" target="_blank" title="${esc(label)}">✓ ${esc(label)}</a>`
+        : `<span class="text-muted">✗ ${esc(label)}</span>`;
+      const btn = draft && !row.frozen
+        ? ` <button class="btn btn-xs btn-default sku-attach" data-sku="${esc(row.sku)}"
+              data-field="${esc(fieldname)}" title="${esc(__("Attach / replace"))}">📎</button>`
+        : "";
+      return chip + btn;
+    };
+    const body = rows.map((row) => {
+      const badges =
+        (row.mode === "CSV-Nest" ? ` <span class="badge">CSV-Nest</span>` : "") +
+        (row.frozen ? ` <span class="badge">${esc(__("frozen"))}</span>` : "") +
+        (row.unpriced ? ` <span class="badge" style="background:#e24c4c;color:#fff">${esc(__("unpriced"))}</span>` : "") +
+        (row.issues ? ` <span class="badge" style="background:#e69500;color:#fff">${row.issues} ${esc(__("issue(s)"))}</span>` : "");
+      return `<tr>
+        <td><a href="/app/estimate-sku/${encodeURIComponent(row.sku)}">${esc(row.article || row.sku)}</a>
+            <div class="small text-muted">${esc(row.code || "")}</div></td>
+        <td>${esc(row.room || "")}</td>
+        <td>${file_cell(row, "parts_csv", __("Part CSV"))}</td>
+        <td>${file_cell(row, "views_pdf", __("Views PDF"))}</td>
+        <td class="text-right">${row.sheets ? cstr(Math.round(row.sheets * 100) / 100) : ""}</td>
+        <td class="text-right">${row.client_total != null ? format_currency(row.client_total) : ""}${badges}</td>
+      </tr>`;
+    }).join("");
+    $w.html(`
+      <div style="overflow-x:auto">
+        <table class="table table-bordered" style="margin-top:6px">
+          <thead><tr>
+            <th>${esc(__("Article"))}</th><th>${esc(__("Room"))}</th>
+            <th>${esc(__("Part List CSV"))}</th><th>${esc(__("7 Views PDF"))}</th>
+            <th class="text-right">${esc(__("Sheets"))}</th>
+            <th class="text-right">${esc(__("Client Total"))}</th>
+          </tr></thead>
+          <tbody>${body}</tbody>
+        </table>
+      </div>`);
+    $w.find(".sku-attach").on("click", function () {
+      sku_attach_uploader(frm, $(this).data("sku"), $(this).data("field"));
+    });
+  });
+}
+
+function sku_attach_uploader(frm, sku, fieldname) {
+  const csv = fieldname === "parts_csv";
+  new frappe.ui.FileUploader({
+    doctype: "Estimate SKU",
+    docname: sku,
+    allow_multiple: false,
+    restrictions: { allowed_file_types: [csv ? ".csv" : ".pdf"] },
+    on_success(file) {
+      frappe.call({
+        method: "mallet_estimator.api.attach_sku_file",
+        args: { sku, fieldname, file_url: file.file_url },
+        freeze: true,
+        freeze_message: __("Importing…"),
+        callback() {
+          frappe.show_alert({ message: __("{0} updated", [sku]), indicator: "green" });
+          frm.reload_doc();
+        },
+      });
+    },
+  });
+}
+
+// Bulk intake: drop every SKU's Part List CSV (+ matching views PDFs, paired
+// by file-name stem) in one go — each CSV becomes a CSV-Nest SKU on this
+// estimate, named after its file.
+function add_skus_from_files_dialog(frm) {
+  const collected = [];
+  const d = new frappe.ui.Dialog({
+    title: __("Add SKUs from files"),
+    fields: [
+      { fieldname: "room", fieldtype: "Link", options: "Estimate Room",
+        label: __("Room for this batch"), reqd: 1,
+        description: __("Applied to every SKU created here — change per SKU later if needed.") },
+      { fieldname: "uploader_html", fieldtype: "HTML" },
+    ],
+    primary_action_label: __("Create SKUs"),
+    primary_action(values) {
+      if (!collected.length) {
+        frappe.msgprint(__("Upload at least one Part List CSV."));
+        return;
+      }
+      d.hide();
+      frm.call({
+        doc: frm.doc,
+        method: "add_skus_from_files",
+        args: { files: collected, room: values.room },
+        freeze: true,
+        freeze_message: __("Nesting & pricing each SKU…"),
+      }).then((r) => {
+        const rows = (r && r.message) || [];
+        const lines = rows.map((x) =>
+          `${esc(x.article)} — ${x.sheets ? x.sheets + " " + __("sheets") : __("no sheets?")}` +
+          (x.views ? "" : " · " + __("no views PDF matched")) +
+          (x.issues ? ` · ${x.issues} ${__("issue(s)")}` : "") +
+          (x.unpriced ? ` · <b>${__("unpriced rates!")}</b>` : ""));
+        frappe.msgprint({
+          title: __("Created {0} SKU(s)", [rows.length]),
+          message: lines.join("<br>") || __("Nothing created."),
+          indicator: "green",
+        });
+        frm.reload_doc();
+      });
+    },
+  });
+  d.show();
+  new frappe.ui.FileUploader({
+    wrapper: d.get_field("uploader_html").$wrapper,
+    doctype: "Estimate",
+    docname: frm.doc.name,
+    allow_multiple: true,
+    restrictions: { allowed_file_types: [".csv", ".pdf"] },
+    on_success(file) {
+      collected.push({ file_url: file.file_url, file_name: file.file_name || file.name });
+    },
+  });
 }
