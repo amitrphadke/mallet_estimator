@@ -246,14 +246,21 @@ jobs:
             [ "$SITE_N" = "0" ] && UNMOVED=999
             echo "[$((i*20))s] build=${STATUS} deploy_in_progress=${DIP} bench_creating=${BCU} pending=${PENDING} moved=$((SITE_N-UNMOVED<0?0:SITE_N-UNMOVED))/${SITE_N} running=${CURHASH:-?} deployed=${HASH:0:12}"
 
-            # Done only when: build Success, nothing in progress, no pending update,
-            # the bench finished creating, the bench carries the hash we deployed,
-            # AND every site has moved off its pre-update bench — held for two
-            # consecutive checks. If FC doesn't expose a running hash (CURHASH
-            # empty) we don't block on it; the site-bench move is the hard proof.
+            # Done when: build Success, nothing in progress, the bench finished
+            # creating, the bench carries the hash we deployed, AND every site
+            # has moved off its pre-update bench — held for two consecutive
+            # checks, then confirmed by the site's OWN bench hash below.
+            #
+            # PENDING (apps with update_available) is deliberately NOT a gate:
+            # it is bench-level and counts ANY newer/stale queued release, so a
+            # duplicate release left in the queue used to hang this loop for the
+            # full 55 min while the site was demonstrably already running our
+            # commit (three false-REDs on 2026-08-07). The site-bench hash proof
+            # is strictly stronger — it names OUR hash — so we report pending
+            # instead of blocking on it.
             HASH_OK=0
             { [ -z "$CURHASH" ] || [ "$CURHASH" = "${HASH:0:12}" ]; } && HASH_OK=1
-            if [ "$BUILT" = "1" ] && [ "$DIP" != "true" ] && [ "$PENDING" = "0" ] \
+            if [ "$BUILT" = "1" ] && [ "$DIP" != "true" ] \
                && [ "$BCU" != "true" ] && [ "$HASH_OK" = "1" ] && [ "$UNMOVED" = "0" ]; then
               STABLE=$((STABLE + 1))
               if [ "$STABLE" -ge 2 ]; then
@@ -276,11 +283,12 @@ jobs:
                   continue
                 fi
                 echo "✅ LIVE on Frappe Cloud — build ${DNAME}; all ${SITE_N} site(s) moved to bench ${SITE_BENCH:-?} running ${SBHASH:-${CURHASH:-$HASH}}."
+                [ "${PENDING:-0}" != "0" ] && echo "note: ${PENDING} newer/stale release(s) still queued on this bench — not a failure of THIS deploy."
                 exit 0
               fi
             else
               STABLE=0
             fi
           done
-          echo "::error::Deploy NOT confirmed live after 55 min (build=${STATUS}, pending=${PENDING}, bench_creating=${BCU}, ${UNMOVED:-?} site(s) still on their pre-update bench, bench runs ${CURHASH:-?} vs deployed ${HASH:0:12}). The build likely succeeded but the SITE MIGRATION did not complete — a failed migrate leaves the site on the old bench. Recover with: gh workflow run deploy-staging.yml -f force=true, then check the FC dashboard (site → Deploys/Insights) for the migrate traceback."
+          echo "::error::Deploy NOT confirmed live after 55 min (build=${STATUS}, pending=${PENDING}, bench_creating=${BCU}, ${UNMOVED:-?} site(s) still on their pre-update bench, bench runs ${CURHASH:-?} vs deployed ${HASH:0:12}). The build likely succeeded but the SITE MIGRATION did not complete — a failed migrate leaves the site on the old bench. (If the bench ALREADY runs the deployed hash and all sites moved, the code IS live and this is a gate artifact — confirm with the read-only fc-status workflow.) Recover with: gh workflow run deploy-staging.yml -f force=true, then check the FC dashboard (site → Deploys/Insights) for the migrate traceback."
           exit 1
