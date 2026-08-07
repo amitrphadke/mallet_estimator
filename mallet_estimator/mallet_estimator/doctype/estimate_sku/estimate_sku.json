@@ -40,6 +40,7 @@
   "decor_section",
   "sku_decors",
   "sku_decor_edges",
+  "apply_decor_map_btn",
   "material_cost",
   "import_drivers",
   "execution_section",
@@ -622,6 +623,12 @@
    "label": "Rates Frozen (quoted)",
    "read_only": 1,
    "description": "Set when this SKU's Estimate is submitted/quoted — material re-imports and re-pricing are locked; price-list changes no longer affect this estimate."
+  },
+  {
+   "fieldname": "apply_decor_map_btn",
+   "fieldtype": "Button",
+   "label": "Apply Décor Map",
+   "description": "Saves and re-points the laminate/edge material lines at the mapped décors — check the Materials table after."
   }
  ],
  "links": [],

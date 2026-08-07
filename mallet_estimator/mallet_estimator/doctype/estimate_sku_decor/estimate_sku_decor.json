@@ -15,6 +15,7 @@
  "permissions": [],
  "field_order": [
   "slot",
+  "decor",
   "domain",
   "brand",
   "code",
@@ -33,6 +34,15 @@
    "in_list_view": 1,
    "reqd": 1,
    "columns": 1
+  },
+  {
+   "fieldname": "decor",
+   "fieldtype": "Link",
+   "options": "Mallet Decor",
+   "label": "Décor (search or create)",
+   "in_list_view": 1,
+   "columns": 3,
+   "description": "Pick an existing laminate/edge band or create a new one right here — brand, code and name fill in on Save."
   },
   {
    "fieldname": "domain",

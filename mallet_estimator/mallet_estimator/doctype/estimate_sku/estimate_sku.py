@@ -116,6 +116,7 @@ class EstimateSKU(Document):
         self.ensure_step_remarks()
         self.ensure_custom_operations()
         self.maybe_import()
+        self.pull_decor_masters()
         self.apply_decor_map()
         self.refresh_material_rates()
         self.compute_code()
@@ -123,6 +124,34 @@ class EstimateSKU(Document):
         self.derive_joinery()
         self.compute_costs()
         self.build_cost_breakup()
+
+    def pull_decor_masters(self):
+        """A Décor Slots row can simply POINT at a Mallet Decor master (search
+        it, or create one inline from the same field). Its brand/code/name/
+        physicals fill the row on save, so every downstream path — short_code,
+        substitute_real_code, ensure_material_item — works unchanged."""
+        if self._frozen() or not frappe.db.exists("DocType", "Mallet Decor"):
+            return
+        for table in ("sku_decors", "sku_decor_edges"):
+            for row in self.get(table) or []:
+                if not row.meta.has_field("decor") or not row.get("decor"):
+                    continue
+                d = frappe.db.get_value(
+                    "Mallet Decor", row.decor,
+                    ["brand", "code", "decor_name", "thickness", "width", "year", "short"],
+                    as_dict=True)
+                if not d:
+                    continue
+                row.brand, row.code, row.decor_name = d.brand, d.code, d.decor_name
+                if d.year:
+                    row.year = d.year
+                if d.short:
+                    row.short = d.short
+                # physicals only when the master carries them (edge widths etc.)
+                if d.thickness and row.meta.has_field("thickness"):
+                    row.thickness = d.thickness
+                if d.width and row.meta.has_field("width"):
+                    row.width = d.width
 
     def ensure_custom_operations(self):
         """Extra work means extra ROWS — and an ad-hoc row (e.g. 'Cut glass

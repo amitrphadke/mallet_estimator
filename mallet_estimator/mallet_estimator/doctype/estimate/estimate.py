@@ -5,6 +5,19 @@ from frappe import _
 from frappe.model.document import Document
 
 
+def _reattach_file(url, sku_name, fieldname):
+    """A file uploaded against the Estimate belongs to the SKU that consumes
+    it — re-point it so the SKU's attachment GC owns its own sources."""
+    if not url:
+        return
+    for fname in frappe.get_all("File", filters={"file_url": url}, pluck="name"):
+        frappe.db.set_value("File", fname, {
+            "attached_to_doctype": "Estimate SKU",
+            "attached_to_name": sku_name,
+            "attached_to_field": fieldname,
+        }, update_modified=False)
+
+
 def _sku_client_buckets(s):
     """One SKU's CLIENT-side amounts by bucket, at its own effective margins.
     Live path: the fresh _calc from compute_costs. Frozen path: the stored
@@ -54,6 +67,7 @@ class Estimate(Document):
         # by side. A draft only refreshes the DATA of the rows it carries; once
         # submitted the list and totals are frozen as the baseline.
         if self.docstatus == 0:
+            self.process_intake()
             self.refresh_sku_rows()
         # Provisional allowances (F6) — amounts are a simple qty x assumed rate,
         # recomputed every save so the client-print subtotal is always right.
@@ -252,6 +266,51 @@ class Estimate(Document):
         self.save()
         return sku.name
 
+    def process_intake(self):
+        """The intake grid IS the estimation UX: one row = Room + Article name
+        + Part List CSV (+ views PDF). On save, every complete row becomes a
+        CSV-Nest SKU — imported, nested, priced, décor prefilled, operations
+        seeded — and its row moves into the skus table below (running just
+        before refresh_sku_rows, the new SKU joins consolidation in the SAME
+        save). Incomplete rows stay in the grid for the user to finish."""
+        if not self.meta.has_field("intake") or not self.get("intake"):
+            return
+        remaining, created = [], []
+        for row in self.intake:
+            if not (row.get("article_name") and row.get("parts_csv") and row.get("room")):
+                remaining.append(row)
+                continue
+            try:
+                sku = frappe.new_doc("Estimate SKU")
+                sku.article_name = row.article_name.strip()
+                if sku.meta.has_field("estimation_mode"):
+                    sku.estimation_mode = "CSV-Nest"
+                if self.get("project"):
+                    sku.project = self.project
+                if self.get("customer") and sku.meta.has_field("customer"):
+                    sku.customer = self.customer
+                sku.room = row.room
+                sku.parts_csv = row.parts_csv
+                if row.get("views_pdf"):
+                    sku.views_pdf = row.views_pdf
+                sku.insert()
+                _reattach_file(row.parts_csv, sku.name, "parts_csv")
+                if row.get("views_pdf"):
+                    _reattach_file(row.views_pdf, sku.name, "views_pdf")
+                self.append("skus", {"estimate_sku": sku.name})
+                created.append(f"{sku.article_name} ({sku.name})")
+            except Exception:
+                frappe.log_error(frappe.get_traceback(), f"estimate intake {row.get('article_name')}")
+                remaining.append(row)
+                frappe.msgprint(
+                    _("Could not create SKU for <b>{0}</b> — row kept; see the Error Log.").format(
+                        row.get("article_name")), indicator="red")
+        self.set("intake", remaining)
+        if created:
+            frappe.msgprint(
+                _("Created {0} SKU(s): {1}").format(len(created), ", ".join(created)),
+                indicator="green", alert=True)
+
     @frappe.whitelist()
     def sku_files_overview(self):
         """One line per SKU for the estimate screen — files present, nest
@@ -311,14 +370,6 @@ class Estimate(Document):
         if not csvs:
             frappe.throw(_("No CSV part lists among the uploaded files."))
 
-        def reattach(url, sku_name, fieldname):
-            for fname in frappe.get_all("File", filters={"file_url": url}, pluck="name"):
-                frappe.db.set_value("File", fname, {
-                    "attached_to_doctype": "Estimate SKU",
-                    "attached_to_name": sku_name,
-                    "attached_to_field": fieldname,
-                }, update_modified=False)
-
         used_pdf, out = set(), []
         for f in csvs:
             cs = stem(f)
@@ -347,9 +398,9 @@ class Estimate(Document):
             if views:
                 sku.views_pdf = views.get("file_url")
             sku.insert()
-            reattach(f.get("file_url"), sku.name, "parts_csv")
+            _reattach_file(f.get("file_url"), sku.name, "parts_csv")
             if views:
-                reattach(views.get("file_url"), sku.name, "views_pdf")
+                _reattach_file(views.get("file_url"), sku.name, "views_pdf")
             self.append("skus", {"estimate_sku": sku.name})
             drivers = {}
             try:

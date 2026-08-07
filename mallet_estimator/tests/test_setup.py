@@ -80,3 +80,12 @@ class TestMasters(MalletTestCase):
         self.assertNotIn("Machinery", comps)
         self.assertIn("Rent", comps)
         self.assertFalse(install._strip_invalid_costs(ws))  # idempotent — nothing left to strip
+
+    def test_intake_and_decor_masters(self):
+        self.assertTrue(frappe.db.exists("DocType", "Estimate SKU Intake"))
+        self.assertTrue(frappe.db.exists("DocType", "Mallet Decor"))
+        self.assertTrue(frappe.get_meta("Estimate").has_field("intake"),
+                        "missing Estimate.intake grid")
+        for t in ("Estimate SKU Decor", "Estimate SKU Decor Edge"):
+            self.assertTrue(frappe.get_meta(t).has_field("decor"),
+                            f"missing {t}.decor link")

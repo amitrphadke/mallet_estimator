@@ -15,6 +15,7 @@
   "designed_by",
   "execution_company",
   "skus_section",
+  "intake",
   "skus",
   "sku_files_html",
   "allowances_section",
@@ -299,6 +300,13 @@
    "fieldname": "sku_files_html",
    "fieldtype": "HTML",
    "label": "SKU Files & Status"
+  },
+  {
+   "fieldname": "intake",
+   "fieldtype": "Table",
+   "options": "Estimate SKU Intake",
+   "label": "Add SKUs — Room · Name · Part List CSV · Views PDF",
+   "description": "One row per SKU, then Save: each complete row becomes a CSV-Nest SKU (nested, priced, décor prefilled, operations seeded) and moves into the table below. Incomplete rows stay here."
   }
  ],
  "links": [],

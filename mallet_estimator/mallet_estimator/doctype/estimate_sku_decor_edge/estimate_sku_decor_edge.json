@@ -13,20 +13,86 @@
  "sort_field": "modified",
  "sort_order": "DESC",
  "permissions": [],
- "field_order": ["slot", "brand", "code", "decor_name", "thickness", "width", "year", "short"],
+ "field_order": [
+  "slot",
+  "decor",
+  "brand",
+  "code",
+  "decor_name",
+  "thickness",
+  "width",
+  "year",
+  "short"
+ ],
  "fields": [
-  {"fieldname": "slot", "fieldtype": "Data", "label": "Slot",
-   "description": "The letter in the generic OCL code: a, b, b1 …", "in_list_view": 1, "reqd": 1, "columns": 1},
-  {"fieldname": "brand", "fieldtype": "Link", "label": "Brand / Maker", "options": "Manufacturer",
-   "in_list_view": 1, "columns": 2},
-  {"fieldname": "code", "fieldtype": "Data", "label": "Catalogue Code", "in_list_view": 1, "columns": 1},
-  {"fieldname": "decor_name", "fieldtype": "Data", "label": "Name", "in_list_view": 1, "columns": 3},
-  {"fieldname": "thickness", "fieldtype": "Float", "label": "Thickness (mm)", "in_list_view": 1,
-   "columns": 1, "precision": "1", "description": "Default 0.8 mm (1 mm for ply thicker than 18 mm)."},
-  {"fieldname": "width", "fieldtype": "Float", "label": "Width (mm)", "in_list_view": 1,
-   "columns": 1, "precision": "1", "description": "Default 22 mm (50 mm for ply thicker than 18 mm)."},
-  {"fieldname": "year", "fieldtype": "Data", "label": "Year"},
-  {"fieldname": "short", "fieldtype": "Data", "label": "Short (override)",
-   "description": "Item-code suffix. Blank = brand initials + catalogue code (RH2008)."}
+  {
+   "fieldname": "slot",
+   "fieldtype": "Data",
+   "label": "Slot",
+   "description": "The letter in the generic OCL code: a, b, b1 …",
+   "in_list_view": 1,
+   "reqd": 1,
+   "columns": 1
+  },
+  {
+   "fieldname": "decor",
+   "fieldtype": "Link",
+   "options": "Mallet Decor",
+   "label": "Décor (search or create)",
+   "in_list_view": 1,
+   "columns": 3,
+   "description": "Pick an existing laminate/edge band or create a new one right here — brand, code and name fill in on Save."
+  },
+  {
+   "fieldname": "brand",
+   "fieldtype": "Link",
+   "label": "Brand / Maker",
+   "options": "Manufacturer",
+   "in_list_view": 1,
+   "columns": 2
+  },
+  {
+   "fieldname": "code",
+   "fieldtype": "Data",
+   "label": "Catalogue Code",
+   "in_list_view": 1,
+   "columns": 1
+  },
+  {
+   "fieldname": "decor_name",
+   "fieldtype": "Data",
+   "label": "Name",
+   "in_list_view": 1,
+   "columns": 3
+  },
+  {
+   "fieldname": "thickness",
+   "fieldtype": "Float",
+   "label": "Thickness (mm)",
+   "in_list_view": 1,
+   "columns": 1,
+   "precision": "1",
+   "description": "Default 0.8 mm (1 mm for ply thicker than 18 mm)."
+  },
+  {
+   "fieldname": "width",
+   "fieldtype": "Float",
+   "label": "Width (mm)",
+   "in_list_view": 1,
+   "columns": 1,
+   "precision": "1",
+   "description": "Default 22 mm (50 mm for ply thicker than 18 mm)."
+  },
+  {
+   "fieldname": "year",
+   "fieldtype": "Data",
+   "label": "Year"
+  },
+  {
+   "fieldname": "short",
+   "fieldtype": "Data",
+   "label": "Short (override)",
+   "description": "Item-code suffix. Blank = brand initials + catalogue code (RH2008)."
+  }
  ]
 }

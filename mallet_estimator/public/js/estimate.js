@@ -59,41 +59,6 @@ frappe.ui.form.on("Estimate", {
 
     // --- Draft: SKUs are born HERE (estimate-first CSV-Nest flow) -----------
     if (draft && !frm.is_new()) {
-      frm.add_custom_button(__("Add SKUs from files…"), () => {
-        if (frm.is_dirty()) {
-          frappe.msgprint(__("Save the estimate first."));
-          return;
-        }
-        add_skus_from_files_dialog(frm);
-      }).addClass("btn-primary");
-      frm.add_custom_button(__("Add SKU (CSV-Nest)"), () => {
-        if (frm.is_dirty()) {
-          frappe.msgprint(__("Save the estimate first."));
-          return;
-        }
-        const d = new frappe.ui.Dialog({
-          title: __("New CSV-Nest SKU"),
-          fields: [
-            { fieldname: "article_name", fieldtype: "Data", label: __("Article name"), reqd: 1,
-              description: __("e.g. Wardrobe — the SKU code (YS_MB_WAR) is generated on save") },
-            { fieldname: "room", fieldtype: "Link", options: "Estimate Room", label: __("Room"), reqd: 1 },
-          ],
-          primary_action_label: __("Create & open"),
-          primary_action(values) {
-            d.hide();
-            frm.call("add_csv_nest_sku", values).then((r) => {
-              if (r && r.message) {
-                frappe.show_alert({
-                  message: __("{0} created and added — attach the Part List CSV + 7 Views PDF, Save, then fill the décor map.", [r.message]),
-                  indicator: "green",
-                });
-                frappe.set_route("Form", "Estimate SKU", r.message);
-              }
-            });
-          },
-        });
-        d.show();
-      });
       frm.add_custom_button(__("Add all project SKUs"), () => {
         frm.call("refresh_skus").then((r) => {
           const m = (r && r.message) || {};
@@ -105,7 +70,7 @@ frappe.ui.form.on("Estimate", {
         });
       });
       frm.dashboard.add_comment(
-        __("Draft — add SKUs from here: <b>Add SKUs from files…</b> takes every Part List CSV (+ matching views PDFs) in one go, one SKU per CSV; the panel under the SKU table shows each SKU's files, sheets and price on one line (📎 to attach/replace without leaving this screen). Every SKU save re-prices this estimate with consolidated nesting, so adding/removing SKUs shows how shared material moves each price. <b>Submit</b> to approve and freeze before quoting."),
+        __("Draft — add SKUs in the <b>Add SKUs</b> grid above: one row per SKU (Room · Name · Part List CSV · 7 Views PDF); add as many rows as you need, then <b>Save</b>. Each complete row becomes a priced SKU with operations, workstations and décor map seeded, and moves into the table below. The panel under it shows every SKU on one line (📎 attaches a missing file in place). Every save re-nests the CSV-Nest SKUs together, so each price reflects the shared material. <b>Submit</b> to approve and freeze before quoting."),
         "blue", true
       );
     }
@@ -387,57 +352,3 @@ function sku_attach_uploader(frm, sku, fieldname) {
   });
 }
 
-// Bulk intake: drop every SKU's Part List CSV (+ matching views PDFs, paired
-// by file-name stem) in one go — each CSV becomes a CSV-Nest SKU on this
-// estimate, named after its file.
-function add_skus_from_files_dialog(frm) {
-  const collected = [];
-  const d = new frappe.ui.Dialog({
-    title: __("Add SKUs from files"),
-    fields: [
-      { fieldname: "room", fieldtype: "Link", options: "Estimate Room",
-        label: __("Room for this batch"), reqd: 1,
-        description: __("Applied to every SKU created here — change per SKU later if needed.") },
-      { fieldname: "uploader_html", fieldtype: "HTML" },
-    ],
-    primary_action_label: __("Create SKUs"),
-    primary_action(values) {
-      if (!collected.length) {
-        frappe.msgprint(__("Upload at least one Part List CSV."));
-        return;
-      }
-      d.hide();
-      frm.call({
-        doc: frm.doc,
-        method: "add_skus_from_files",
-        args: { files: collected, room: values.room },
-        freeze: true,
-        freeze_message: __("Nesting & pricing each SKU…"),
-      }).then((r) => {
-        const rows = (r && r.message) || [];
-        const lines = rows.map((x) =>
-          `${esc(x.article)} — ${x.sheets ? x.sheets + " " + __("sheets") : __("no sheets?")}` +
-          (x.views ? "" : " · " + __("no views PDF matched")) +
-          (x.issues ? ` · ${x.issues} ${__("issue(s)")}` : "") +
-          (x.unpriced ? ` · <b>${__("unpriced rates!")}</b>` : ""));
-        frappe.msgprint({
-          title: __("Created {0} SKU(s)", [rows.length]),
-          message: lines.join("<br>") || __("Nothing created."),
-          indicator: "green",
-        });
-        frm.reload_doc();
-      });
-    },
-  });
-  d.show();
-  new frappe.ui.FileUploader({
-    wrapper: d.get_field("uploader_html").$wrapper,
-    doctype: "Estimate",
-    docname: frm.doc.name,
-    allow_multiple: true,
-    restrictions: { allowed_file_types: [".csv", ".pdf"] },
-    on_success(file) {
-      collected.push({ file_url: file.file_url, file_name: file.file_name || file.name });
-    },
-  });
-}

@@ -1,0 +1,121 @@
+{
+ "actions": [],
+ "autoname": "format:{brand} {code}",
+ "creation": "2026-08-07 00:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "quick_entry": 1,
+ "title_field": "decor_name",
+ "field_order": [
+  "domain",
+  "brand",
+  "code",
+  "decor_name",
+  "column_break_phys",
+  "thickness",
+  "width",
+  "year",
+  "short"
+ ],
+ "fields": [
+  {
+   "fieldname": "domain",
+   "fieldtype": "Select",
+   "options": "Laminate\nEdge Band",
+   "label": "Domain",
+   "reqd": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "allow_in_quick_entry": 1
+  },
+  {
+   "fieldname": "brand",
+   "fieldtype": "Link",
+   "options": "Manufacturer",
+   "label": "Brand / Maker",
+   "reqd": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "allow_in_quick_entry": 1
+  },
+  {
+   "fieldname": "code",
+   "fieldtype": "Data",
+   "label": "Catalogue Code",
+   "reqd": 1,
+   "in_list_view": 1,
+   "allow_in_quick_entry": 1,
+   "description": "The maker's catalogue number, e.g. 1834, 6534."
+  },
+  {
+   "fieldname": "decor_name",
+   "fieldtype": "Data",
+   "label": "Décor Name",
+   "in_list_view": 1,
+   "allow_in_quick_entry": 1,
+   "description": "e.g. Moonlit Gray, Black Marmor."
+  },
+  {
+   "fieldname": "column_break_phys",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "thickness",
+   "fieldtype": "Float",
+   "label": "Thickness (mm)",
+   "allow_in_quick_entry": 1
+  },
+  {
+   "fieldname": "width",
+   "fieldtype": "Float",
+   "label": "Width (mm)",
+   "allow_in_quick_entry": 1,
+   "description": "Edge bands only (22 / 50 mm)."
+  },
+  {
+   "fieldname": "year",
+   "fieldtype": "Data",
+   "label": "Catalogue Year"
+  },
+  {
+   "fieldname": "short",
+   "fieldtype": "Data",
+   "label": "Short Code",
+   "description": "Optional explicit short code used in real item names (else brand initials + code, e.g. VM6534)."
+  }
+ ],
+ "links": [],
+ "modified": "2026-08-07 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Mallet Estimator",
+ "name": "Mallet Decor",
+ "naming_rule": "Expression",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "All",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC"
+}

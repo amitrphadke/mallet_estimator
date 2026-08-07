@@ -15,6 +15,10 @@ frappe.ui.form.on("Estimate SKU", {
     // Décor brand picker shows only the makers of that ROW's domain (laminate
     // brands for Laminate rows, edge-band brands for Edge Band rows) — hardware
     // makers never appear. Unscoped makers (blank) stay visible everywhere.
+    // The in-row Décor picker: laminate rows search laminates, edge rows edge
+    // bands. "Create a new Mallet Decor" appears in the same dropdown.
+    frm.set_query("decor", "sku_decors", () => ({ filters: { domain: "Laminate" } }));
+    frm.set_query("decor", "sku_decor_edges", () => ({ filters: { domain: "Edge Band" } }));
     frm.set_query("brand", "sku_decors", () => ({
       filters: { mallet_scope: ["in", ["Laminate", ""]] },
     }));
@@ -83,14 +87,9 @@ frappe.ui.form.on("Estimate SKU", {
     if (!frm.is_new()) {
       frm.add_custom_button(__("Add material row"), () => add_material_dialog(frm), __("Materials"));
     }
-    // Map a décor slot straight from the lines: one dialog — Brand, Code, Name,
-    // Thickness (+ Width for edge bands). No table hopping, no code-order recall.
-    if (!frm.is_new() && !frm.doc.rates_frozen) {
-      const slots = decor_slots_from_lines(frm);
-      if (slots.length) {
-        frm.add_custom_button(__("Map décor slot"), () => map_slot_dialog(frm, slots), __("Materials")).addClass("btn-primary");
-      }
-    }
+    // Décor mapping lives IN the Décor Slots rows now: each row's "Décor" link
+    // searches existing laminates/edge bands and can create one inline; the
+    // 'Apply Décor Map' button under the tables saves + re-points the lines.
     // Combined model: pull every distinct décor of the project into THIS SKU's
     // map (one letter per décor project-wide) and show the letter register to
     // use while assigning generic materials in the combined SketchUp file.
@@ -220,6 +219,36 @@ function show_min_unit_benefit(frm, cdt, cdn) {
   }, 6);
 }
 
+// The Apply button under the décor tables: save (which re-points the laminate/
+// edge material lines at the mapped décors) and report what the lines now use.
+frappe.ui.form.on("Estimate SKU", {
+  apply_decor_map_btn(frm) {
+    if (frm.doc.rates_frozen) {
+      frappe.msgprint(__("Rates are frozen (quoted) — amend/cancel the Estimate first."));
+      return;
+    }
+    frm.save().then(() => {
+      const lines = (frm.doc.materials || []).filter((m) => {
+        const c = String(m.material || "").toUpperCase();
+        return c.startsWith("SG_LAM") || c.startsWith("EB_");
+      });
+      const rows = lines.map((m) =>
+        `<tr><td>${frappe.utils.escape_html(m.material || "")}</td>
+             <td>${frappe.utils.escape_html(m.item || "")}</td>
+             <td class="text-right">${format_number(m.qty || 0)}</td></tr>`).join("");
+      frappe.msgprint({
+        title: __("Décor map applied to the material lines"),
+        message: rows
+          ? `<table class="table table-bordered" style="font-size:12.5px">
+               <thead><tr><th>${__("Generic code")}</th><th>${__("Item now used")}</th>
+               <th class="text-right">${__("Qty")}</th></tr></thead><tbody>${rows}</tbody></table>`
+          : __("No laminate/edge lines on this SKU yet — import a Part List CSV first."),
+        indicator: "blue",
+      });
+    });
+  },
+});
+
 // Décor map edits re-point the laminate/edge material lines ON SAVE — remind
 // the user so the change doesn't look ignored.
 const decor_changed = (frm) => {
@@ -287,104 +316,7 @@ function target_price_dialog(frm) {
 
 // The slot instances present on the lam/edge material lines, with their current
 // mapping state (read from the Mapping column the server stamps).
-function decor_slots_from_lines(frm) {
-  const seen = {};
-  (frm.doc.materials || []).forEach((m) => {
-    const base = String(m.material || "");
-    const up = base.toUpperCase();
-    if (!up.startsWith("SG_LAM") && !up.startsWith("EB_")) return;
-    const toks = base.split("_");
-    let trail = [];
-    for (let i = toks.length - 1; i >= 0; i--) {
-      if (/^[a-z]\d*$/.test(toks[i])) trail.unshift(toks[i]);
-      else break;
-    }
-    if (!trail.length) return;
-    const key = trail[0][0] + trail[trail.length - 1].replace(/^[a-z]/, "");
-    const domain = up.startsWith("EB_") ? "Edge Band" : "Laminate";
-    const id = `${domain}::${key}`;
-    if (!seen[id]) {
-      seen[id] = {
-        domain, slot: key, example: base,
-        mapped: !String(m.remarks || "").includes("NOT MAPPED") && !!m.remarks,
-      };
-    }
-  });
-  return Object.values(seen).sort((a, b) => (a.domain + a.slot).localeCompare(b.domain + b.slot));
-}
 
-function map_slot_dialog(frm, slots) {
-  const first = slots.find((s) => !s.mapped) || slots[0];
-  const label = (s) =>
-    `${s.domain === "Edge Band" ? "Edge Band" : "Laminate"} ${s.slot}` +
-    ` — ${s.example}${s.mapped ? " (mapped)" : " (NOT MAPPED)"}`;
-  const by_id = {};
-  slots.forEach((s) => (by_id[label(s)] = s));
-  const d = new frappe.ui.Dialog({
-    title: __("Map décor slot — item is created on Apply"),
-    fields: [
-      { fieldname: "pick", fieldtype: "Select", label: __("Slot (from the material lines)"),
-        options: Object.keys(by_id).join("\n"), default: label(first), reqd: 1,
-        onchange() {
-          const s = by_id[d.get_value("pick")];
-          if (s) {
-            d.set_df_property("width", "hidden", s.domain !== "Edge Band");
-            d.fields_dict.brand.get_query = () => ({
-              filters: { mallet_scope: ["in", [s.domain, ""]] },
-            });
-            d.fields_dict.existing.get_query = () => ({
-              filters: { item_group: s.domain === "Edge Band" ? "Edge Banding" : "Laminate" },
-            });
-            if (s.domain === "Edge Band" && !d.get_value("width")) d.set_value("width", 22);
-            if (s.domain === "Edge Band" && !d.get_value("thickness")) d.set_value("thickness", 0.8);
-          }
-        } },
-      { fieldname: "existing", fieldtype: "Link", options: "Item",
-        label: __("Use existing item (search — avoids duplicates)"),
-        description: __("Many décors already exist in stock. Picking one reuses its code family — brand/code/name prefill and NO new duplicate is created."),
-        get_query: () => ({ filters: { item_group: first.domain === "Edge Band" ? "Edge Banding" : "Laminate" } }),
-        onchange() {
-          const code = d.get_value("existing");
-          if (!code) return;
-          frm.call("decor_from_item", { item_code: code }).then((r) => {
-            const m = (r && r.message) || {};
-            if (m.brand) d.set_value("brand", m.brand);
-            if (m.code) d.set_value("code", m.code);
-            if (m.decor_name) d.set_value("decor_name", m.decor_name);
-            if (m.thickness) d.set_value("thickness", m.thickness);
-            if (m.width && d.get_value("pick") && by_id[d.get_value("pick")].domain === "Edge Band") d.set_value("width", m.width);
-            d.__short = m.short || null;
-          });
-        } },
-      { fieldname: "brand", fieldtype: "Link", options: "Manufacturer", label: __("Brand / Maker"), reqd: 1,
-        get_query: () => ({ filters: { mallet_scope: ["in", [first.domain, ""]] } }) },
-      { fieldname: "code", fieldtype: "Data", label: __("Catalogue Code"), reqd: 1 },
-      { fieldname: "decor_name", fieldtype: "Data", label: __("Name") },
-      { fieldname: "thickness", fieldtype: "Float", label: __("Thickness (mm)"),
-        default: first.domain === "Edge Band" ? 0.8 : null },
-      { fieldname: "width", fieldtype: "Float", label: __("Width (mm)"),
-        default: 22, hidden: first.domain !== "Edge Band" },
-    ],
-    primary_action_label: __("Apply (creates the stock item)"),
-    primary_action(v) {
-      const s = by_id[v.pick];
-      d.hide();
-      frm.call("map_slot", {
-        domain: s.domain, slot: s.slot, brand: v.brand, code: v.code,
-        decor_name: v.decor_name, thickness: v.thickness, width: v.width,
-        short: d.__short || null,
-      }).then((r) => {
-        const m = (r && r.message) || {};
-        frappe.show_alert({
-          message: __("Mapped {0} {1}: {2} line(s) → {3}", [s.domain, s.slot, m.mapped_lines || 0, (m.items || []).join(", ")]),
-          indicator: "green",
-        }, 7);
-        frm.reload_doc();
-      });
-    },
-  });
-  d.show();
-}
 
 function add_material_dialog(frm) {
   const d = new frappe.ui.Dialog({
