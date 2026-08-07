@@ -56,8 +56,36 @@ frappe.ui.form.on("Estimate", {
       });
     }
 
-    // --- Draft: pull in SKUs added after this estimate was created ----------
+    // --- Draft: SKUs are born HERE (estimate-first CSV-Nest flow) -----------
     if (draft && !frm.is_new()) {
+      frm.add_custom_button(__("Add SKU (CSV-Nest)"), () => {
+        if (frm.is_dirty()) {
+          frappe.msgprint(__("Save the estimate first."));
+          return;
+        }
+        const d = new frappe.ui.Dialog({
+          title: __("New CSV-Nest SKU"),
+          fields: [
+            { fieldname: "article_name", fieldtype: "Data", label: __("Article name"), reqd: 1,
+              description: __("e.g. Wardrobe — the SKU code (YS_MB_WAR) is generated on save") },
+            { fieldname: "room", fieldtype: "Link", options: "Estimate Room", label: __("Room"), reqd: 1 },
+          ],
+          primary_action_label: __("Create & open"),
+          primary_action(values) {
+            d.hide();
+            frm.call("add_csv_nest_sku", values).then((r) => {
+              if (r && r.message) {
+                frappe.show_alert({
+                  message: __("{0} created and added — attach the Part List CSV + 7 Views PDF, Save, then fill the décor map.", [r.message]),
+                  indicator: "green",
+                });
+                frappe.set_route("Form", "Estimate SKU", r.message);
+              }
+            });
+          },
+        });
+        d.show();
+      }).addClass("btn-primary");
       frm.add_custom_button(__("Add all project SKUs"), () => {
         frm.call("refresh_skus").then((r) => {
           const m = (r && r.message) || {};
@@ -67,9 +95,9 @@ frappe.ui.form.on("Estimate", {
           });
           frm.reload_doc();
         });
-      }).addClass("btn-primary");
+      });
       frm.dashboard.add_comment(
-        __("Draft — pick this estimate's SKUs yourself (Add Row in the SKU table, or 'Add all project SKUs'). The same SKU can serve many estimates. <b>Submit</b> to approve and freeze before quoting."),
+        __("Draft — add SKUs from here: <b>Add SKU (CSV-Nest)</b> creates one on this estimate (attach its Part List CSV + views PDF, then fill the décor map); every SKU save re-prices this estimate with consolidated nesting, so adding/removing SKUs shows how shared material moves each price. The same SKU can serve many estimates. <b>Submit</b> to approve and freeze before quoting."),
         "blue", true
       );
     }

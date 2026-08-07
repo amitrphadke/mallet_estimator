@@ -224,6 +224,34 @@ class Estimate(Document):
         if self.meta.has_field("total_days"):
             self.total_days = sum(float(r.est_days or 0) for r in rows)
 
+    @frappe.whitelist()
+    def add_csv_nest_sku(self, article_name, room=None):
+        """Estimate-first flow: the estimate is where SKUs are born. Creates a
+        CSV-Nest SKU pre-linked to this estimate's project/customer, adds its
+        row here, and returns the name — the UI routes to it so the user
+        attaches the Part List CSV (+ 7 Views PDF) and tunes the décor map.
+        Saving the SKU re-prices this estimate automatically (consolidation
+        included), so adding/removing SKUs shows exactly how shared material
+        moves each price."""
+        if self.docstatus != 0:
+            frappe.throw(_("This estimate is submitted — amend it first."))
+        if not (article_name or "").strip():
+            frappe.throw(_("Article name is required."))
+        sku = frappe.new_doc("Estimate SKU")
+        sku.article_name = article_name.strip()
+        if sku.meta.has_field("estimation_mode"):
+            sku.estimation_mode = "CSV-Nest"
+        if self.get("project"):
+            sku.project = self.project
+        if self.get("customer") and sku.meta.has_field("customer"):
+            sku.customer = self.customer
+        if room:
+            sku.room = room
+        sku.insert()
+        self.append("skus", {"estimate_sku": sku.name})
+        self.save()
+        return sku.name
+
     def _apply_consolidation(self, loaded, nest_inputs):
         """Nest every CSV-Nest SKU's parts TOGETHER per material and re-price
         each SKU at its allocated share: parts area is paid directly, offcut
