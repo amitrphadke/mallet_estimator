@@ -376,6 +376,17 @@ def abbr(text):
     return "_".join(w[:ABBR_LETTERS_PER_WORD].upper() for w in name_words(text))
 
 
+# A room with several words has enough initials to be read at a glance —
+# Master Bedroom is MB and nobody needs more. A one-word room does not: "K"
+# for Kitchen is a letter, not a room, so it takes three letters like any
+# other word.
+def room_abbr(room):
+    words = name_words(room)
+    if len(words) == 1:
+        return words[0][:ABBR_LETTERS_PER_WORD].upper()
+    return "".join(w[0] for w in words).upper()
+
+
 def customer_initials(customer_name):
     parts = str(customer_name or "").split()
     cf = parts[0][0] if parts else ""
@@ -384,7 +395,7 @@ def customer_initials(customer_name):
 
 
 def sku_code(customer_name, room, article_name):
-    return "_".join(x for x in [customer_initials(customer_name), initials(room), abbr(article_name)] if x)
+    return "_".join(x for x in [customer_initials(customer_name), room_abbr(room), abbr(article_name)] if x)
 
 
 # Default operation standards: which material driver fills each operation's Qty

@@ -500,11 +500,22 @@ class TestNameSplitting(unittest.TestCase):
         self.assertEqual(E.abbr("MB_WAR_CSV"), "MB_WAR_CSV")
         self.assertNotIn("__", E.abbr("MB_WAR_CSV"))
 
+    def test_a_one_word_room_takes_three_letters_too(self):
+        # "K" is a letter, not a room. Multi-word rooms already read fine as
+        # initials, so those are left alone.
+        self.assertEqual(E.room_abbr("Kitchen"), "KIT")
+        self.assertEqual(E.room_abbr("Study"), "STU")
+        self.assertEqual(E.room_abbr("Balcony"), "BAL")
+        self.assertEqual(E.room_abbr("Master Bedroom"), "MB")
+        self.assertEqual(E.room_abbr("Living Room"), "LR")
+        self.assertEqual(E.room_abbr("All Rooms"), "AR")
+        self.assertEqual(E.room_abbr(""), "")
+
     def test_the_whole_code_reads_customer_room_article(self):
         self.assertEqual(E.sku_code("Yogesh Sahasrabudhe", "Master Bedroom", "Wardrobe"),
                          "YS_MB_WAR")
         self.assertEqual(E.sku_code("Yogesh Sahasrabudhe", "Kitchen", "Base Cabinet"),
-                         "YS_K_BAS_CAB")
+                         "YS_KIT_BAS_CAB")
 
     def test_empty_and_separator_only_names_are_survivable(self):
         for junk in ("", "   ", "___", "-", None):
