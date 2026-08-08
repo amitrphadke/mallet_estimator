@@ -463,5 +463,36 @@ class TestMaterialBoardShape(unittest.TestCase):
             self.assertNotIn(unsafe, board.EDITABLE, unsafe)
 
 
+
+class TestNameSplitting(unittest.TestCase):
+    """A name is written for a person to read, so people separate words
+    however reads best. Space, underscore and hyphen all mean the same thing
+    to the code generator — the grammar must not depend on which key someone
+    happened to press."""
+
+    def test_all_three_separators_split_the_same(self):
+        for name in ("Wardrobe Option A", "Wardrobe_Option_A", "Wardrobe-Option-A"):
+            self.assertEqual(E.abbr(name), "WOA", name)
+            self.assertEqual(E.initials(name), "WOA", name)
+
+    def test_a_single_word_takes_its_first_three_letters(self):
+        self.assertEqual(E.abbr("Wardrobe"), "WAR")
+
+    def test_an_underscore_name_no_longer_swallows_the_separator(self):
+        # MB_WAR_CSV read as ONE word gave "MB_" — the separator ended up IN
+        # the code and the article itself never appeared
+        self.assertEqual(E.abbr("MB_WAR_CSV"), "MWC")
+        self.assertNotIn("_", E.abbr("MB_WAR_CSV"))
+
+    def test_the_whole_code_reads_customer_room_article(self):
+        self.assertEqual(E.sku_code("Yogesh Sahasrabudhe", "Master Bedroom", "Wardrobe"),
+                         "YS_MB_WAR")
+
+    def test_empty_and_separator_only_names_are_survivable(self):
+        for junk in ("", "   ", "___", "-", None):
+            self.assertEqual(E.abbr(junk), "")
+            self.assertEqual(E.initials(junk), "")
+
+
 if __name__ == "__main__":
     unittest.main()

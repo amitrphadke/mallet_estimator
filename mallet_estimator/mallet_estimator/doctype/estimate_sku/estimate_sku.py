@@ -1436,6 +1436,36 @@ class EstimateSKU(Document):
             self.sku_code = f"{ci}_{self.sku_code}"
         if not self.sku_code:
             self.sku_code = "_".join(x for x in [ci, self.article_name] if x) or self.name
+        self.sku_code = self._unique_code(self.sku_code)
+
+    def _unique_code(self, code):
+        """Two wardrobes for one customer in one room compute the SAME code —
+        which used to matter silently: sync_item saw the code already existed
+        and pointed the second SKU at the FIRST one's ERPNext Item, so both
+        wrote to one Item and its price became whichever saved last.
+
+        A clash now takes a numeric suffix (YS_MB_WAR_2) and says so. Sharing
+        an Item between SKUs is legitimate — the same article quoted on two
+        estimates — but it should happen because someone chose it, never
+        because two names abbreviated the same way."""
+        if not code or self.is_new() is False and self.get("rates_frozen"):
+            return code
+        taken = set(frappe.get_all(
+            "Estimate SKU",
+            filters={"sku_code": ["like", f"{code}%"], "name": ["!=", self.name or ""]},
+            pluck="sku_code") or [])
+        if code not in taken:
+            return code
+        n = 2
+        while f"{code}_{n}" in taken:
+            n += 1
+        unique = f"{code}_{n}"
+        frappe.msgprint(
+            _("<b>{0}</b> is already used by another SKU, so this one is <b>{1}</b>. "
+              "Rename the article if you meant them to be different things — the "
+              "code is built from customer, room and article name.").format(code, unique),
+            title=_("Duplicate SKU code"), indicator="orange")
+        return unique
 
     # --- costs -------------------------------------------------------------
     def compute_costs(self):

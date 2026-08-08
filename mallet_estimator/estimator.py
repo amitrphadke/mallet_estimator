@@ -18,6 +18,7 @@
 # at line 17. `machine` links a step to a machine key in Estimate Settings.
 # `in_factory` decides whether the step's hours attract factory rent.
 import math
+import re
 
 STEP_TEMPLATE = [
     {"phase": "Sheet Lamination",     "machine": None,          "in_factory": 1},
@@ -340,16 +341,30 @@ def rent_per_hour(settings):
     return _num(settings.monthly_rent) / h if h > 0 else 0.0
 
 
+# A name is written for a person to read, so people separate words however
+# reads best — "Master Bedroom", "MB_WAR_CSV", "Wardrobe-Left". All three
+# separators mean the same thing here, so splitting treats them alike rather
+# than making the code grammar depend on which key someone happened to press.
+_WORD_SPLIT = re.compile(r"[\s_\-]+")
+
+
+def name_words(text):
+    return [w for w in _WORD_SPLIT.split(str(text or "").strip()) if w]
+
+
 def initials(text):
-    return "".join(w[0] for w in str(text or "").split()).upper()
+    return "".join(w[0] for w in name_words(text)).upper()
 
 
 def abbr(text):
-    s = str(text or "").strip()
-    if not s:
+    """Initials when the name has several words, else its first three letters.
+    `MB_WAR_CSV` used to yield `MB_` — the whole name read as ONE word, so the
+    first three characters included the separator and the actual article never
+    appeared in the code."""
+    words = name_words(text)
+    if not words:
         return ""
-    words = s.split()
-    return "".join(w[0] for w in words).upper() if len(words) > 1 else s[:3].upper()
+    return "".join(w[0] for w in words).upper() if len(words) > 1 else words[0][:3].upper()
 
 
 def customer_initials(customer_name):
