@@ -81,11 +81,22 @@ class TestMasters(MalletTestCase):
         self.assertIn("Rent", comps)
         self.assertFalse(install._strip_invalid_costs(ws))  # idempotent — nothing left to strip
 
-    def test_intake_and_decor_masters(self):
-        self.assertTrue(frappe.db.exists("DocType", "Estimate SKU Intake"))
+    def test_single_sku_grid_and_decor_masters(self):
         self.assertTrue(frappe.db.exists("DocType", "Mallet Decor"))
-        self.assertTrue(frappe.get_meta("Estimate").has_field("intake"),
-                        "missing Estimate.intake grid")
+        # The SKUs grid is the ONE table on the estimate: select-or-create in
+        # its link column, this SKU's input files in the same row, its numbers
+        # beside them. If any of these columns goes missing the estimate screen
+        # silently loses the intake it replaced.
+        row = frappe.get_meta("Execution Estimate SKU")
+        for f in ("estimate_sku", "parts_csv", "estimate_pdf", "views_pdf",
+                  "estimation_mode", "sheets", "client_total", "est_days"):
+            self.assertTrue(row.has_field(f), f"missing Execution Estimate SKU.{f}")
+        est = frappe.get_meta("Estimate")
+        for f in ("sku_materials_html", "sku_summary_html"):
+            self.assertTrue(est.has_field(f), f"missing Estimate.{f}")
+        # Creating a SKU straight from the grid's link column needs quick entry.
+        self.assertTrue(frappe.get_meta("Estimate SKU").quick_entry,
+                        "Estimate SKU must allow quick entry (create from the grid)")
         for t in ("Estimate SKU Decor", "Estimate SKU Decor Edge"):
             self.assertTrue(frappe.get_meta(t).has_field("decor"),
                             f"missing {t}.decor link")

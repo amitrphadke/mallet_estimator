@@ -114,7 +114,8 @@
    "options": "Estimate Room",
    "label": "Room",
    "in_list_view": 1,
-   "mandatory_depends_on": "eval:!doc.multi_room"
+   "mandatory_depends_on": "eval:!doc.multi_room",
+   "allow_in_quick_entry": 1
   },
   {
    "fieldname": "multi_room",
@@ -243,7 +244,8 @@
    "label": "Estimation Mode",
    "options": "OCL PDF (standard)\nCSV-Nest",
    "default": "OCL PDF (standard)",
-   "description": "Standard: OCL Material Estimate PDF + Part List PDF. CSV-Nest: only the Part List CSV — sheet counts computed by the calibrated nesting engine (7Views PDF unchanged)."
+   "description": "Standard: OCL Material Estimate PDF + Part List PDF. CSV-Nest: only the Part List CSV — sheet counts computed by the calibrated nesting engine (7Views PDF unchanged).",
+   "allow_in_quick_entry": 1
   },
   {
    "fieldname": "estimate_pdf",
@@ -704,5 +706,6 @@
   }
  ],
  "sort_field": "modified",
- "sort_order": "DESC"
+ "sort_order": "DESC",
+ "quick_entry": 1
 }

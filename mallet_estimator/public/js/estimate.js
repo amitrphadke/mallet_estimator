@@ -8,22 +8,29 @@ frappe.ui.form.on("Estimate", {
 
     render_estimate_bifurcation(frm);
     render_mode_headline(frm);
-    if (!frm.is_new()) render_sku_files(frm);
+    // ONE grid for the SKUs: which file column it offers depends on the mode,
+    // and clicking a row fills the two detail tables underneath it.
+    apply_mode_columns(frm);
+    bind_sku_selection(frm);
+    if (!frm.is_new()) render_sku_detail(frm);
 
     // CSV-Nest and OCL-PDF SKUs are EXCLUSIVE on one estimate (packing is
     // computed here for CSV-Nest, by OpenCutList for PDF — the counts can't be
     // added together). Once the estimate carries SKUs, the picker only offers
     // the matching mode; the server enforces it either way.
     frm.set_query("estimate_sku", "skus", () => {
-      const mode = frm.__estimate_mode;
-      return mode ? { filters: { estimation_mode: mode } } : {};
+      const f = frm.doc.project ? { project: frm.doc.project } : {};
+      if (frm.doc.estimation_mode) f.estimation_mode = frm.doc.estimation_mode;
+      return { filters: f };
     });
     // The Add-SKUs grid: an 'Existing SKU' row picks a CSV-Nest SKU that
     // already exists (same project first); leave it blank to create one from
     // the columns beside it. Either way you never leave this screen.
+    // Legacy intake grid (hidden, folded into the SKUs grid) — kept wired so
+    // an estimate saved before this change still behaves if it is unhidden.
     frm.set_query("existing_sku", "intake", () => {
       const f = frm.doc.project ? { project: frm.doc.project } : {};
-      if (frm.__estimate_mode) f.estimation_mode = frm.__estimate_mode;
+      if (frm.doc.estimation_mode) f.estimation_mode = frm.doc.estimation_mode;
       return { filters: f };
     });
 
@@ -89,7 +96,7 @@ frappe.ui.form.on("Estimate", {
         });
       });
       frm.dashboard.add_comment(
-        __("Draft — use the <b>Add SKUs</b> grid above: each row either picks an <b>existing</b> SKU or <b>creates</b> one (Room · Name · then either a <b>Part List CSV</b> for CSV-Nest or a <b>Material Estimate PDF</b> for OCL-PDF; 7 Views PDF either way). Add as many rows as you need, then <b>Save</b> — created SKUs arrive priced, with operations, workstations and décor map seeded. One estimate holds ONE mode: <b>CSV-Nest</b> nests all its SKUs together (shared-material saving, valid when the set is ordered together), <b>OCL PDF</b> prices each article standalone (what an article costs if ordered on its own later). <b>Submit</b> to approve and freeze before quoting."),
+        __("Draft — the <b>SKUs</b> grid below is the whole flow: in <b>Estimate SKU</b> either pick an existing SKU or type a new name and choose <b>Create</b>, then drop that SKU's <b>Part List CSV</b> (CSV-Nest) or <b>Material Estimate PDF</b> (OCL PDF) and its <b>7 Views PDF</b> in the same row. <b>Save</b> — each SKU arrives imported, nested, priced, with operations and décor map seeded. Click any row to read its grouped material lines and pricing summary underneath. One estimate holds ONE mode: <b>CSV-Nest</b> nests all its SKUs together (shared-material saving, valid when the set is ordered together), <b>OCL PDF</b> prices each article standalone. <b>Submit</b> to approve and freeze before quoting."),
         "blue", true
       );
     }
@@ -311,169 +318,138 @@ function render_mode_headline(frm) {
   );
 }
 
-// One line per SKU right on the estimate: article | room | Part CSV | Views
-// PDF | sheets | issues | total | open. Attach/replace either file without
-// leaving this screen; the SKU save re-prices the estimate (consolidation
-// included) and the panel re-renders on reload.
-function render_sku_files(frm) {
-  const $w = frm.get_field("sku_files_html") && frm.get_field("sku_files_html").$wrapper;
-  if (!$w) return;
-  if (!(frm.doc.skus || []).length) {
-    $w.empty();
+// --- The SKUs grid is the ONE table ---------------------------------------
+// Search / select / create a SKU in its link column, drop this SKU's input
+// files in the same row, read its numbers in the same row. Which file column
+// you get depends on the mode, because a SKU takes ONE kind of input.
+function apply_mode_columns(frm) {
+  const grid = frm.fields_dict.skus && frm.fields_dict.skus.grid;
+  if (!grid || typeof grid.update_docfield_property !== "function") return;
+  const mode = frm.doc.estimation_mode;
+  // Before the first SKU the estimate is committed to neither mode, so offer
+  // both columns — whichever file lands first decides it.
+  const show = { parts_csv: !mode || mode === "CSV-Nest",
+                 estimate_pdf: !mode || mode === "OCL PDF (standard)" };
+  Object.keys(show).forEach((f) => {
+    try {
+      grid.update_docfield_property(f, "hidden", show[f] ? 0 : 1);
+      grid.update_docfield_property(f, "in_list_view", show[f] ? 1 : 0);
+    } catch (e) {
+      // a pre-migrate site has no such column — never break the form over it
+    }
+  });
+  grid.refresh();
+}
+
+// Selecting a row drives the two detail tables below the grid. Selection is a
+// UI concern only (never stored), so it lives on the form object.
+function bind_sku_selection(frm) {
+  const grid = frm.fields_dict.skus && frm.fields_dict.skus.grid;
+  if (!grid || !grid.wrapper) return;
+  grid.wrapper.off("click.mallet_sku").on("click.mallet_sku", ".grid-row", function () {
+    const cdn = $(this).attr("data-name");
+    const row = cdn && locals["Execution Estimate SKU"] && locals["Execution Estimate SKU"][cdn];
+    if (row && row.estimate_sku && row.estimate_sku !== frm.__selected_sku) {
+      select_sku(frm, row.estimate_sku);
+    }
+  });
+}
+
+function select_sku(frm, sku) {
+  frm.__selected_sku = sku;
+  highlight_selected_row(frm);
+  render_sku_detail(frm);
+}
+
+function highlight_selected_row(frm) {
+  const grid = frm.fields_dict.skus && frm.fields_dict.skus.grid;
+  if (!grid || !grid.wrapper) return;
+  grid.wrapper.find(".grid-row").each(function () {
+    const cdn = $(this).attr("data-name");
+    const row = cdn && locals["Execution Estimate SKU"] && locals["Execution Estimate SKU"][cdn];
+    const on = row && row.estimate_sku === frm.__selected_sku;
+    $(this).css("box-shadow", on ? "inset 3px 0 0 0 #1f7aec" : "");
+  });
+}
+
+// Pick up where the user left off; otherwise open on the first SKU so the
+// detail tables are never empty for no reason.
+function render_sku_detail(frm) {
+  const $mat = frm.get_field("sku_materials_html") && frm.get_field("sku_materials_html").$wrapper;
+  const $sum = frm.get_field("sku_summary_html") && frm.get_field("sku_summary_html").$wrapper;
+  if (!$mat || !$sum) return;
+  const rows = (frm.doc.skus || []).filter((r) => r.estimate_sku);
+  if (!rows.length) {
+    frm.__selected_sku = null;
+    $mat.html(`<div class="text-muted">${esc(
+      __("No SKUs yet. Add a row above: pick an existing SKU or type a new name to create one, then drop its Part List CSV (CSV-Nest) or Material Estimate PDF (OCL PDF) in the same row and Save."))}</div>`);
+    $sum.empty();
     return;
   }
-  frm.call("sku_files_overview").then((r) => {
-    const rows = (r && r.message) || [];
-    if (!rows.length) {
-      frm.__estimate_mode = null;
-      $w.empty();
-      return;
-    }
-    const modes = Array.from(new Set(rows.map((x) => x.mode || "OCL PDF (standard)")));
-    frm.__estimate_mode = modes.length === 1 ? modes[0] : null;
-    const draft = frm.doc.docstatus === 0;
-    const file_cell = (row, fieldname, label) => {
-      const url = row[fieldname];
-      const chip = url
-        ? `<a href="${encodeURI(url)}" target="_blank" title="${esc(label)}">✓ ${esc(label)}</a>`
-        : `<span class="text-muted">✗ ${esc(label)}</span>`;
-      const btn = draft && !row.frozen
-        ? ` <button class="btn btn-xs btn-default sku-attach" data-sku="${esc(row.sku)}"
-              data-field="${esc(fieldname)}" title="${esc(__("Attach / replace"))}">📎</button>`
-        : "";
-      return chip + btn;
-    };
-    const body = rows.map((row) => {
-      const badges =
-        (row.mode === "CSV-Nest" ? ` <span class="badge">CSV-Nest</span>` : "") +
-        (row.frozen ? ` <span class="badge">${esc(__("frozen"))}</span>` : "") +
-        (row.unpriced ? ` <span class="badge" style="background:#e24c4c;color:#fff">${esc(__("unpriced"))}</span>` : "") +
-        (row.issues ? ` <span class="badge" style="background:#e69500;color:#fff">${row.issues} ${esc(__("issue(s)"))}</span>` : "");
-      return `<tr class="sku-line" data-sku="${esc(row.sku)}" style="cursor:pointer"
-                  title="${esc(__("Click to show this SKU's material lines here"))}">
-        <td><span class="sku-caret" style="display:inline-block;width:12px">▸</span>
-            <b>${esc(row.article || row.sku)}</b>
-            <div class="small text-muted" style="margin-left:12px">${esc(row.code || "")}
-              · <a href="/app/estimate-sku/${encodeURIComponent(row.sku)}"
-                   onclick="event.stopPropagation()">${esc(__("open"))}</a></div></td>
-        <td>${esc(row.room || "")}</td>
-        <td>${file_cell(row, "parts_csv", __("Part CSV"))}</td>
-        <td>${file_cell(row, "views_pdf", __("Views PDF"))}</td>
-        <td class="text-right">${row.sheets ? cstr(Math.round(row.sheets * 100) / 100) : ""}</td>
-        <td class="text-right">${row.client_total != null ? format_currency(row.client_total) : ""}${badges}</td>
-      </tr>
-      <tr class="sku-mats" data-for="${esc(row.sku)}" style="display:none">
-        <td colspan="6" style="background:#fbfbfb"></td>
+  if (!rows.some((r) => r.estimate_sku === frm.__selected_sku)) {
+    frm.__selected_sku = rows[0].estimate_sku;
+  }
+  highlight_selected_row(frm);
+  const sku = frm.__selected_sku;
+  $mat.html(`<div class="text-muted">${esc(__("Loading…"))}</div>`);
+  $sum.empty();
+  frm.call("sku_materials", { sku }).then((r) => {
+    if (frm.__selected_sku !== sku) return; // the user moved on while we waited
+    const m = (r && r.message) || {};
+    $mat.html(render_material_groups(m));
+    $sum.html(render_pricing_summary(m));
+  });
+}
+
+// Grouped material lines: one table, group header rows interleaved with their
+// lines. No collapsing — the point is to verify the whole SKU at a glance.
+function render_material_groups(m) {
+  const groups = m.groups || [];
+  const head = `<div style="margin-bottom:4px">
+      <b>${esc(m.article || m.sku)}</b>
+      <span class="text-muted small"> · ${esc(m.code || "")} · ${esc(m.room || "")} · ${esc(m.mode || "")}</span>
+      ${m.frozen ? ` <span class="badge">${esc(__("frozen"))}</span>` : ""}
+      ${m.unpriced ? ` <span class="badge" style="background:#e24c4c;color:#fff">${esc(__("unpriced"))}</span>` : ""}
+      <a class="small" style="margin-left:8px" href="/app/estimate-sku/${encodeURIComponent(m.sku || "")}">${esc(__("open SKU"))}</a>
+    </div>`;
+  if (!groups.length) {
+    return head + `<div class="text-muted">${esc(
+      __("No material lines yet — drop this SKU's Part List CSV (or Material Estimate PDF) on its row above."))}</div>`;
+  }
+  const body = groups.map((g) => {
+    const header = `<tr style="background:#f4f5f6">
+      <td colspan="5"><b>${esc(g.group)}</b>
+        <span class="text-muted small"> · ${g.lines.length} ${esc(__("line(s)"))}</span></td>
+      <td class="text-right"><b>${format_currency(g.taxable || 0)}</b></td>
+      <td class="text-right">${format_currency(g.tax || 0)}</td>
+      <td class="text-right"><b>${format_currency(g.landed || 0)}</b></td>
+    </tr>`;
+    const lines = (g.lines || []).map((r) => {
+      const flags =
+        (r.manual ? ` <span class="badge">${esc(__("manual"))}</span>` : "") +
+        (r.client_supplied ? ` <span class="badge">${esc(__("client-supplied"))}</span>` : "");
+      return `<tr>
+        <td style="padding-left:18px"><code>${esc(r.material || "")}</code>${flags}
+            <div class="small text-muted">${esc(r.description || "")}</div></td>
+        <td>${esc(r.item || "")}</td>
+        <td class="text-right">${format_number(r.qty || 0)}</td>
+        <td>${esc(r.uom || "")}</td>
+        <td class="text-right">${format_currency(r.rate || 0)}${
+          r.discount ? `<div class="small text-muted">− ${format_currency(r.discount)}</div>` : ""}</td>
+        <td class="text-right">${format_currency(r.amount || 0)}</td>
+        <td class="text-right">${format_currency(r.tax || 0)}<div class="small text-muted">${
+          cstr(r.applied_tax || r.std_tax || 0)}%${
+          r.tax_saved ? " · −" + format_currency(r.tax_saved) : ""}</div></td>
+        <td class="text-right">${format_currency(r.amount_with_tax || 0)}</td>
       </tr>`;
     }).join("");
-    let mode_note;
-    if (modes.length !== 1) {
-      mode_note = `<div class="text-danger small" style="margin-top:6px">${esc(
-        __("Mixed estimation modes — save will refuse this; keep one mode per estimate."))}</div>`;
-    } else if (modes[0] === "CSV-Nest") {
-      mode_note = `<div class="text-muted small" style="margin-top:6px">${esc(__("Estimation mode:"))}
-        <b>CSV-Nest</b> — ${esc(__("parts of ALL these SKUs are nested together, so each price already includes the shared-material saving. Valid only if the client orders this set together."))}</div>`;
-    } else {
-      mode_note = `<div class="small" style="margin-top:6px;padding:6px 8px;border-left:3px solid #e69500;background:#fff8ec">
-        ${esc(__("Estimation mode:"))} <b>OCL PDF (standard)</b> — ${esc(
-        __("sheet counts come already packed from each SKU's OpenCutList PDF. These prices are STANDALONE: no shared-material saving, because an article ordered on its own needs its own purchase → cutting → installation run. Use this basis when quoting articles the client may pick individually later."))}</div>`;
-    }
-    $w.html(`
-      ${mode_note}
-      <div style="overflow-x:auto">
-        <table class="table table-bordered" style="margin-top:6px">
-          <thead><tr>
-            <th>${esc(__("Article"))}</th><th>${esc(__("Room"))}</th>
-            <th>${esc(__("Part List CSV"))}</th><th>${esc(__("7 Views PDF"))}</th>
-            <th class="text-right">${esc(__("Sheets"))}</th>
-            <th class="text-right">${esc(__("Client Total"))}</th>
-          </tr></thead>
-          <tbody>${body}</tbody>
-        </table>
-      </div>`);
-    $w.find(".sku-attach").on("click", function (e) {
-      e.stopPropagation();
-      sku_attach_uploader(frm, $(this).data("sku"), $(this).data("field"));
-    });
-    // Click a line to read its material lines right here — no page jump.
-    $w.find("tr.sku-line").on("click", function () {
-      const sku = $(this).data("sku");
-      const $slot = $w.find(`tr.sku-mats[data-for="${sku}"]`);
-      const $caret = $(this).find(".sku-caret");
-      if ($slot.is(":visible")) {
-        $slot.hide();
-        $caret.text("▸");
-        return;
-      }
-      $slot.show();
-      $caret.text("▾");
-      if ($slot.data("loaded")) return;
-      $slot.find("td").html(`<span class="text-muted">${esc(__("Loading…"))}</span>`);
-      frm.call("sku_materials", { sku }).then((r) => {
-        $slot.data("loaded", 1);
-        $slot.find("td").html(render_sku_materials((r && r.message) || {}));
-      });
-    });
-  });
-}
-
-function sku_attach_uploader(frm, sku, fieldname) {
-  const csv = fieldname === "parts_csv";
-  new frappe.ui.FileUploader({
-    doctype: "Estimate SKU",
-    docname: sku,
-    allow_multiple: false,
-    restrictions: { allowed_file_types: [csv ? ".csv" : ".pdf"] },
-    on_success(file) {
-      frappe.call({
-        method: "mallet_estimator.api.attach_sku_file",
-        args: { sku, fieldname, file_url: file.file_url },
-        freeze: true,
-        freeze_message: __("Importing…"),
-        callback() {
-          frappe.show_alert({ message: __("{0} updated", [sku]), indicator: "green" });
-          frm.reload_doc();
-        },
-      });
-    },
-  });
-}
-
-
-// Read-only material lines of one SKU, rendered inside the files panel. Costed
-// exactly as the SKU stores them (the estimate's consolidated allocation is
-// reported separately in the cost breakup); nothing here is editable — the SKU
-// form remains the only place material lines can change.
-function render_sku_materials(m) {
-  const rows = m.rows || [];
-  if (!rows.length) {
-    return `<span class="text-muted">${esc(__("No material lines yet — attach this SKU's Part List CSV."))}</span>`;
-  }
-  const body = rows.map((r) => {
-    const flags =
-      (r.manual ? ` <span class="badge">${esc(__("manual"))}</span>` : "") +
-      (r.client_supplied ? ` <span class="badge">${esc(__("client-supplied"))}</span>` : "");
-    return `<tr>
-      <td><code>${esc(r.material || "")}</code>${flags}
-          <div class="small text-muted">${esc(r.description || "")}</div></td>
-      <td>${esc(r.item || "")}</td>
-      <td class="text-right">${format_number(r.qty || 0)}</td>
-      <td>${esc(r.uom || "")}</td>
-      <td class="text-right">${format_currency(r.rate || 0)}${
-        r.discount ? `<div class="small text-muted">− ${format_currency(r.discount)}</div>` : ""}</td>
-      <td class="text-right">${format_currency(r.amount || 0)}</td>
-      <td class="text-right">${format_currency(r.tax || 0)}<div class="small text-muted">${
-        cstr(r.applied_tax || r.std_tax || 0)}%${
-        r.tax_saved ? " · −" + format_currency(r.tax_saved) : ""}</div></td>
-      <td class="text-right"><b>${format_currency(r.amount_with_tax || 0)}</b></td>
-    </tr>`;
+    return header + lines;
   }).join("");
-  return `
-    <div class="small text-muted" style="margin-bottom:4px">
-      ${esc(__("Material lines"))} — <b>${esc(m.article || m.sku)}</b> · ${esc(m.mode || "")}
-      · ${esc(__("material cost"))} ${format_currency(m.material_cost || 0)}
-      · <i>${esc(__("read-only; edit on the SKU form"))}</i>
-    </div>
+  const total = groups.reduce(
+    (a, g) => ({ taxable: a.taxable + (g.taxable || 0), tax: a.tax + (g.tax || 0),
+                 landed: a.landed + (g.landed || 0) }),
+    { taxable: 0, tax: 0, landed: 0 });
+  return head + `
     <div style="overflow-x:auto">
       <table class="table table-bordered" style="font-size:12px;margin:0">
         <thead><tr>
@@ -485,6 +461,91 @@ function render_sku_materials(m) {
           <th class="text-right">${esc(__("Landed"))}</th>
         </tr></thead>
         <tbody>${body}</tbody>
+        <tfoot><tr style="border-top:2px solid #d1d8dd">
+          <td colspan="5"><b>${esc(__("All material"))}</b></td>
+          <td class="text-right"><b>${format_currency(total.taxable)}</b></td>
+          <td class="text-right">${format_currency(total.tax)}</td>
+          <td class="text-right"><b>${format_currency(total.landed)}</b></td>
+        </tr></tfoot>
       </table>
-    </div>`;
+    </div>
+    <div class="small text-muted" style="margin-top:4px">${esc(
+      __("Read-only — material lines are edited on the SKU form. These are the SKU's own standalone quantities; the estimate-wide nesting saving is reported in the cost breakup below."))}</div>`;
+}
+
+// The client pricing summary for the selected SKU — the same bifurcation the
+// SKU prints, plus the man-days behind it (what the client is really buying).
+function render_pricing_summary(m) {
+  const b = m.bifurcation || {};
+  if (!b.rows || !b.rows.length) {
+    return `<div class="text-muted">${esc(__("No pricing yet for this SKU."))}</div>`;
+  }
+  const gst = b.gst_pct || 18;
+  const rows = b.rows.map((r) => `<tr>
+      <td>${esc(r.label)}</td>
+      <td class="text-right">${format_currency(r.amount || 0)}</td>
+      <td class="text-right">${format_number(r.pct || 0, null, 1)}%</td>
+      <td class="text-right">${format_currency(r.gst || 0)}</td>
+      <td class="text-right">${format_currency(r.gross || 0)}</td>
+    </tr>`).join("");
+  const d = m.days || {};
+  const per_day = d.productive_min_per_day || 360;
+  const days_rows = `
+    <tr><td>${esc(__("Carpenter minutes"))}</td>
+        <td class="text-right">${format_number(d.carp_min || 0)}</td>
+        <td class="text-right" colspan="3">${esc(__("{0} min = 1 productive day", [per_day]))}</td></tr>
+    <tr><td>${esc(__("Helper minutes"))}</td>
+        <td class="text-right">${format_number(d.helper_min || 0)}</td>
+        <td class="text-right" colspan="3"></td></tr>
+    <tr><td><b>${esc(__("Man-days for this SKU"))}</b></td>
+        <td class="text-right"><b>${format_number(d.est_days || 0, null, 2)}</b></td>
+        <td class="text-right text-muted" colspan="3">${esc(
+          __("longer of the two trades ÷ {0} min", [per_day]))}</td></tr>`;
+  const sq = m.sqft || {};
+  const sqft_rows = sq.sqft
+    ? `<tr style="background:#f4f5f6"><td colspan="5"><b>${esc(
+         __("Per square foot (facial area: {0} sq ft — two greatest outer dims)",
+            [format_number(sq.sqft, null, 2)]))}</b></td></tr>
+       <tr><td>${esc(__("Material / sq ft"))}</td>
+           <td class="text-right">${format_currency(sq.material_per_sqft || 0)}</td>
+           <td colspan="3"></td></tr>
+       <tr><td>${esc(__("Labor (design & execution) / sq ft"))}</td>
+           <td class="text-right">${format_currency(sq.labor_per_sqft || 0)}</td>
+           <td colspan="3"></td></tr>
+       <tr><td><b>${esc(__("SKU / sq ft (pre-tax)"))}</b></td>
+           <td class="text-right"><b>${format_currency(sq.total_per_sqft || 0)}</b></td>
+           <td colspan="3"></td></tr>`
+    : "";
+  return `
+    <div style="margin-bottom:4px"><b>${esc(__("Pricing summary"))}</b>
+      <span class="text-muted small"> — ${esc(m.article || m.sku)} · ${esc(__("client pricing"))}</span></div>
+    <div style="overflow-x:auto">
+      <table class="table table-bordered" style="font-size:12px;margin:0">
+        <thead><tr>
+          <th>${esc(__("Component"))}</th>
+          <th class="text-right">${esc(__("Amount"))}</th>
+          <th class="text-right">${esc(__("% of pre-tax"))}</th>
+          <th class="text-right">${esc(__("GST {0}%", [gst]))}</th>
+          <th class="text-right">${esc(__("Incl. GST"))}</th>
+        </tr></thead>
+        <tbody>
+          ${rows}
+          <tr style="border-top:2px solid #d1d8dd">
+            <td><b>${esc(__("Total before taxes"))}</b></td>
+            <td class="text-right"><b>${format_currency(b.pre_tax || 0)}</b></td>
+            <td class="text-right">100%</td>
+            <td class="text-right"><b>${format_currency(b.taxes || 0)}</b></td>
+            <td class="text-right"><b>${format_currency(b.grand_total || 0)}</b></td>
+          </tr>
+          <tr><td><b>${esc(__("Grand Total incl. GST"))}</b></td>
+              <td class="text-right"><b>${format_currency(b.grand_total || 0)}</b></td>
+              <td colspan="3"></td></tr>
+          <tr style="background:#f4f5f6"><td colspan="5"><b>${esc(__("Effort"))}</b></td></tr>
+          ${days_rows}
+          ${sqft_rows}
+        </tbody>
+      </table>
+    </div>
+    <div class="small text-muted" style="margin-top:4px">${esc(
+      __("Transport is billed on the Estimate (trips shared across SKUs)."))}</div>`;
 }

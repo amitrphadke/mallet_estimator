@@ -337,5 +337,38 @@ class TestTaxDiscount(unittest.TestCase):
         self.assertAlmostEqual(r["tax_discount_pct"], -6)
         self.assertAlmostEqual(r["tax_saved"], -6)
 
+
+class TestSingleSkuGrid(unittest.TestCase):
+    """The estimate screen collapsed three tables (intake grid, SKUs grid,
+    files panel) into ONE grid, so the SKUs child table now has to carry the
+    intake columns as well. These live in JSON, which nothing else type-checks
+    — a stray edit would quietly take the intake away and leave no way to
+    attach a Part List CSV without opening the SKU."""
+
+    def _child(self):
+        import json
+        import os
+        here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        path = os.path.join(here, "mallet_estimator", "doctype",
+                            "execution_estimate_sku", "execution_estimate_sku.json")
+        with open(path) as fh:
+            return json.load(fh)
+
+    def test_grid_carries_the_intake_columns(self):
+        fields = {f["fieldname"]: f for f in self._child()["fields"]}
+        for fn in ("parts_csv", "estimate_pdf", "views_pdf"):
+            self.assertEqual(fields[fn]["fieldtype"], "Attach", fn)
+            self.assertTrue(fields[fn].get("in_list_view"), f"{fn} must be a grid column")
+
+    def test_derived_columns_are_read_only(self):
+        # mode / sheets are a VIEW of the SKU; typing over them would invent a
+        # second truth the next save silently overwrites
+        fields = {f["fieldname"]: f for f in self._child()["fields"]}
+        for fn in ("estimation_mode", "sheets", "client_total", "est_days"):
+            self.assertTrue(fields[fn].get("in_list_view"), f"{fn} must be a grid column")
+        for fn in ("estimation_mode", "sheets"):
+            self.assertTrue(fields[fn].get("read_only"), f"{fn} must be read-only")
+
+
 if __name__ == "__main__":
     unittest.main()

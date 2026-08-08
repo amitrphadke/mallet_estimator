@@ -19,6 +19,9 @@
   "intake",
   "skus",
   "sku_files_html",
+  "sku_detail_section",
+  "sku_materials_html",
+  "sku_summary_html",
   "allowances_section",
   "allowances",
   "total_allowance",
@@ -124,6 +127,22 @@
    "label": "SKUs",
    "options": "Execution Estimate SKU",
    "description": "YOUR selection for this estimate: Add Row to pick a SKU, tick + Delete Row to exclude one. 'Add all project SKUs' appends whatever is missing; nothing is removed automatically."
+  },
+  {
+   "fieldname": "sku_detail_section",
+   "fieldtype": "Section Break",
+   "label": "Selected SKU",
+   "description": "Click a row in the SKUs grid above to read it here — grouped material lines, then its client pricing summary. Read-only; edits happen on the SKU form."
+  },
+  {
+   "fieldname": "sku_materials_html",
+   "fieldtype": "HTML",
+   "label": "Material lines (grouped)"
+  },
+  {
+   "fieldname": "sku_summary_html",
+   "fieldtype": "HTML",
+   "label": "Pricing summary"
   },
   {
    "fieldname": "allowances_section",
@@ -314,14 +333,16 @@
   {
    "fieldname": "sku_files_html",
    "fieldtype": "HTML",
-   "label": "SKU Files & Status"
+   "label": "SKU Files & Status",
+   "hidden": 1
   },
   {
    "fieldname": "intake",
    "fieldtype": "Table",
    "options": "Estimate SKU Intake",
    "label": "Add SKUs — select existing or create",
-   "description": "One row per SKU: pick an <b>Existing SKU</b>, or fill Room + Name and attach either a <b>Part List CSV</b> (CSV-Nest — nested here, shared material across the estimate) or a <b>Material Estimate PDF</b> (OCL PDF — standalone, packed by OpenCutList). Add as many rows as you need, then Save. An estimate holds ONE mode; the first SKU decides it."
+   "description": "One row per SKU: pick an <b>Existing SKU</b>, or fill Room + Name and attach either a <b>Part List CSV</b> (CSV-Nest — nested here, shared material across the estimate) or a <b>Material Estimate PDF</b> (OCL PDF — standalone, packed by OpenCutList). Add as many rows as you need, then Save. An estimate holds ONE mode; the first SKU decides it.",
+   "hidden": 1
   },
   {
    "fieldname": "total_material_discount",

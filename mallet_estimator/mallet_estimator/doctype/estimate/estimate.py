@@ -68,6 +68,7 @@ class Estimate(Document):
         # submitted the list and totals are frozen as the baseline.
         if self.docstatus == 0:
             self.process_intake()
+            self.sync_sku_files()
             self.enforce_single_mode()
             self.refresh_sku_rows()
         self.stamp_mode()
@@ -125,6 +126,48 @@ class Estimate(Document):
             gst_pct = 18.0
         self.total_gst = base * gst_pct / 100.0
         self.total_with_gst = base + self.total_gst
+
+    def sync_sku_files(self):
+        """The SKUs grid IS the intake: drop a Part List CSV / Material Estimate
+        PDF / 7 Views PDF on a row and it is pushed onto that SKU, which
+        re-imports on save — one grid, no second table, no page jump.
+
+        The FILE decides the mode, exactly as the old intake grid did: a Part
+        List CSV makes the SKU CSV-Nest, a Material Estimate PDF makes it OCL
+        PDF. The SKU stays the single source of truth — rows only ever DISPLAY
+        what it actually carries (refresh_sku_rows reads them back)."""
+        from mallet_estimator import consolidate as cons
+        fields = [f for f in ("parts_csv", "estimate_pdf", "views_pdf")
+                  if self.meta.get_field("skus") and
+                  frappe.get_meta("Execution Estimate SKU").has_field(f)]
+        if not fields:
+            return
+        for r in self.skus or []:
+            if not r.estimate_sku or not frappe.db.exists("Estimate SKU", r.estimate_sku):
+                continue
+            current = frappe.db.get_value(
+                "Estimate SKU", r.estimate_sku, fields, as_dict=True) or {}
+            changed = {f: (r.get(f) or None) for f in fields
+                       if (r.get(f) or None) != (current.get(f) or None)}
+            if not changed:
+                continue
+            sku = frappe.get_doc("Estimate SKU", r.estimate_sku)
+            if sku.get("rates_frozen"):
+                frappe.throw(
+                    _("<b>{0}</b> is frozen (quoted on an approved estimate) — its "
+                      "files cannot be replaced. Cancel and amend that estimate first.")
+                    .format(sku.name))
+            for f, url in changed.items():
+                if url:
+                    _reattach_file(url, sku.name, f)
+                setattr(sku, f, url)
+            # A newly created SKU is born in the default (PDF) mode; the file
+            # the user just dropped is the real answer, so honour it.
+            if changed.get("parts_csv"):
+                sku.estimation_mode = cons.CSV_MODE
+            elif changed.get("estimate_pdf"):
+                sku.estimation_mode = cons.PDF_MODE
+            sku.save(ignore_permissions=True)
 
     @frappe.whitelist()
     def refresh_skus(self):
@@ -226,6 +269,20 @@ class Estimate(Document):
             r.item = s.item
             r.room = ("Multiple Rooms" if s.get("multi_room") else s.room)
             r.article_name = s.article_name
+            # Read the SKU's own state back onto the grid row — the grid is a
+            # VIEW of the SKU (mode, files, nested sheets), never a second copy
+            # of the truth. Guarded so an un-migrated site keeps working.
+            if r.meta.has_field("estimation_mode"):
+                r.estimation_mode = s.get("estimation_mode") or "OCL PDF (standard)"
+            for f in ("parts_csv", "estimate_pdf", "views_pdf"):
+                if r.meta.has_field(f):
+                    r.set(f, s.get(f))
+            if r.meta.has_field("sheets"):
+                try:
+                    nest = (json.loads(s.import_drivers or "{}") or {}).get("__nest__") or {}
+                except Exception:
+                    nest = {}
+                r.sheets = sum(float(v.get("sheets") or 0) for v in nest.values())
             r.internal_cost = s.internal_cost
             r.client_total = s.client_total
             r.est_days = float(s.get("est_days") or 0)
@@ -475,35 +532,96 @@ class Estimate(Document):
             })
         return rows
 
+    # Preferred reading order for the grouped material table — structure first,
+    # then the surfaces that go on it, then what holds it together.
+    MATERIAL_GROUP_ORDER = (
+        "Ply V0 (structure grade)", "Ply V1 (visible grade)",
+        "Laminate Internal", "Laminate External",
+        "Edge Banding Internal", "Edge Banding External",
+        "Client Hardware", "Joinery Hardware", "Other Material",
+    )
+
     @frappe.whitelist()
     def sku_materials(self, sku):
-        """READ-ONLY material lines of one of this estimate's SKUs, for the
-        inline panel — check what a SKU is made of without leaving the
-        estimate. Quantities are the SKU's own (stored) values; the estimate's
-        consolidated allocation is reported separately in cost_breakup."""
+        """Everything the estimate screen shows for the SELECTED SKU, in one
+        round trip: its material lines GROUPED by material bucket, and its
+        client pricing summary (the same bifurcation the SKU form prints) with
+        the man-days behind it.
+
+        READ-ONLY throughout. Quantities are the SKU's own stored values — the
+        estimate's consolidated allocation is reported separately in the cost
+        breakup, because an SKU can serve several estimates."""
         if sku not in {r.estimate_sku for r in (self.skus or [])}:
             frappe.throw(_("{0} is not on this estimate.").format(sku))
+        from mallet_estimator import inventory
         doc = frappe.get_doc("Estimate SKU", sku)
         doc.check_permission("read")
+
+        groups, order = {}, []
+        for m in doc.get("materials") or []:
+            bucket = inventory.material_bucket(m.get("item"), m.get("material")) or "Other Material"
+            if bucket not in groups:
+                groups[bucket] = {"group": bucket, "lines": [],
+                                  "taxable": 0.0, "tax": 0.0, "landed": 0.0}
+                order.append(bucket)
+            g = groups[bucket]
+            g["lines"].append({
+                "material": m.get("material"), "item": m.get("item"),
+                "description": m.get("description"), "qty": m.get("qty"),
+                "uom": m.get("uom"), "rate": m.get("unit_cost"),
+                "amount": m.get("line_cost"),
+                "amount_with_tax": m.get("amount_with_tax"),
+                "tax": m.get("tax_amount"), "discount": m.get("discount_amount"),
+                "tax_saved": m.get("tax_saved"), "std_tax": m.get("tax_rate_policy"),
+                "applied_tax": m.get("tax_rate"),
+                "manual": bool(m.get("is_manual")),
+                "client_supplied": bool(m.get("customer_supplied")),
+            })
+            g["taxable"] += float(m.get("line_cost") or 0)
+            g["tax"] += float(m.get("tax_amount") or 0)
+            g["landed"] += float(m.get("amount_with_tax") or 0)
+        rank = {name: i for i, name in enumerate(self.MATERIAL_GROUP_ORDER)}
+        order.sort(key=lambda b: (rank.get(b, len(rank)), b))
+
+        # The pricing summary is the SKU's OWN breakup — rebuilt in memory when
+        # the stored blob predates the current margins, so the estimate never
+        # shows a number the SKU form would disagree with.
+        try:
+            breakup = json.loads(doc.get("cost_breakup") or "{}") or {}
+        except Exception:
+            breakup = {}
+        if not breakup.get("bifurcation"):
+            try:
+                doc.build_cost_breakup()
+                breakup = json.loads(doc.cost_breakup or "{}") or {}
+            except Exception:
+                breakup = {}
+
+        carp = float(doc.get("carp_min_total") or 0)
+        helper = float(doc.get("helper_min_total") or 0)
         return {
             "sku": doc.name,
             "article": doc.article_name,
             "code": doc.get("sku_code"),
+            "room": "Multiple Rooms" if doc.get("multi_room") else doc.get("room"),
             "mode": doc.get("estimation_mode") or "OCL PDF (standard)",
+            "frozen": bool(doc.get("rates_frozen")),
+            "unpriced": doc.get("unpriced_materials"),
             "material_cost": doc.get("material_cost"),
-            "rows": [
-                {"material": m.get("material"), "item": m.get("item"),
-                 "description": m.get("description"), "qty": m.get("qty"),
-                 "uom": m.get("uom"), "rate": m.get("unit_cost"),
-                 "amount": m.get("line_cost"),
-                 "amount_with_tax": m.get("amount_with_tax"),
-                 "tax": m.get("tax_amount"), "discount": m.get("discount_amount"),
-                 "tax_saved": m.get("tax_saved"), "std_tax": m.get("tax_rate_policy"),
-                 "applied_tax": m.get("tax_rate"),
-                 "manual": bool(m.get("is_manual")),
-                 "client_supplied": bool(m.get("customer_supplied"))}
-                for m in (doc.get("materials") or [])
-            ],
+            "groups": [groups[b] for b in order],
+            "rows": [ln for b in order for ln in groups[b]["lines"]],
+            "bifurcation": breakup.get("bifurcation") or {},
+            "sqft": breakup.get("sqft") or {},
+            "profit": breakup.get("profit"),
+            "margin_pct": breakup.get("margin_pct"),
+            "days": {
+                "est_days": float(doc.get("est_days") or 0),
+                "carp_min": carp,
+                "helper_min": helper,
+                # a productive day is 360 min on the floor, not 480 — the same
+                # divisor the SKU's own est_days uses
+                "productive_min_per_day": 360,
+            },
         }
 
     @frappe.whitelist()
