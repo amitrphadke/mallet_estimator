@@ -36,6 +36,7 @@
   "estimate_pdf",
   "partlist_pdf",
   "views_pdf",
+  "material_board_html",
   "materials",
   "unpriced_materials",
   "decor_section",
@@ -48,6 +49,9 @@
   "client_supplied_value",
   "material_total_with_tax",
   "material_discount_total",
+  "joinery_section",
+  "joinery_items",
+  "joinery_cost",
   "import_drivers",
   "execution_section",
   "execution_materials",
@@ -70,9 +74,6 @@
   "carp_min_total",
   "helper_min_total",
   "labor_cost",
-  "joinery_section",
-  "joinery_items",
-  "joinery_cost",
   "design_section",
   "design_labor",
   "design_cost",
@@ -280,12 +281,19 @@
    "description": "SketchUp 7-views export. The page headed 'IsoView' is extracted automatically as the isometric render on the client estimate."
   },
   {
+   "fieldname": "material_board_html",
+   "fieldtype": "HTML",
+   "label": "Material lines",
+   "description": "Grouped by what each line IS, with the whole money chain on one row and the décor on the line it belongs to. Edits save as you make them."
+  },
+  {
    "fieldname": "materials",
    "fieldtype": "Table",
    "label": "Material Lines",
    "options": "Estimate Material",
    "cannot_add_rows": 1,
-   "description": "Imported from the PDFs (read-only). Use 'Add material row' for extras like a hydraulic lift — priced from the stock price list."
+   "description": "Imported from the PDFs (read-only). Use 'Add material row' for extras like a hydraulic lift — priced from the stock price list.",
+   "hidden": 1
   },
   {
    "fieldname": "unpriced_materials",
@@ -380,8 +388,8 @@
   {
    "fieldname": "repair_csv",
    "fieldtype": "Attach",
-   "label": "Repair Activity CSV",
-   "description": "The shop's own repair estimation sheet. Imported on save: activities, crew minutes and material notes. Parsing stops at the TOTALS row — anything below it is new-work material and is left out."
+   "label": "Repair Activity CSV (optional)",
+   "description": "Optional. Import an existing repair estimation sheet if you already have one — otherwise type the job straight into the Activities grid below. Parsing stops at the TOTALS row."
   },
   {
    "fieldname": "repair_visits",
@@ -393,7 +401,8 @@
    "fieldname": "repair_activities",
    "fieldtype": "Table",
    "label": "Activities",
-   "options": "Estimate Repair Activity"
+   "options": "Estimate Repair Activity",
+   "description": "One row per job on site: room, the item being repaired, what you do, and the crew minutes it takes. Minutes are per unit — quantity multiplies them. Set Status to 'To Inspect' for work nobody can price until they look; it is quoted as scope only."
   },
   {
    "fieldname": "repair_totals_section",
@@ -560,21 +569,24 @@
    "fieldname": "decor_section",
    "fieldtype": "Section Break",
    "label": "Décor Map — laminates first, then edge bands",
-   "collapsible": 0
+   "collapsible": 0,
+   "hidden": 1
   },
   {
    "fieldname": "sku_decors",
    "fieldtype": "Table",
    "label": "Laminates (a, b …)",
    "options": "Estimate SKU Decor",
-   "description": "MASTER map: what each laminate slot letter means for THIS SKU. Sheet is always 1220 x 2440 — only thickness varies. Edit + Save re-points the material lines."
+   "description": "MASTER map: what each laminate slot letter means for THIS SKU. Sheet is always 1220 x 2440 — only thickness varies. Edit + Save re-points the material lines.",
+   "hidden": 1
   },
   {
    "fieldname": "sku_decor_edges",
    "fieldtype": "Table",
    "label": "Edge Bands",
    "options": "Estimate SKU Decor Edge",
-   "description": "Edge-band slots. Defaults: 22 x 0.8 mm (50 x 1 mm when ply is thicker than 18 mm)."
+   "description": "Edge-band slots. Defaults: 22 x 0.8 mm (50 x 1 mm when ply is thicker than 18 mm).",
+   "hidden": 1
   },
   {
    "fieldname": "margins_section",
@@ -717,7 +729,8 @@
    "fieldname": "apply_decor_map_btn",
    "fieldtype": "Button",
    "label": "Apply Décor Map",
-   "description": "Saves and re-points the laminate/edge material lines at the mapped décors — check the Materials table after."
+   "description": "Saves and re-points the laminate/edge material lines at the mapped décors — check the Materials table after.",
+   "hidden": 1
   },
   {
    "fieldname": "material_discount_total",

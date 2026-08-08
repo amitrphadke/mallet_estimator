@@ -24,6 +24,9 @@ frappe.ui.form.on("Estimate", {
         project: frm.doc.project,
         customer: frm.doc.customer,
         estimation_mode: frm.doc.estimation_mode || undefined,
+        // A repair estimate makes repair SKUs: same box, same flow, and the
+        // new SKU opens on its activity grid instead of asking for a CSV.
+        work_type: frm.doc.work_scope === "Repair" ? "Repair" : undefined,
       });
     }
     if (!frm.is_new()) render_sku_detail(frm);
@@ -342,8 +345,12 @@ function apply_mode_columns(frm) {
   const mode = frm.doc.estimation_mode;
   // Before the first SKU the estimate is committed to neither mode, so offer
   // both columns — whichever file lands first decides it.
-  const show = { parts_csv: !mode || mode === "CSV-Nest",
-                 estimate_pdf: !mode || mode === "OCL PDF (standard)" };
+  // A repair estimate takes no OpenCutList input at all — its work is typed
+  // into the activity grid — so it is offered no file columns.
+  const repair = frm.doc.work_scope === "Repair";
+  const show = { parts_csv: !repair && (!mode || mode === "CSV-Nest"),
+                 estimate_pdf: !repair && (!mode || mode === "OCL PDF (standard)"),
+                 views_pdf: !repair };
   Object.keys(show).forEach((f) => {
     try {
       grid.update_docfield_property(f, "hidden", show[f] ? 0 : 1);
@@ -407,84 +414,23 @@ function render_sku_detail(frm) {
   const sku = frm.__selected_sku;
   $mat.html(`<div class="text-muted">${esc(__("Loading…"))}</div>`);
   $sum.empty();
-  frm.call("sku_materials", { sku }).then((r) => {
-    if (frm.__selected_sku !== sku) return; // the user moved on while we waited
-    const m = (r && r.message) || {};
-    $mat.html(render_material_groups(m));
-    $sum.html(render_pricing_summary(m));
-  });
-}
-
-// Grouped material lines: one table, group header rows interleaved with their
-// lines. No collapsing — the point is to verify the whole SKU at a glance.
-function render_material_groups(m) {
-  const groups = m.groups || [];
-  const head = `<div style="margin-bottom:4px">
-      <b>${esc(m.article || m.sku)}</b>
-      <span class="text-muted small"> · ${esc(m.code || "")} · ${esc(m.room || "")} · ${esc(m.mode || "")}</span>
-      ${m.frozen ? ` <span class="badge">${esc(__("frozen"))}</span>` : ""}
-      ${m.unpriced ? ` <span class="badge" style="background:#e24c4c;color:#fff">${esc(__("unpriced"))}</span>` : ""}
-      <a class="small" style="margin-left:8px" href="/app/estimate-sku/${encodeURIComponent(m.sku || "")}">${esc(__("open SKU"))}</a>
-    </div>`;
-  if (!groups.length) {
-    return head + `<div class="text-muted">${esc(
-      __("No material lines yet — drop this SKU's Part List CSV (or Material Estimate PDF) on its row above."))}</div>`;
+  if (frm.__board && frm.__board.sku === sku) {
+    frm.__board.load();
+  } else {
+    frm.__board = new mallet.MaterialBoard({
+      wrapper: $mat,
+      sku: sku,
+      // The estimate is where the numbers are read AND corrected — the board
+      // is as editable here as it is on the SKU form; there is just less room.
+      editable: frm.doc.docstatus === 0,
+      on_change: () => frm.reload_doc(),
+    });
+    frm.__board.load();
   }
-  const body = groups.map((g) => {
-    const header = `<tr style="background:#f4f5f6">
-      <td colspan="5"><b>${esc(g.group)}</b>
-        <span class="text-muted small"> · ${g.lines.length} ${esc(__("line(s)"))}</span></td>
-      <td class="text-right"><b>${format_currency(g.taxable || 0)}</b></td>
-      <td class="text-right">${format_currency(g.tax || 0)}</td>
-      <td class="text-right"><b>${format_currency(g.landed || 0)}</b></td>
-    </tr>`;
-    const lines = (g.lines || []).map((r) => {
-      const flags =
-        (r.manual ? ` <span class="badge">${esc(__("manual"))}</span>` : "") +
-        (r.client_supplied ? ` <span class="badge">${esc(__("client-supplied"))}</span>` : "");
-      return `<tr>
-        <td style="padding-left:18px"><code>${esc(r.material || "")}</code>${flags}
-            <div class="small text-muted">${esc(r.description || "")}</div></td>
-        <td>${esc(r.item || "")}</td>
-        <td class="text-right">${format_number(r.qty || 0)}</td>
-        <td>${esc(r.uom || "")}</td>
-        <td class="text-right">${format_currency(r.rate || 0)}${
-          r.discount ? `<div class="small text-muted">− ${format_currency(r.discount)}</div>` : ""}</td>
-        <td class="text-right">${format_currency(r.amount || 0)}</td>
-        <td class="text-right">${format_currency(r.tax || 0)}<div class="small text-muted">${
-          cstr(r.applied_tax || r.std_tax || 0)}%${
-          r.tax_saved ? " · −" + format_currency(r.tax_saved) : ""}</div></td>
-        <td class="text-right">${format_currency(r.amount_with_tax || 0)}</td>
-      </tr>`;
-    }).join("");
-    return header + lines;
-  }).join("");
-  const total = groups.reduce(
-    (a, g) => ({ taxable: a.taxable + (g.taxable || 0), tax: a.tax + (g.tax || 0),
-                 landed: a.landed + (g.landed || 0) }),
-    { taxable: 0, tax: 0, landed: 0 });
-  return head + `
-    <div style="overflow-x:auto">
-      <table class="table table-bordered" style="font-size:12px;margin:0">
-        <thead><tr>
-          <th>${esc(__("Generic code"))}</th><th>${esc(__("Item"))}</th>
-          <th class="text-right">${esc(__("Qty"))}</th><th>${esc(__("UOM"))}</th>
-          <th class="text-right">${esc(__("MRP"))}</th>
-          <th class="text-right">${esc(__("Taxable"))}</th>
-          <th class="text-right">${esc(__("Tax"))}</th>
-          <th class="text-right">${esc(__("Landed"))}</th>
-        </tr></thead>
-        <tbody>${body}</tbody>
-        <tfoot><tr style="border-top:2px solid #d1d8dd">
-          <td colspan="5"><b>${esc(__("All material"))}</b></td>
-          <td class="text-right"><b>${format_currency(total.taxable)}</b></td>
-          <td class="text-right">${format_currency(total.tax)}</td>
-          <td class="text-right"><b>${format_currency(total.landed)}</b></td>
-        </tr></tfoot>
-      </table>
-    </div>
-    <div class="small text-muted" style="margin-top:4px">${esc(
-      __("Read-only — material lines are edited on the SKU form. These are the SKU's own standalone quantities; the estimate-wide nesting saving is reported in the cost breakup below."))}</div>`;
+  frm.call("sku_materials", { sku }).then((r) => {
+    if (frm.__selected_sku !== sku) return;
+    $sum.html(render_pricing_summary((r && r.message) || {}));
+  });
 }
 
 // The client pricing summary for the selected SKU — the same bifurcation the

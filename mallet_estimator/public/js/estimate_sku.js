@@ -35,6 +35,10 @@ frappe.ui.form.on("Estimate SKU", {
     }));
   },
   refresh(frm) {
+    // The material board — the same component the Estimate screen embeds,
+    // just with more room. It reads stored values, so it is always what the
+    // last save produced rather than a half-typed form.
+    render_material_board(frm);
     setTimeout(() => { lock_qty(frm); lock_design_columns(frm); }, 300);
     // I1: cache the live Workstation Net Hour Rates so Phase Cost updates instantly
     // as you edit Qty / Min / Operation — no save needed.
@@ -588,3 +592,25 @@ frappe.ui.form.on("Estimate SKU", {
   margin_overhead: refetch_markups,
   margin_design: refetch_markups,
 });
+
+
+// Grouped, editable material lines: one implementation shared with the
+// Estimate screen, so the two views can never drift apart.
+function render_material_board(frm) {
+  const field = frm.get_field("material_board_html");
+  if (!field || !field.$wrapper || frm.is_new()) return;
+  const editable = frm.doc.docstatus === 0 && !frm.doc.rates_frozen;
+  if (frm.__board && frm.__board.sku === frm.doc.name) {
+    frm.__board.editable = editable;
+    frm.__board.load();
+    return;
+  }
+  frm.__board = new mallet.MaterialBoard({
+    wrapper: field.$wrapper,
+    sku: frm.doc.name,
+    editable: editable,
+    // A board edit saves the SKU server-side, which leaves this form stale.
+    on_change: () => frm.reload_doc(),
+  });
+  frm.__board.load();
+}

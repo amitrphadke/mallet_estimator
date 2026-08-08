@@ -421,5 +421,47 @@ class TestClientSuppliedIsPricedButNotCosted(unittest.TestCase):
         self.assertEqual(sku.materials[1].line_cost, 4000)
 
 
+
+class TestMaterialBoardShape(unittest.TestCase):
+    """The board gives each material group only the columns that mean
+    something for it — a hinge has no décor, a ply sheet has two faces. That
+    mapping is what makes the view readable, so it is pinned."""
+
+    def _board(self):
+        import importlib
+        return importlib.import_module("mallet_estimator.material_board")
+
+    def test_ply_carries_two_decor_faces(self):
+        shape = self._board().GROUP_SHAPE
+        for g in ("Ply V0 (structure grade)", "Ply V1 (visible grade)"):
+            self.assertEqual(shape[g]["decor"], 2, g)
+
+    def test_surfaces_carry_one_decor(self):
+        shape = self._board().GROUP_SHAPE
+        for g in ("Laminate Internal", "Laminate External",
+                  "Edge Banding Internal", "Edge Banding External"):
+            self.assertEqual(shape[g]["decor"], 1, g)
+
+    def test_hardware_earns_no_extra_columns(self):
+        # its group header already says Client vs Joinery, and the line's own
+        # code IS the designation — an extra column would only ever be blank
+        shape = self._board().GROUP_SHAPE
+        for g in ("Client Hardware", "Joinery Hardware"):
+            self.assertNotIn(g, shape, g)
+
+    def test_every_shaped_group_is_in_the_reading_order(self):
+        board = self._board()
+        for g in board.GROUP_SHAPE:
+            self.assertIn(g, board.GROUP_ORDER, g)
+
+    def test_only_the_offered_fields_are_writable(self):
+        # the payload arrives from the browser, so the allow-list is the guard
+        board = self._board()
+        self.assertEqual(set(board.EDITABLE),
+                         {"discount_pct", "tax_rate", "customer_supplied", "decor", "decor_ext"})
+        for unsafe in ("unit_cost", "qty", "item", "line_cost", "is_manual"):
+            self.assertNotIn(unsafe, board.EDITABLE, unsafe)
+
+
 if __name__ == "__main__":
     unittest.main()
