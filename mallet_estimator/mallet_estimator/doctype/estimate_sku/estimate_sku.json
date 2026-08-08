@@ -42,6 +42,7 @@
   "decor_section",
   "sku_decors",
   "sku_decor_edges",
+  "reset_decor_map_btn",
   "apply_decor_map_btn",
   "material_cost",
   "material_tax_total",
@@ -759,6 +760,12 @@
    "label": "Rates Frozen (quoted)",
    "read_only": 1,
    "description": "Set when this SKU's Estimate is submitted/quoted — material re-imports and re-pricing are locked; price-list changes no longer affect this estimate."
+  },
+  {
+   "fieldname": "reset_decor_map_btn",
+   "fieldtype": "Button",
+   "label": "Rebuild Décor Slots from Material Lines",
+   "description": "Slots accumulate across imports. This drops every slot no material line refers to and adds a blank row for any the lines need — brand/code/name on the slots still in use are kept."
   },
   {
    "fieldname": "apply_decor_map_btn",

@@ -225,6 +225,17 @@ function show_min_unit_benefit(frm, cdt, cdn) {
 // The Apply button under the décor tables: save (which re-points the laminate/
 // edge material lines at the mapped décors) and report what the lines now use.
 frappe.ui.form.on("Estimate SKU", {
+  reset_decor_map_btn(frm) {
+    if (frm.is_dirty()) {
+      frappe.msgprint(__("Save first — this rebuilds the slot tables from the saved material lines."));
+      return;
+    }
+    frappe.confirm(
+      __("Rebuild the décor slots from this SKU's material lines? Slots the lines still use keep their brand / code / name; slots nothing refers to are removed."),
+      () => frm.call("reset_decor_map").then(() => frm.reload_doc())
+    );
+  },
+
   apply_decor_map_btn(frm) {
     if (frm.doc.rates_frozen) {
       frappe.msgprint(__("Rates are frozen (quoted) — amend/cancel the Estimate first."));

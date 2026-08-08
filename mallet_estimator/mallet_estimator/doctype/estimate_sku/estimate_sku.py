@@ -298,6 +298,64 @@ class EstimateSKU(Document):
             if self.meta.has_field("repair_visits"):
                 self.repair_visits = r["visits"]
 
+    @frappe.whitelist()
+    def reset_decor_map(self):
+        """Rebuild the décor slot tables from the CURRENT material lines.
+
+        Slots accumulate: every import adds the letters it needs and nothing
+        ever took the old ones away, so a SKU re-imported from a changed CSV
+        ends up carrying letters no material line refers to — five laminate
+        slots for the two the job actually uses. Pruning happens on import,
+        but only on import, which is no help to an SKU imported before that
+        existed.
+
+        So this is the 'start over' button. Slots the lines still use KEEP
+        their brand / code / name — that is the user's work and losing it
+        would be worse than the clutter. Slots nothing refers to are dropped."""
+        if self._frozen():
+            frappe.throw(_("This SKU is quoted (frozen) — cancel and amend the estimate first."))
+        live_lam, live_eb = set(), set()
+        for m in self.materials or []:
+            up = str(m.material or "").upper()
+            key = decor.slot_key(str(m.material or ""))
+            if not key:
+                continue
+            if up.startswith("EB_"):
+                live_eb.add(key)
+            elif up.startswith("SG_LAM") or up.startswith("SG_PLY"):
+                live_lam.add(key)
+
+        dropped = []
+
+        def prune(table, live):
+            keep = []
+            for row in self.get(table) or []:
+                if (row.slot or "").strip().lower() in live:
+                    keep.append(row)
+                else:
+                    dropped.append(f"{row.slot}")
+            self.set(table, keep)
+            return {(r.slot or "").strip().lower() for r in keep}
+
+        have_lam = prune("sku_decors", live_lam)
+        have_eb = prune("sku_decor_edges", live_eb)
+        # Any slot a line needs but the map lacks gets a blank row to fill in.
+        added = []
+        for key in sorted(live_lam - have_lam):
+            self.append("sku_decors", {"slot": key, "domain": "Laminate"})
+            added.append(key)
+        for key in sorted(live_eb - have_eb):
+            self.append("sku_decor_edges", {"slot": key, "thickness": 0.8, "width": 22})
+            added.append(key)
+        self.save()
+        frappe.msgprint(
+            _("Décor map rebuilt from the material lines.<br>Kept: <b>{0}</b><br>"
+              "Dropped (no line uses them): <b>{1}</b><br>Added blank: <b>{2}</b>").format(
+                len(self.get("sku_decors") or []) + len(self.get("sku_decor_edges") or []) - len(added),
+                ", ".join(dropped) or "—", ", ".join(added) or "—"),
+            title=_("Décor slots"), indicator="blue")
+        return {"dropped": dropped, "added": added}
+
     def pull_decor_masters(self):
         """A Décor Slots row can simply POINT at a Mallet Decor master (search
         it, or create one inline from the same field). Its brand/code/name/
