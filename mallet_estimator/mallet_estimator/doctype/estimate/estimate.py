@@ -257,6 +257,8 @@ class Estimate(Document):
             self.total_material_discount = totals["mat_discount"]
         if self.meta.has_field("total_material_tax"):
             self.total_material_tax = totals["mat_tax"]
+        if self.meta.has_field("total_material_with_tax"):
+            self.total_material_with_tax = totals["material"] + totals["mat_tax"]
         self.total_labor = totals["labor"]
         self.total_overhead = totals["overhead"]
         self.total_design = totals["design"]
@@ -481,6 +483,8 @@ class Estimate(Document):
                  "description": m.get("description"), "qty": m.get("qty"),
                  "uom": m.get("uom"), "rate": m.get("unit_cost"),
                  "amount": m.get("line_cost"),
+                 "amount_with_tax": m.get("amount_with_tax"),
+                 "tax": m.get("tax_amount"), "discount": m.get("discount_amount"),
                  "manual": bool(m.get("is_manual")),
                  "client_supplied": bool(m.get("customer_supplied"))}
                 for m in (doc.get("materials") or [])

@@ -18,6 +18,7 @@
   "tax_rate_policy",
   "tax_rate",
   "tax_amount",
+  "amount_with_tax",
   "customer_supplied",
   "material",
   "decor",
@@ -201,6 +202,15 @@
    "fieldtype": "Currency",
    "label": "Tax",
    "read_only": 1
+  },
+  {
+   "fieldname": "amount_with_tax",
+   "fieldtype": "Currency",
+   "label": "Amount incl. Tax",
+   "read_only": 1,
+   "in_list_view": 1,
+   "columns": 1,
+   "description": "Discounted line amount + tax — the landed figure for this line."
   }
  ],
  "istable": 1,

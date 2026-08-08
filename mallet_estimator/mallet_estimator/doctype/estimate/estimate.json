@@ -32,6 +32,7 @@
   "totals_section",
   "total_material",
   "total_material_tax",
+  "total_material_with_tax",
   "total_material_discount",
   "total_labor",
   "total_overhead",
@@ -323,6 +324,13 @@
    "label": "Total Material Tax (input)",
    "read_only": 1,
    "description": "Tax on purchased material at each line's applied rate — the input-side view; the client-facing GST stays the document-level charge below."
+  },
+  {
+   "fieldname": "total_material_with_tax",
+   "fieldtype": "Currency",
+   "label": "Total Material incl. Tax",
+   "read_only": 1,
+   "description": "Every SKU's discounted material plus its tax — the landed material spend."
   }
  ],
  "links": [],

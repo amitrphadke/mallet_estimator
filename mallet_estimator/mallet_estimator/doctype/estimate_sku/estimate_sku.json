@@ -43,6 +43,7 @@
   "apply_decor_map_btn",
   "material_cost",
   "material_tax_total",
+  "material_total_with_tax",
   "material_discount_total",
   "import_drivers",
   "execution_section",
@@ -645,6 +646,13 @@
    "label": "Material Tax (this SKU)",
    "read_only": 1,
    "description": "Tax on the discounted material lines at each line's applied rate (stock prices are pre-tax)."
+  },
+  {
+   "fieldname": "material_total_with_tax",
+   "fieldtype": "Currency",
+   "label": "Material incl. Tax (this SKU)",
+   "read_only": 1,
+   "description": "Discounted material cost + its tax — what this SKU's material actually lands at."
   }
  ],
  "links": [],

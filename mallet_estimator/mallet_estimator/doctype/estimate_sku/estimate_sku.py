@@ -875,6 +875,7 @@ class EstimateSKU(Document):
             # no discount and no input tax of ours.
             if m.get("customer_supplied"):
                 m.line_cost = m.discount_amount = m.tax_amount = 0
+            m.amount_with_tax = float(m.line_cost or 0) + float(m.tax_amount or 0)
             disc_total += float(m.discount_amount or 0)
             tax_total += float(m.tax_amount or 0)
             net_total += float(m.line_cost or 0)
@@ -882,6 +883,8 @@ class EstimateSKU(Document):
             self.material_discount_total = disc_total
         if self.meta.has_field("material_tax_total"):
             self.material_tax_total = tax_total
+        if self.meta.has_field("material_total_with_tax"):
+            self.material_total_with_tax = net_total + tax_total
 
     def refresh_material_rates(self):
         """The price list is the only rate authority — until the Estimate is
