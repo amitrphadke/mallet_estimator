@@ -38,12 +38,23 @@ def _customer():
     }).insert(ignore_permissions=True).name
 
 
+def _company():
+    name = frappe.db.get_value("Company", {}, "name")
+    if name:
+        return name
+    return frappe.get_doc({
+        "doctype": "Company", "company_name": "Mallet Test Co", "abbr": "MTC",
+        "default_currency": "INR", "country": "India",
+    }).insert(ignore_permissions=True).name
+
+
 def _project(customer):
     existing = frappe.db.get_value("Project", {"project_name": "Naming Verification"}, "name")
     if existing:
         return existing
     return frappe.get_doc({
         "doctype": "Project", "project_name": "Naming Verification", "customer": customer,
+        "company": _company(),
     }).insert(ignore_permissions=True).name
 
 
