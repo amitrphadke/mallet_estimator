@@ -45,3 +45,6 @@ mallet_estimator.patches.stamp_estimate_mode
 # Backfill the per-line pricing columns on lines saved before they existed —
 # needs those columns, so post-model-sync.
 mallet_estimator.patches.reprice_material_lines
+# Re-derive SKU codes under the current grammar and rename their Items — reads
+# Estimate SKU columns the model sync owns, so post-model-sync.
+mallet_estimator.patches.recode_skus_to_current_naming
