@@ -73,11 +73,11 @@
      list as the scope that protects both sides, and the materials by name
      only. Rows still to be inspected carry no price at all. #}
   {% if p.repair %}
-  <h4>Repair Work</h4>
+  <h4>Site Work</h4>
   {% for job in p.repair.jobs %}
     <table style="margin-bottom:6px">
       <thead><tr>
-        <th>{{ job.article or job.sku }} — scope of work</th>
+        <th>{{ job.article or job.sku }}{% if job.supplied %} — supplied &amp; installed{% else %} — scope of work{% endif %}</th>
         <th>Room</th><th>Item</th>
       </tr></thead>
       <tbody>
@@ -90,11 +90,17 @@
       </tbody>
     </table>
     {% if job.materials %}
-      <p class="muted" style="margin:0 0 6px 0"><b>Material used:</b> {{ job.materials|join(", ") }}</p>
+      <p class="muted" style="margin:0 0 6px 0"><b>{% if job.supplied %}Article supplied{% else %}Material used{% endif %}:</b> {{ job.materials|join(", ") }}</p>
+    {% endif %}
+    {% if job.lead_time_weeks or job.warranty %}
+      <p class="muted" style="margin:0 0 6px 0">
+        {% if job.lead_time_weeks %}<b>Lead time:</b> {{ "%g"|format(job.lead_time_weeks) }} week(s).{% endif %}
+        {% if job.warranty %} <b>Warranty:</b> {{ job.warranty }}{% endif %}
+      </p>
     {% endif %}
     <div class="grand"><table>
       <tr class="tot">
-        <td>{{ job.article or job.sku }} — repair charges{% if job.visits %}
+        <td>{{ job.article or job.sku }} — {% if job.supplied %}supplied &amp; installed{% else %}repair charges{% endif %}{% if job.visits %}
           <span class="muted">({{ job.visits }} visit{{ "s" if job.visits > 1 else "" }} on site)</span>{% endif %}</td>
         <td class="r">{{ money(job.price) }}</td>
       </tr>
@@ -126,7 +132,7 @@
     <tr><td>Estimated build time</td><td class="r">{{ "%.1f"|format(p.total_days) }} days</td></tr>
     {% endif %}
     {% if p.repair %}
-    <tr><td>Repair work</td><td class="r">{{ money(p.repair.total) }}</td></tr>
+    <tr><td>Site work (repair, supply &amp; install)</td><td class="r">{{ money(p.repair.total) }}</td></tr>
     {% endif %}
     {% if p.rooms and p.repair %}
     <tr><td>Subtotal</td><td class="r">{{ money(p.subtotal) }}</td></tr>

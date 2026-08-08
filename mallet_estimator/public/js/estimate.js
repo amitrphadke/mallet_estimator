@@ -26,7 +26,9 @@ frappe.ui.form.on("Estimate", {
         estimation_mode: frm.doc.estimation_mode || undefined,
         // A repair estimate makes repair SKUs: same box, same flow, and the
         // new SKU opens on its activity grid instead of asking for a CSV.
-        work_type: frm.doc.work_scope === "Repair" ? "Repair" : undefined,
+        work_type: (frm.doc.work_scope === "Repair" || frm.doc.work_scope === "Supply & Install")
+          ? frm.doc.work_scope
+          : undefined,
       });
     }
     if (!frm.is_new()) render_sku_detail(frm);
@@ -347,7 +349,7 @@ function apply_mode_columns(frm) {
   // both columns — whichever file lands first decides it.
   // A repair estimate takes no OpenCutList input at all — its work is typed
   // into the activity grid — so it is offered no file columns.
-  const repair = frm.doc.work_scope === "Repair";
+  const repair = frm.doc.work_scope === "Repair" || frm.doc.work_scope === "Supply & Install";
   const show = { parts_csv: !repair && (!mode || mode === "CSV-Nest"),
                  estimate_pdf: !repair && (!mode || mode === "OCL PDF (standard)"),
                  views_pdf: !repair };

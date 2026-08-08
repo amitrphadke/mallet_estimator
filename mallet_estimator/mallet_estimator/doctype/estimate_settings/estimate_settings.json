@@ -33,6 +33,7 @@
   "repair_section",
   "repair_visit_charge",
   "markup_repair",
+  "markup_bought_out",
   "calculator_section",
   "cost_calculator_html",
   "markup_section",
@@ -212,6 +213,12 @@
    "fieldtype": "Percent",
    "label": "Repair labour margin %",
    "description": "Margin on repair labour. Repair carries more risk per minute than factory work — you find things once you open it up."
+  },
+  {
+   "fieldname": "markup_bought_out",
+   "fieldtype": "Percent",
+   "label": "Bought-out goods margin %",
+   "description": "Margin on a FINISHED article bought in and fitted (a door, a shutter). Deliberately thinner than material: the client can look up what a door costs. Ships as 0 — key the real one here."
   },
   {
    "fieldname": "calculator_section",

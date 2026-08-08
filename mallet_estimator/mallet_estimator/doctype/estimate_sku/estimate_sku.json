@@ -59,6 +59,11 @@
   "execution_variance",
   "parts_section",
   "parts",
+  "supply_section",
+  "supplier",
+  "lead_time_weeks",
+  "column_break_supply",
+  "warranty_note",
   "repair_section",
   "repair_csv",
   "repair_visits",
@@ -357,12 +362,12 @@
    "fieldname": "work_type",
    "fieldtype": "Select",
    "label": "Work Type",
-   "options": "New Work\nRepair",
+   "options": "New Work\nRepair\nSupply & Install",
    "default": "New Work",
    "bold": 1,
    "in_standard_filter": 1,
    "allow_in_quick_entry": 1,
-   "description": "New Work builds an article from its parts. Repair prices ACTIVITIES on things that already exist in the client's home — no parts, no nesting, and the labour is the cost."
+   "description": "New Work builds an article from its parts. Repair prices ACTIVITIES on things that already exist. Supply & Install buys a FINISHED article elsewhere and fits it — no parts, no nesting, and the margin question is different because the client can price-check what you bought."
   },
   {
    "fieldname": "parts_csv",
@@ -380,16 +385,48 @@
    "hidden": 1
   },
   {
+   "fieldname": "supply_section",
+   "fieldtype": "Section Break",
+   "label": "Supplied Article",
+   "depends_on": "eval:doc.work_type=='Supply & Install'",
+   "description": "The article you buy in and fit. Put it on a material line with the vendor's quoted rate — it prices through the same chain as everything else (rate, discount, tax, landed). The client print never names the vendor."
+  },
+  {
+   "fieldname": "supplier",
+   "fieldtype": "Link",
+   "label": "Supplied By",
+   "options": "Supplier",
+   "description": "Internal only — the client copy says 'supplied & installed', never who supplied it."
+  },
+  {
+   "fieldname": "lead_time_weeks",
+   "fieldtype": "Float",
+   "label": "Vendor Lead Time (weeks)",
+   "precision": "1",
+   "description": "The vendor's lead time drives this job's schedule, not your floor. It prints on the quote so nobody is surprised."
+  },
+  {
+   "fieldname": "column_break_supply",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "warranty_note",
+   "fieldtype": "Small Text",
+   "label": "Warranty",
+   "description": "Whose warranty covers the article, in the words the client should read. When a bought door warps, this line decides whose problem it is."
+  },
+  {
    "fieldname": "repair_section",
    "fieldtype": "Section Break",
-   "label": "Repair Activities",
-   "depends_on": "eval:doc.work_type=='Repair'"
+   "label": "Site Activities",
+   "depends_on": "eval:doc.work_type=='Repair'||doc.work_type=='Supply & Install'"
   },
   {
    "fieldname": "repair_csv",
    "fieldtype": "Attach",
    "label": "Repair Activity CSV (optional)",
-   "description": "Optional. Import an existing repair estimation sheet if you already have one — otherwise type the job straight into the Activities grid below. Parsing stops at the TOTALS row."
+   "description": "Optional. Import an existing repair estimation sheet if you already have one — otherwise type the job straight into the Activities grid below. Parsing stops at the TOTALS row.",
+   "depends_on": "eval:doc.work_type=='Repair'"
   },
   {
    "fieldname": "repair_visits",
@@ -408,7 +445,7 @@
    "fieldname": "repair_totals_section",
    "fieldtype": "Section Break",
    "label": "Repair Cost",
-   "depends_on": "eval:doc.work_type=='Repair'"
+   "depends_on": "eval:doc.work_type=='Repair'||doc.work_type=='Supply & Install'"
   },
   {
    "fieldname": "repair_labor_cost",

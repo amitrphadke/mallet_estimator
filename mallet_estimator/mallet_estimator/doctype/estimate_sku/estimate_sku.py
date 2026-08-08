@@ -109,16 +109,28 @@ class EstimateSKU(Document):
             if url and not frappe.db.exists("File", {"file_url": url}):
                 self.set(f, None)
 
+    def work_kind(self):
+        from mallet_estimator import estimator as E
+        return self.get("work_type") or E.NEW_WORK
+
     def is_repair(self):
-        return (self.get("work_type") or "New Work") == "Repair"
+        from mallet_estimator import estimator as E
+        return self.work_kind() == E.REPAIR
+
+    def is_site_work(self):
+        """Repair and Supply & Install both happen at the client's home and
+        share one labour model. What separates them is where the material
+        comes from — barely any, versus a finished article bought in."""
+        from mallet_estimator import estimator as E
+        return self.work_kind() in E.SITE_WORK
 
     def validate(self):
         # Repair is a different UNIT of estimation, not a variant of new work:
         # activities on things that already exist, no parts, no nesting, no
         # décor map, no factory. It gets its own short pipeline rather than
         # threading a dozen `if repair` branches through the article one.
-        if self.is_repair():
-            self.validate_repair()
+        if self.is_site_work():
+            self.validate_site_work()
             return
         self.wipe_on_cleared_files()
         self.ensure_steps()
@@ -139,18 +151,23 @@ class EstimateSKU(Document):
 
     # --- Repair (R1) --------------------------------------------------------
 
-    def validate_repair(self):
-        """The repair pipeline. Short by design: import the sheet if one is
-        attached, turn the activity rows into ordinary material lines so the
-        whole pricing chain (price list → discount → tax → landed) applies
-        unchanged, then cost the labour."""
+    def validate_site_work(self):
+        """The on-site pipeline, shared by Repair and Supply & Install. Short
+        by design: no parts, no nesting, no décor map, no factory.
+
+        The one branch is where material comes from. A REPAIR's material is
+        incidental and named on the activity rows, so it is derived from them.
+        A SUPPLY & INSTALL's material IS the job — a finished article at the
+        vendor's quoted rate, typed on its own line — so the lines are left
+        exactly as entered."""
         self.import_repair_csv()
         self.compute_repair_rows()
-        self.derive_repair_materials()
+        if self.is_repair():
+            self.derive_repair_materials()
         self.refresh_material_rates()
         self.price_material_lines()
         self.compute_code()
-        self.compute_repair_costs()
+        self.compute_site_costs()
         self.build_cost_breakup()
 
     def import_repair_csv(self):
@@ -232,22 +249,32 @@ class EstimateSKU(Document):
                 "customer_supplied": m.get("customer_supplied") or 0, "is_manual": 1,
             })
 
-    def compute_repair_costs(self):
-        """Repair cost = material (through the normal chain) + labour, where
-        labour is billed at the GREATER of the wages-plus-margin and the site
-        visit floor. No factory overhead: nothing here happens in the factory."""
-        from mallet_estimator.estimator import calc_repair
+    def compute_site_costs(self):
+        """On-site cost = material + labour, where labour is billed at the
+        GREATER of wages-plus-margin and the site visit floor. No factory
+        overhead — nothing here happens in the factory.
+
+        The material margin is the whole difference between the two kinds:
+        repair material rides the ordinary material markup, while a bought-in
+        finished article gets its own thinner policy, because a client can
+        look up what a door costs and cannot look up what ply costs."""
+        from mallet_estimator import estimator as E
+        from mallet_estimator.estimator import bought_out_value, calc_repair
         settings = frappe.get_single("Estimate Settings")
         markup = (float(self.get("margin_labor") or 0)
                   if self.get("use_custom_margins") else None)
         r = calc_repair(self.get("repair_activities"), settings, markup_pct=markup,
                         visits=self.get("repair_visits"))
         self._repair = r
-        material_cost = sum(float(m.line_cost or 0) for m in (self.materials or []))
-        mat_markup = (float(self.get("margin_material") or 0)
-                      if self.get("use_custom_margins")
-                      else float(settings.get("markup_material") or 0))
-        client_material = material_cost * (1 + mat_markup / 100.0)
+        material_cost = sum(float(m.line_cost or 0) for m in (self.materials or [])
+                            if not m.get("customer_supplied"))
+        if self.work_kind() == E.SUPPLY_INSTALL:
+            client_material, mat_markup = bought_out_value(material_cost, settings)
+        else:
+            mat_markup = (float(self.get("margin_material") or 0)
+                          if self.get("use_custom_margins")
+                          else float(settings.get("markup_material") or 0))
+            client_material = material_cost * (1 + mat_markup / 100.0)
         values = {
             "material_cost": material_cost,
             "labor_cost": r["labor_cost"],

@@ -314,7 +314,7 @@ class Estimate(Document):
             totals["client"] += s.client_total or 0
             # The consolidated quote has to bifurcate: a client can approve the
             # repair now and think about the new work.
-            bucket = "repair" if (s.get("work_type") or "New Work") == "Repair" else "new_work"
+            bucket = "repair" if (s.get("work_type") or "New Work") in self.SITE_KINDS else "new_work"
             totals[bucket] += s.client_total or 0
         self.total_material = totals["material"]
         if self.meta.has_field("total_new_work"):
@@ -388,7 +388,9 @@ class Estimate(Document):
         it must never be dragged into the exclusivity check — that is exactly
         what lets a repair job and new work share one estimate."""
         return {name: mode for name, (work, mode) in self.sku_kinds().items()
-                if work != "Repair"}
+                if work not in self.SITE_KINDS}
+
+    SITE_KINDS = ("Repair", "Supply & Install")
 
     def work_scope_value(self):
         """New Work / Repair / New + Repair — or None while the estimate is
@@ -397,11 +399,13 @@ class Estimate(Document):
         kinds = {work for work, _mode in self.sku_kinds().values()}
         if not kinds:
             return None
-        if kinds == {"Repair"}:
-            return "Repair"
-        if "Repair" in kinds:
-            return "New + Repair"
-        return "New Work"
+        if len(kinds) == 1:
+            return next(iter(kinds))
+        # More than one kind on one estimate is normal — a client who calls
+        # about a hinge adds new work and a bought-in door. Naming every
+        # combination would give unreadable labels, so the list says "Mixed"
+        # and the two subtotals below it carry the detail.
+        return "Mixed"
 
     def estimate_mode(self):
         """The mode this estimate is committed to (None while it has no SKUs)."""
@@ -851,7 +855,8 @@ class Estimate(Document):
         for r in self.skus or []:
             if r.estimate_sku and frappe.db.exists("Estimate SKU", r.estimate_sku):
                 s = frappe.get_doc("Estimate SKU", r.estimate_sku)
-                (repair_skus if (s.get("work_type") or "New Work") == "Repair" else skus).append(s)
+                on_site = (s.get("work_type") or "New Work") in self.SITE_KINDS
+                (repair_skus if on_site else skus).append(s)
                 total_client += float(s.client_total or 0)
         allowance = float(self.total_allowance or 0)
         spread = (1 + allowance / total_client) if total_client else 1.0
@@ -990,9 +995,18 @@ class Estimate(Document):
                 note = (a.get("material_note") or a.get("material_item") or "").strip()
                 if note and note not in materials:
                     materials.append(note)
+            kind = s.get("work_type") or "Repair"
             jobs.append({
                 "sku": s.sku_code or s.name,
                 "article": s.article_name or "",
+                "kind": kind,
+                # "supplied & installed" is the whole client-facing story for a
+                # bought-in article: never the vendor's name, and never what we
+                # paid for it. Lead time and warranty DO print — they are what
+                # the client is entitled to know and what protects us later.
+                "supplied": 1 if kind == "Supply & Install" else 0,
+                "lead_time_weeks": float(s.get("lead_time_weeks") or 0),
+                "warranty": s.get("warranty_note") or "",
                 "visits": int(s.get("repair_visits") or 0),
                 "days": float(s.get("est_days") or 0),
                 "scope": scope,

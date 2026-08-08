@@ -184,7 +184,8 @@ class TestRepairPrintLeakSafety(unittest.TestCase):
 
     def test_client_copy_renders_no_effort_or_rates(self):
         html = self._template("mallet_client_estimate.html")
-        repair = html[html.index("Repair Work"):]
+        # the section covers both on-site kinds now, so it is headed "Site Work"
+        repair = html[html.index("<h4>Site Work</h4>"):]
         for token in ("carp_min", "helper_min", "carpenters", "a.qty", "a.remarks"):
             self.assertNotIn(token, repair,
                              f"client repair section must not render {token}")
@@ -204,6 +205,53 @@ class TestRepairPrintLeakSafety(unittest.TestCase):
         for name in ("mallet_client_estimate.html", "mallet_execution_estimate.html"):
             self.assertIn("{% if p.rooms %}", self._template(name),
                           f"{name} renders the article table unconditionally")
+
+
+
+class TestSupplyAndInstall(unittest.TestCase):
+    """Buying a finished article and fitting it is a third kind of work: it
+    shares repair's LABOUR model (on site, activity rows, the visit floor) and
+    new work's MATERIAL model (a real line through the pricing chain), but its
+    margin question is its own — a client can look up what a door costs."""
+
+    def test_bought_out_margin_is_its_own_policy(self):
+        s = _settings(markup_bought_out=5, markup_material=15)
+        value, pct = E.bought_out_value(40000, s)
+        self.assertEqual(pct, 5)
+        self.assertAlmostEqual(value, 42000)
+
+    def test_it_ships_as_zero_like_every_other_rate(self):
+        # no rate lives in code; an unkeyed policy must bill at cost, not guess
+        bare = types.SimpleNamespace()
+        value, pct = E.bought_out_value(40000, bare)
+        self.assertEqual(pct, 0)
+        self.assertAlmostEqual(value, 40000)
+
+    def test_an_explicit_override_beats_the_policy(self):
+        value, pct = E.bought_out_value(1000, _settings(markup_bought_out=5), markup_pct=0)
+        self.assertEqual(pct, 0)
+        self.assertAlmostEqual(value, 1000)
+
+    def test_the_labour_half_is_exactly_repair(self):
+        # fitting a door is on-site work: same minutes, same visit floor
+        fit = [_act(qty=1, carpenters=1, carp_min=120, helpers=1, helper_min=120)]
+        r = E.calc_repair(fit, _settings())
+        self.assertAlmostEqual(r["est_days"], 120 / 360.0)
+        self.assertEqual(r["visits"], 1)
+        self.assertAlmostEqual(r["client_repair"], 2000)  # the day rate floor binds
+
+    def test_both_site_kinds_are_named_and_new_work_is_not(self):
+        self.assertIn(E.REPAIR, E.SITE_WORK)
+        self.assertIn(E.SUPPLY_INSTALL, E.SITE_WORK)
+        self.assertNotIn(E.NEW_WORK, E.SITE_WORK)
+
+    def test_a_door_job_prices_as_article_plus_fitting(self):
+        # 40k door at 5% + a half-day fit that the 2000 floor covers
+        s = _settings(markup_bought_out=5)
+        article, _pct = E.bought_out_value(40000, s)
+        labour = E.calc_repair(
+            [_act(qty=1, carpenters=1, carp_min=120, helpers=1, helper_min=120)], s)
+        self.assertAlmostEqual(article + labour["client_repair"], 44000)
 
 
 if __name__ == "__main__":

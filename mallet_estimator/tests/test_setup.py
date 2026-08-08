@@ -105,7 +105,13 @@ class TestMasters(MalletTestCase):
                             f"missing Estimate SKU.{f}")
         for f in ("work_scope", "total_new_work", "total_repair"):
             self.assertTrue(est.has_field(f), f"missing Estimate.{f}")
-        for f in ("repair_visit_charge", "markup_repair"):
+        for f in ("supplier", "lead_time_weeks", "warranty_note"):
+            self.assertTrue(frappe.get_meta("Estimate SKU").has_field(f),
+                            f"missing Estimate SKU.{f}")
+        self.assertIn("Supply & Install",
+                      frappe.get_meta("Estimate SKU").get_field("work_type").options,
+                      "Supply & Install must be a work type")
+        for f in ("repair_visit_charge", "markup_repair", "markup_bought_out"):
             self.assertTrue(frappe.get_meta("Estimate Settings").has_field(f),
                             f"missing Estimate Settings.{f}")
         for t in ("Estimate SKU Decor", "Estimate SKU Decor Edge"):

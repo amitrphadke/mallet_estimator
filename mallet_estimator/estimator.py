@@ -570,6 +570,16 @@ def calc_sku(sku, settings, ws_rates=None):
 #     stops binding once a full day of carpenter AND helper has been worked.
 # ---------------------------------------------------------------------------
 
+# The three kinds of work. New Work builds an article from parts; the other two
+# happen at the client's home and share one labour model — what separates them
+# is where the MATERIAL comes from. Repair barely buys anything; Supply &
+# Install buys a FINISHED article and fits it, which is a different margin
+# question because the client can price-check a door and cannot price-check ply.
+NEW_WORK = "New Work"
+REPAIR = "Repair"
+SUPPLY_INSTALL = "Supply & Install"
+SITE_WORK = (REPAIR, SUPPLY_INSTALL)
+
 PRODUCTIVE_MIN_PER_DAY = 360.0
 ON_SITE_WORKSTATION = "On-Site"
 TO_INSPECT = "To Inspect"
@@ -654,3 +664,13 @@ def calc_repair(activities, settings, markup_pct=None, visit_charge=None, visits
         "to_inspect_carp_min": hold_carp,
         "to_inspect_helper_min": hold_helper,
     }
+
+
+def bought_out_value(cost, settings, markup_pct=None):
+    """What a bought-in finished article is billed at.
+
+    Its own margin policy, deliberately thin: a client can look up what a door
+    costs, so the money on this work is in the fitting, not in the trading.
+    0 in code as every rate is — the real percentage lives in the site DB."""
+    markup = _num(markup_pct if markup_pct is not None else _get(settings, "markup_bought_out"))
+    return _num(cost) * (1 + markup / 100.0), markup
