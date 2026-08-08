@@ -58,6 +58,21 @@ def _project(customer):
     }).insert(ignore_permissions=True).name
 
 
+def _why_the_rename_did_not_happen(old_code, new_code):
+    """sync_item swallows a refused rename into the Error Log and carries on,
+    which is right for a user mid-save and useless for a failing test. Pull the
+    reason back out so the failure says WHY instead of only that it happened."""
+    facts = [
+        f"old Item {old_code} exists: {bool(frappe.db.exists('Item', old_code))}",
+        f"new Item {new_code} exists: {bool(frappe.db.exists('Item', new_code))}",
+    ]
+    log = frappe.get_all("Error Log", filters={"method": ["like", "%rename item%"]},
+                         fields=["error"], order_by="creation desc", limit=1)
+    if log:
+        facts.append("Error Log: " + (log[0].error or "")[-1200:])
+    return "\n".join(facts)
+
+
 class TestSkuNamingInTheDatabase(MalletTestCase):
     @classmethod
     def setUpClass(cls):
@@ -115,7 +130,7 @@ class TestSkuNamingInTheDatabase(MalletTestCase):
 
         new_code = f"{self.ci}_KIT_CRO_UNI"
         self.assertEqual(sku.sku_code, new_code)
-        self.assertEqual(sku.item, new_code)
+        self.assertEqual(sku.item, new_code, _why_the_rename_did_not_happen(old_code, new_code))
         self.assertTrue(frappe.db.exists("Item", new_code),
                         "the Item did not follow the rename")
         # Renamed, not duplicated: the old code must be gone, or a search for
