@@ -35,3 +35,8 @@ doctype_js = {
     "Estimate": "public/js/estimate.js",
     "Project": "public/js/project.js",
 }
+
+# List-view scripts (row indicators / extra columns).
+doctype_list_js = {
+    "Estimate": "public/js/estimate_list.js",
+}

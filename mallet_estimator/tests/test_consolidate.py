@@ -103,5 +103,40 @@ class TestIntakeRowMode(unittest.TestCase):
         with self.assertRaises(ValueError):
             consolidate.intake_row_mode(True, True)
 
+
+class TestStoredModeField(unittest.TestCase):
+    """Estimate.estimation_mode is a stored Select whose options are typed out
+    in the DocType JSON, while the value written into it comes from
+    consolidate. If either constant is renamed and the JSON is not, every save
+    would silently drop the mode (a Select rejects unknown values) and the list
+    view would go blank — so pin them together."""
+
+    def _options(self):
+        import json
+        import os
+        here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        path = os.path.join(here, "mallet_estimator", "doctype", "estimate", "estimate.json")
+        with open(path) as fh:
+            meta = json.load(fh)
+        field = next(f for f in meta["fields"] if f["fieldname"] == "estimation_mode")
+        return [o for o in field["options"].split("\n") if o]
+
+    def test_json_options_match_the_engine_constants(self):
+        self.assertEqual(sorted(self._options()),
+                         sorted([consolidate.CSV_MODE, consolidate.PDF_MODE]))
+
+    def test_blank_is_selectable_for_an_empty_estimate(self):
+        # an estimate with no SKUs is committed to NEITHER mode, so the Select
+        # must accept "" — a leading empty option is how Frappe spells that
+        import json
+        import os
+        here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        path = os.path.join(here, "mallet_estimator", "doctype", "estimate", "estimate.json")
+        with open(path) as fh:
+            meta = json.load(fh)
+        field = next(f for f in meta["fields"] if f["fieldname"] == "estimation_mode")
+        self.assertTrue(field["options"].startswith("\n"))
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -70,6 +70,7 @@ class Estimate(Document):
             self.process_intake()
             self.enforce_single_mode()
             self.refresh_sku_rows()
+        self.stamp_mode()
         # Provisional allowances (F6) — amounts are a simple qty x assumed rate,
         # recomputed every save so the client-print subtotal is always right.
         self.compute_allowances()
@@ -320,6 +321,15 @@ class Estimate(Document):
         if pdf and not csv_nest:
             return cons.PDF_MODE
         return None
+
+    def stamp_mode(self):
+        """Persist the mode on the estimate itself. It is DERIVED from the SKUs
+        (never typed), but storing it is what makes the answer to "is this a
+        CSV-Nest or a PDF estimate?" visible without opening the doc — the list
+        view's indicator and its standard filter both read this column. Blank
+        while the estimate carries no SKUs yet."""
+        if self.meta.has_field("estimation_mode"):
+            self.estimation_mode = self.estimate_mode() or ""
 
     def enforce_single_mode(self):
         """CSV-Nest and OCL-PDF SKUs are mutually exclusive on one estimate.

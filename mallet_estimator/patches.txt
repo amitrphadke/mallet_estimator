@@ -39,3 +39,6 @@ mallet_estimator.patches.item_gst_backfill
 mallet_estimator.patches.drop_view_files
 # Décor map split: laminate vs edge-band tables; legacy rows migrated.
 mallet_estimator.patches.split_decor_tables
+# Backfill the newly stored Estimate.estimation_mode — needs the column the
+# model sync creates, so it MUST run post-model-sync, not before.
+mallet_estimator.patches.stamp_estimate_mode

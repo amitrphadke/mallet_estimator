@@ -7,6 +7,7 @@ frappe.ui.form.on("Estimate", {
     const approved = frm.doc.docstatus === 1;
 
     render_estimate_bifurcation(frm);
+    render_mode_headline(frm);
     if (!frm.is_new()) render_sku_files(frm);
 
     // CSV-Nest and OCL-PDF SKUs are EXCLUSIVE on one estimate (packing is
@@ -283,6 +284,31 @@ function update_estimate_totals(frm) {
 
 function esc(s) {
   return frappe.utils.escape_html ? frappe.utils.escape_html(String(s == null ? "" : s)) : String(s == null ? "" : s);
+}
+
+// Which kind of estimate am I looking at? The stored estimation_mode (derived
+// from the SKUs, read-only in the header) also gets a coloured headline at the
+// very top of the form, because the mode decides how the numbers below it were
+// arrived at — nesting them together vs pricing each article on its own.
+function render_mode_headline(frm) {
+  const mode = frm.doc.estimation_mode;
+  if (!mode) {
+    // No SKUs yet — nothing is committed, so claim nothing.
+    if (frm.dashboard.clear_headline) frm.dashboard.clear_headline();
+    return;
+  }
+  const csv = mode === "CSV-Nest";
+  const colour = csv ? "blue" : "orange";
+  const rule = csv ? "#1f7aec" : "#e69500";
+  const tint = csv ? "#eef5ff" : "#fff8ec";
+  const what = csv
+    ? __("every SKU on this estimate is nested TOGETHER — sheet counts and the shared-material saving are computed here, which holds only if the whole set is ordered together")
+    : __("each SKU is priced STANDALONE from its OpenCutList PDF — no shared-material saving, so this is what an article costs if it is ordered on its own later");
+  frm.dashboard.set_headline(
+    `<div style="padding:6px 10px;border-left:3px solid ${rule};background:${tint}">` +
+      `<b>${esc(mode)}</b> ${esc(__("estimate"))} — ${esc(what)}.</div>`,
+    colour
+  );
 }
 
 // One line per SKU right on the estimate: article | room | Part CSV | Views
