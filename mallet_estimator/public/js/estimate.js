@@ -380,7 +380,7 @@ function bind_sku_selection(frm) {
 
 function select_sku(frm, sku) {
   frm.__selected_sku = sku;
-  highlight_selected_row(frm);
+  frm.__summary_for = null;   // force a refetch for the new selection
   render_sku_detail(frm);
 }
 
@@ -397,52 +397,50 @@ function highlight_selected_row(frm) {
 
 // Pick up where the user left off; otherwise open on the first SKU so the
 // detail tables are never empty for no reason.
+// The estimate shows COST and nothing else. Nothing selected = the whole
+// estimate; select a SKU row = that SKU. Every detail — material lines, décor,
+// per-line discount and tax — lives on the SKU page, which has the room for it
+// and, more importantly, keeps editing one line out of the estimate's own save
+// cycle. Mixing the two is what put this screen into a reload loop.
 function render_sku_detail(frm) {
-  const $mat = frm.get_field("sku_materials_html") && frm.get_field("sku_materials_html").$wrapper;
   const $sum = frm.get_field("sku_summary_html") && frm.get_field("sku_summary_html").$wrapper;
-  if (!$mat || !$sum) return;
+  const $mat = frm.get_field("sku_materials_html") && frm.get_field("sku_materials_html").$wrapper;
+  if ($mat) $mat.empty();          // the board is not shown here any more
+  if (!$sum || frm.is_new()) return;
   const rows = (frm.doc.skus || []).filter((r) => r.estimate_sku);
-  if (!rows.length) {
-    frm.__selected_sku = null;
-    $mat.html(`<div class="text-muted">${esc(
-      __("No SKUs yet. Add a row above: pick an existing SKU or type a new name to create one, then drop its Part List CSV (CSV-Nest) or Material Estimate PDF (OCL PDF) in the same row and Save."))}</div>`);
-    $sum.empty();
-    return;
-  }
-  if (!rows.some((r) => r.estimate_sku === frm.__selected_sku)) {
-    frm.__selected_sku = rows[0].estimate_sku;
-  }
+  if (!rows.some((r) => r.estimate_sku === frm.__selected_sku)) frm.__selected_sku = null;
   highlight_selected_row(frm);
-  const sku = frm.__selected_sku;
-  $mat.html(`<div class="text-muted">${esc(__("Loading…"))}</div>`);
-  $sum.empty();
-  if (frm.__board && frm.__board.sku === sku) {
-    frm.__board.load();
-  } else {
-    frm.__board = new mallet.MaterialBoard({
-      wrapper: $mat,
-      sku: sku,
-      // The estimate is where the numbers are read AND corrected — the board
-      // is as editable here as it is on the SKU form; there is just less room.
-      editable: frm.doc.docstatus === 0,
-      on_change: () => frm.reload_doc(),
+  const sku = frm.__selected_sku || null;
+  // Don't refetch what is already on screen — refresh fires often.
+  if (frm.__summary_for === (sku || "__all__")) return;
+  frm.__summary_for = sku || "__all__";
+  $sum.html(`<div class="text-muted">${esc(__("Loading…"))}</div>`);
+  frm.call("cost_summary", { sku }).then((r) => {
+    if (frm.__summary_for !== (sku || "__all__")) return;
+    $sum.html(render_cost_summary((r && r.message) || {}, frm));
+    $sum.find(".mallet-clear-sku").on("click", () => {
+      frm.__selected_sku = null;
+      frm.__summary_for = null;
+      render_sku_detail(frm);
     });
-    frm.__board.load();
-  }
-  frm.call("sku_materials", { sku }).then((r) => {
-    if (frm.__selected_sku !== sku) return;
-    $sum.html(render_pricing_summary((r && r.message) || {}));
   });
 }
 
-// The client pricing summary for the selected SKU — the same bifurcation the
-// SKU prints, plus the man-days behind it (what the client is really buying).
-function render_pricing_summary(m) {
+function render_cost_summary(m, frm) {
   const b = m.bifurcation || {};
-  if (!b.rows || !b.rows.length) {
-    return `<div class="text-muted">${esc(__("No pricing yet for this SKU."))}</div>`;
-  }
+  const sq = m.sqft || {};
   const gst = b.gst_pct || 18;
+  const scope = m.scope === "sku"
+    ? `<b>${esc(m.title)}</b> <span class="text-muted small">${esc(m.subtitle || "")}</span>
+       <button class="btn btn-xs btn-default mallet-clear-sku" style="margin-left:8px">${
+         esc(__("Show whole estimate"))}</button>`
+    : `<b>${esc(__("Whole estimate"))}</b> <span class="text-muted small">${esc(m.subtitle || "")}</span>
+       <span class="text-muted small" style="margin-left:8px">${esc(
+         __("select a SKU row above to cost it on its own"))}</span>`;
+  if (!b.rows || !b.rows.length) {
+    return `<div style="margin-bottom:6px">${scope}</div>
+      <div class="text-muted">${esc(__("No costed SKUs yet."))}</div>`;
+  }
   const rows = b.rows.map((r) => `<tr>
       <td>${esc(r.label)}</td>
       <td class="text-right">${format_currency(r.amount || 0)}</td>
@@ -450,41 +448,32 @@ function render_pricing_summary(m) {
       <td class="text-right">${format_currency(r.gst || 0)}</td>
       <td class="text-right">${format_currency(r.gross || 0)}</td>
     </tr>`).join("");
-  const d = m.days || {};
-  const per_day = d.productive_min_per_day || 360;
-  const days_rows = `
-    <tr><td>${esc(__("Carpenter minutes"))}</td>
-        <td class="text-right">${format_number(d.carp_min || 0)}</td>
-        <td class="text-right" colspan="3">${esc(__("{0} min = 1 productive day", [per_day]))}</td></tr>
-    <tr><td>${esc(__("Helper minutes"))}</td>
-        <td class="text-right">${format_number(d.helper_min || 0)}</td>
-        <td class="text-right" colspan="3"></td></tr>
-    <tr><td><b>${esc(__("Man-days for this SKU"))}</b></td>
-        <td class="text-right"><b>${format_number(d.est_days || 0, null, 2)}</b></td>
-        <td class="text-right text-muted" colspan="3">${esc(
-          __("longer of the two trades ÷ {0} min", [per_day]))}</td></tr>`;
-  const sq = m.sqft || {};
-  const sqft_rows = sq.sqft
+  const split = m.scope === "estimate" && (m.new_work || m.site_work)
+    ? `<tr style="background:#f4f5f6"><td colspan="5"><b>${esc(__("By kind of work"))}</b></td></tr>
+       <tr><td>${esc(__("New work"))}</td><td class="text-right">${format_currency(m.new_work || 0)}</td>
+           <td colspan="3"></td></tr>
+       <tr><td>${esc(__("Site work (repair, supply & install)"))}</td>
+           <td class="text-right">${format_currency(m.site_work || 0)}</td><td colspan="3"></td></tr>`
+    : "";
+  const persqft = sq.sqft
     ? `<tr style="background:#f4f5f6"><td colspan="5"><b>${esc(
-         __("Per square foot (facial area: {0} sq ft — two greatest outer dims)",
-            [format_number(sq.sqft, null, 2)]))}</b></td></tr>
-       <tr><td>${esc(__("Material / sq ft"))}</td>
-           <td class="text-right">${format_currency(sq.material_per_sqft || 0)}</td>
-           <td colspan="3"></td></tr>
-       <tr><td>${esc(__("Labor (design & execution) / sq ft"))}</td>
-           <td class="text-right">${format_currency(sq.labor_per_sqft || 0)}</td>
-           <td colspan="3"></td></tr>
-       <tr><td><b>${esc(__("SKU / sq ft (pre-tax)"))}</b></td>
+         __("Per square foot — {0} sq ft", [format_number(sq.sqft, null, 2)]))}</b></td></tr>
+       ${sq.material_per_sqft ? `<tr><td>${esc(__("Material / sq ft"))}</td>
+         <td class="text-right">${format_currency(sq.material_per_sqft)}</td><td colspan="3"></td></tr>` : ""}
+       ${sq.labor_per_sqft ? `<tr><td>${esc(__("Labor / sq ft"))}</td>
+         <td class="text-right">${format_currency(sq.labor_per_sqft)}</td><td colspan="3"></td></tr>` : ""}
+       <tr><td><b>${esc(__("Rate / sq ft (pre-tax)"))}</b></td>
            <td class="text-right"><b>${format_currency(sq.total_per_sqft || 0)}</b></td>
            <td colspan="3"></td></tr>`
     : "";
   return `
-    <div style="margin-bottom:4px"><b>${esc(__("Pricing summary"))}</b>
-      <span class="text-muted small"> — ${esc(m.article || m.sku)} · ${esc(__("client pricing"))}</span></div>
+    <div style="margin-bottom:6px">${scope}${
+      m.unpriced ? ` <span class="badge" style="background:#e24c4c;color:#fff">${esc(__("unpriced"))}</span>` : ""}${
+      m.frozen ? ` <span class="badge">${esc(__("frozen"))}</span>` : ""}</div>
     <div style="overflow-x:auto">
-      <table class="table table-bordered" style="font-size:12px;margin:0">
+      <table class="table table-bordered mallet-cost-table" style="font-size:12px;margin:0;width:100%">
         <thead><tr>
-          <th>${esc(__("Component"))}</th>
+          <th style="width:40%">${esc(__("Component"))}</th>
           <th class="text-right">${esc(__("Amount"))}</th>
           <th class="text-right">${esc(__("% of pre-tax"))}</th>
           <th class="text-right">${esc(__("GST {0}%", [gst]))}</th>
@@ -499,15 +488,13 @@ function render_pricing_summary(m) {
             <td class="text-right"><b>${format_currency(b.taxes || 0)}</b></td>
             <td class="text-right"><b>${format_currency(b.grand_total || 0)}</b></td>
           </tr>
-          <tr><td><b>${esc(__("Grand Total incl. GST"))}</b></td>
-              <td class="text-right"><b>${format_currency(b.grand_total || 0)}</b></td>
-              <td colspan="3"></td></tr>
-          <tr style="background:#f4f5f6"><td colspan="5"><b>${esc(__("Effort"))}</b></td></tr>
-          ${days_rows}
-          ${sqft_rows}
+          <tr><td><b>${esc(__("Days"))}</b></td>
+              <td class="text-right"><b>${format_number(flt(m.days), null, 2)}</b></td>
+              <td colspan="3" class="text-muted">${esc(__("360 productive min = 1 day"))}</td></tr>
+          ${split}
+          ${persqft}
         </tbody>
       </table>
-    </div>
-    <div class="small text-muted" style="margin-top:4px">${esc(
-      __("Transport is billed on the Estimate (trips shared across SKUs)."))}</div>`;
+    </div>`;
 }
+

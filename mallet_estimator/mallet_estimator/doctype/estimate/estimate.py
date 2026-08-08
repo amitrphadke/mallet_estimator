@@ -424,7 +424,12 @@ class Estimate(Document):
         view's indicator and its standard filter both read this column. Blank
         while the estimate carries no SKUs yet."""
         if self.meta.has_field("estimation_mode"):
-            self.estimation_mode = self.estimate_mode() or ""
+            # Derived from the SKUs once there are any. Before that the field is
+            # the user's OWN up-front choice of how this estimate will work, so
+            # it must not be blanked out from under them.
+            derived = self.estimate_mode()
+            if derived:
+                self.estimation_mode = derived
         if self.meta.has_field("work_scope"):
             self.work_scope = self.work_scope_value() or ""
 
@@ -580,6 +585,55 @@ class Estimate(Document):
         "Edge Banding Internal", "Edge Banding External",
         "Client Hardware", "Joinery Hardware", "Other Material",
     )
+
+    @frappe.whitelist()
+    def cost_summary(self, sku=None):
+        """What the Estimate screen shows: COST, and nothing else.
+
+        With no SKU selected it is the whole estimate; select a row and it is
+        that SKU. Detail — material lines, décor, per-line discount and tax —
+        belongs on the SKU page, where there is room for it and where editing
+        one thing does not re-enter the estimate's own save cycle."""
+        if sku:
+            if sku not in {r.estimate_sku for r in (self.skus or [])}:
+                frappe.throw(_("{0} is not on this estimate.").format(sku))
+            doc = frappe.get_doc("Estimate SKU", sku)
+            doc.check_permission("read")
+            try:
+                breakup = json.loads(doc.get("cost_breakup") or "{}") or {}
+            except Exception:
+                breakup = {}
+            return {
+                "scope": "sku", "sku": doc.name,
+                "title": doc.get("article_name") or doc.name,
+                "subtitle": " · ".join(x for x in (doc.get("sku_code"), doc.get("room"),
+                                                   doc.get("work_type")) if x),
+                "bifurcation": breakup.get("bifurcation") or {},
+                "sqft": breakup.get("sqft") or {},
+                "days": float(doc.get("est_days") or 0),
+                "unpriced": doc.get("unpriced_materials") or "",
+                "frozen": 1 if doc.get("rates_frozen") else 0,
+            }
+        try:
+            breakup = json.loads(self.get("cost_breakup") or "{}") or {}
+        except Exception:
+            breakup = {}
+        sqft = sum(float((frappe.get_doc("Estimate SKU", r.estimate_sku)
+                          .facial_sqft_block() or {}).get("sqft") or 0)
+                   for r in (self.skus or [])
+                   if r.estimate_sku and frappe.db.exists("Estimate SKU", r.estimate_sku))
+        client = float(self.total_client or 0)
+        return {
+            "scope": "estimate", "sku": None,
+            "title": self.name,
+            "subtitle": _("{0} SKU(s) · whole estimate").format(len(self.skus or [])),
+            "bifurcation": breakup.get("bifurcation") or {},
+            "sqft": {"sqft": sqft,
+                     "total_per_sqft": (client / sqft) if sqft else 0},
+            "days": float(self.get("total_days") or 0),
+            "new_work": float(self.get("total_new_work") or 0),
+            "site_work": float(self.get("total_repair") or 0),
+        }
 
     @frappe.whitelist()
     def sku_materials(self, sku):

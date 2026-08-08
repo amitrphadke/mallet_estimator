@@ -51,7 +51,13 @@ frappe.ui.form.on("Estimate SKU", {
     // opened, so changing a workstation's operating costs is reflected without a
     // manual re-save. Only when the form has no unsaved edits; reloads once if
     // anything changed (then stabilises — no loop).
-    if (!frm.is_new() && !frm.is_dirty()) {
+    if (!frm.is_new() && !frm.is_dirty() && frm.__repriced !== frm.doc.modified) {
+      // Latch on the doc's own modified stamp: one reprice-and-reload per
+      // version of the document, never a second for the same one. A guard is
+      // needed rather than trusting recompute to report "no change" on the
+      // next pass — that assumption only has to be wrong once (a value that
+      // recomputes but is not persisted) for the form to reload forever.
+      frm.__repriced = frm.doc.modified;
       frm.call("recompute").then((r) => {
         if (r && r.message && r.message.changed) frm.reload_doc();
       });
@@ -610,7 +616,16 @@ function render_material_board(frm) {
     sku: frm.doc.name,
     editable: editable,
     // A board edit saves the SKU server-side, which leaves this form stale.
-    on_change: () => frm.reload_doc(),
+    // NOT reload_doc: the board already renders what the save returned, and
+    // reloading re-enters refresh — which is one half of the loop this had.
+    on_change: (data) => {
+      if (data && data.totals) {
+        frm.doc.material_cost = data.totals.material_cost;
+        frm.doc.client_total = data.totals.client_total;
+        frm.refresh_field("material_cost");
+        frm.refresh_field("client_total");
+      }
+    },
   });
   frm.__board.load();
 }

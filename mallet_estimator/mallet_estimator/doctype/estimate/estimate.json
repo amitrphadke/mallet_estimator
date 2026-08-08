@@ -107,10 +107,10 @@
    "fieldtype": "Select",
    "label": "Estimation Mode",
    "options": "\nCSV-Nest\nOCL PDF (standard)",
-   "read_only": 1,
    "bold": 1,
    "in_standard_filter": 1,
-   "description": "Set from the SKUs this estimate carries — an estimate holds ONE mode. CSV-Nest: all SKUs nested together here (shared-material saving). OCL PDF: each SKU priced standalone from its OpenCutList PDF."
+   "description": "Choose this FIRST — it decides what each SKU row asks you to upload. CSV-Nest: Part List CSVs, nested together here. OCL PDF: each SKU priced standalone from its own OpenCutList PDF. Locks once the estimate carries SKUs.",
+   "read_only_depends_on": "eval:(doc.skus||[]).length>0"
   },
   {
    "fieldname": "quote_number",

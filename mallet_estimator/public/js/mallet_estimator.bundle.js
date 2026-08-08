@@ -127,6 +127,19 @@ frappe.provide("frappe.boot");
   .mallet-wide .form-grid,
   .mallet-wide .grid-body { width: 100%; }
   .mallet-wide .grid-static-col { white-space: normal; }
+  /* Tables: numbers right, headers aligned with the cells beneath them, and
+     no ragged first column. Alignment was the loudest complaint about these
+     screens and it is almost entirely th/td not agreeing. */
+  .mallet-wide table.table th,
+  .mallet-wide table.table td { vertical-align: middle; padding: 4px 6px; }
+  .mallet-wide table.table th.text-right,
+  .mallet-wide table.table td.text-right { text-align: right; }
+  .mallet-wide table.table th.text-center,
+  .mallet-wide table.table td.text-center { text-align: center; }
+  .mallet-wide .mallet-board-table td code { font-size: 11px; }
+  .mallet-wide .mallet-board-table input.form-control,
+  .mallet-wide .mallet-board-table select.form-control { min-width: 60px; }
+  .mallet-wide .mallet-cost-table td:first-child { white-space: normal; }
   /* a section whose fields sit in ONE column packs into three */
   .mallet-wide .form-section > .section-body > .form-column:only-child > form {
     display: grid;
