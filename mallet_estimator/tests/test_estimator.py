@@ -470,6 +470,18 @@ class TestNameSplitting(unittest.TestCase):
     to the code generator — the grammar must not depend on which key someone
     happened to press."""
 
+    def test_an_abbreviation_never_drops_below_three_characters(self):
+        # "WL" is not a name, it is a puzzle — the first word gives up three
+        # letters and the rest stay initials, so siblings remain distinct
+        self.assertEqual(E.abbr("Wardrobe-Left"), "WARL")
+        self.assertEqual(E.abbr("Wardrobe-Right"), "WARR")
+        self.assertEqual(E.abbr("Loft"), "LOF")
+
+    def test_a_name_with_fewer_than_three_letters_gives_what_it_has(self):
+        # nothing can invent a third character out of "TV"
+        self.assertEqual(E.abbr("TV"), "TV")
+        self.assertEqual(E.abbr("TV Unit"), "TVU")
+
     def test_all_three_separators_split_the_same(self):
         for name in ("Wardrobe Option A", "Wardrobe_Option_A", "Wardrobe-Option-A"):
             self.assertEqual(E.abbr(name), "WOA", name)

@@ -1710,6 +1710,28 @@ class EstimateSKU(Document):
         if not code:
             return
         if self.item and frappe.db.exists("Item", self.item):
+            # A renamed article changes the SKU code, and the Item must follow
+            # it. Leaving the Item on its old code strands the name a person
+            # searches by — you fix "MB_WAR_CSV" to "Wardrobe" and the stock
+            # ledger still says YS_MB_MB_. frappe.rename_doc re-points every
+            # link (BOMs, prices, stock entries) as part of the rename.
+            if self.item != code and not frappe.db.exists("Item", code):
+                try:
+                    frappe.rename_doc("Item", self.item, code, force=True,
+                                      show_alert=False, ignore_permissions=True)
+                    self.item = code
+                    frappe.msgprint(
+                        _("ERPNext Item renamed to <b>{0}</b> to match the SKU code.").format(code),
+                        indicator="blue", alert=True)
+                except Exception:
+                    # A rename can be refused (a submitted document may hold
+                    # it). Say so rather than leaving the mismatch unexplained.
+                    frappe.log_error(frappe.get_traceback(), f"rename item {self.item} -> {code}")
+                    frappe.msgprint(
+                        _("The SKU code is now <b>{0}</b> but its ERPNext Item is still "
+                          "<b>{1}</b> — the rename was refused, most likely because a "
+                          "submitted document uses it. Rename it by hand if you need them to match.")
+                        .format(code, self.item), indicator="orange")
             frappe.db.set_value("Item", self.item, {
                 "item_name": (self.article_name or code)[:140],
                 "standard_rate": self.client_total,
