@@ -17,6 +17,8 @@
 # 16 fixed process steps (1-16) plus one editable miscellaneous / extra step
 # at line 17. `machine` links a step to a machine key in Estimate Settings.
 # `in_factory` decides whether the step's hours attract factory rent.
+import math
+
 STEP_TEMPLATE = [
     {"phase": "Sheet Lamination",     "machine": None,          "in_factory": 1},
     {"phase": "Sheet Tape Removal",   "machine": None,          "in_factory": 1},
@@ -542,4 +544,109 @@ def calc_sku(sku, settings, ws_rates=None):
         "client_design_exec": client_design_exec,
         "client_total": client_total,
         "markup_pct": markup_display,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Repair work (R1) — a different UNIT of estimation.
+#
+# New work prices an ARTICLE from its parts; repair prices an ACTIVITY on
+# something that already exists in the client's home. There are no parts to
+# nest, the material is small and often not stocked, and the labour IS the
+# cost. So repair has its own engine rather than a special case bolted into
+# calc_sku — the two never share a code path, only the wage rates.
+#
+# The three rules the shop actually works by:
+#   * a row's minutes are crew x per-unit minutes x QTY (six chairs at 30 min
+#     each is 180 min, not 30);
+#   * a row that cannot be priced until someone looks at it ("To Inspect")
+#     carries its provisional minutes but is kept OUT of the firm total —
+#     these are the rows that eat the margin when they hide at qty 0;
+#   * a visit has a floor price. Going out at all costs a day; the day rate
+#     stops binding once a full day of carpenter AND helper has been worked.
+# ---------------------------------------------------------------------------
+
+PRODUCTIVE_MIN_PER_DAY = 360.0
+ON_SITE_WORKSTATION = "On-Site"
+TO_INSPECT = "To Inspect"
+
+
+def repair_row_minutes(row):
+    """(carpenter minutes, helper minutes) for one activity row, quantity
+    included. `row` is anything with .get() or attributes — a Frappe child row
+    or a plain dict, so the engine stays testable without a database."""
+    def f(name):
+        if isinstance(row, dict):
+            return _num(row.get(name))
+        return _num(getattr(row, name, 0))
+
+    qty = f("qty") or 1
+    return (qty * (f("carpenters") or 0) * f("carp_min"),
+            qty * (f("helpers") or 0) * f("helper_min"))
+
+
+def _row_status(row):
+    if isinstance(row, dict):
+        return (row.get("status") or "").strip()
+    return (getattr(row, "status", "") or "").strip()
+
+
+def calc_repair(activities, settings, markup_pct=None, visit_charge=None, visits=None):
+    """Cost a repair SKU's activity table.
+
+    `markup_pct` / `visit_charge` default to the Estimate Settings policy
+    (`markup_repair`, `repair_visit_charge`); both are 0 in code on purpose —
+    the real values live only in the site DB.
+
+    `visits` overrides the derived day count for a job that is spread over
+    more trips than its minutes imply (two half-days a week apart is two
+    visits, not one).
+    """
+    rates = staff_rates(settings)
+    markup = _num(markup_pct if markup_pct is not None else _get(settings, "markup_repair"))
+    day_rate = _num(visit_charge if visit_charge is not None else _get(settings, "repair_visit_charge"))
+
+    carp_min = helper_min = 0.0
+    hold_carp = hold_helper = 0.0
+    to_inspect = 0
+    for row in activities or []:
+        c, h = repair_row_minutes(row)
+        if _row_status(row) == TO_INSPECT:
+            to_inspect += 1
+            hold_carp += c
+            hold_helper += h
+            continue
+        carp_min += c
+        helper_min += h
+
+    # A day on site is the same 360 productive minutes as a day on the floor.
+    est_days = max(carp_min, helper_min) / PRODUCTIVE_MIN_PER_DAY
+    derived_visits = int(math.ceil(est_days)) if est_days > 0 else 0
+    if visits is not None and _num(visits) > 0:
+        billed_visits = int(_num(visits))
+    else:
+        billed_visits = derived_visits
+
+    labor_cost = carp_min / 60.0 * rates["carpenter"] + helper_min / 60.0 * rates["helper"]
+    client_labor = labor_cost * (1 + markup / 100.0)
+    visit_amount = billed_visits * day_rate
+    # The day rate is a FLOOR, not an addition: a full day's work already pays
+    # for the day, so the two are never charged on top of each other.
+    client_repair = max(client_labor, visit_amount)
+    return {
+        "carp_min": carp_min,
+        "helper_min": helper_min,
+        "est_days": est_days,
+        "visits": billed_visits,
+        "derived_visits": derived_visits,
+        "labor_cost": labor_cost,
+        "client_labor": client_labor,
+        "day_rate": day_rate,
+        "visit_amount": visit_amount,
+        "visit_topup": max(0.0, visit_amount - client_labor),
+        "client_repair": client_repair,
+        "markup_pct": markup,
+        "to_inspect": to_inspect,
+        "to_inspect_carp_min": hold_carp,
+        "to_inspect_helper_min": hold_helper,
     }

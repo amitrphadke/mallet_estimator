@@ -221,7 +221,8 @@ class Estimate(Document):
                 rows.append(r)
         self.set("skus", rows)
         totals = dict(material=0, labor=0, overhead=0, design=0, internal=0, client=0,
-                      mat_discount=0, mat_tax=0, mat_tax_saved=0)
+                      mat_discount=0, mat_tax=0, mat_tax_saved=0,
+                      new_work=0, repair=0)
         # Client buckets are summed PER SKU (each at its own effective margins —
         # house default or SKU override) — never re-derived from house margins.
         self._client_buckets = dict(material=0.0, labor=0.0, design=0.0, overhead=0.0)
@@ -311,7 +312,15 @@ class Estimate(Document):
             # are added in compute_transport_and_tax.
             totals["internal"] += (s.internal_cost or 0) - (s.get("transport_cost") or 0)
             totals["client"] += s.client_total or 0
+            # The consolidated quote has to bifurcate: a client can approve the
+            # repair now and think about the new work.
+            bucket = "repair" if (s.get("work_type") or "New Work") == "Repair" else "new_work"
+            totals[bucket] += s.client_total or 0
         self.total_material = totals["material"]
+        if self.meta.has_field("total_new_work"):
+            self.total_new_work = totals["new_work"]
+        if self.meta.has_field("total_repair"):
+            self.total_repair = totals["repair"]
         if self.meta.has_field("total_material_discount"):
             self.total_material_discount = totals["mat_discount"]
         if self.meta.has_field("total_material_tax"):
@@ -358,16 +367,41 @@ class Estimate(Document):
         self.save()
         return sku.name
 
-    def sku_modes(self):
-        """{sku: estimation_mode} for the rows this estimate carries."""
+    def sku_kinds(self):
+        """{sku: (work_type, estimation_mode)} for the rows this estimate
+        carries — one query, since almost everything about an estimate's shape
+        follows from these two."""
         names = [r.estimate_sku for r in (self.skus or []) if r.estimate_sku]
         if not names:
             return {}
         return {
-            d.name: d.get("estimation_mode")
+            d.name: (d.get("work_type") or "New Work", d.get("estimation_mode"))
             for d in frappe.get_all("Estimate SKU", filters={"name": ["in", names]},
-                                    fields=["name", "estimation_mode"])
+                                    fields=["name", "work_type", "estimation_mode"])
         }
+
+    def sku_modes(self):
+        """{sku: estimation_mode} for the NEW-WORK rows only.
+
+        Estimation mode answers 'who packed the sheets, us or OpenCutList'.
+        A repair SKU has no sheets, so the question does not apply to it and
+        it must never be dragged into the exclusivity check — that is exactly
+        what lets a repair job and new work share one estimate."""
+        return {name: mode for name, (work, mode) in self.sku_kinds().items()
+                if work != "Repair"}
+
+    def work_scope_value(self):
+        """New Work / Repair / New + Repair — or None while the estimate is
+        empty. A client who calls about a broken hinge often ends up ordering a
+        wardrobe; both belong on one estimate, subtotalled apart."""
+        kinds = {work for work, _mode in self.sku_kinds().values()}
+        if not kinds:
+            return None
+        if kinds == {"Repair"}:
+            return "Repair"
+        if "Repair" in kinds:
+            return "New + Repair"
+        return "New Work"
 
     def estimate_mode(self):
         """The mode this estimate is committed to (None while it has no SKUs)."""
@@ -387,6 +421,8 @@ class Estimate(Document):
         while the estimate carries no SKUs yet."""
         if self.meta.has_field("estimation_mode"):
             self.estimation_mode = self.estimate_mode() or ""
+        if self.meta.has_field("work_scope"):
+            self.work_scope = self.work_scope_value() or ""
 
     def enforce_single_mode(self):
         """CSV-Nest and OCL-PDF SKUs are mutually exclusive on one estimate.
@@ -807,11 +843,15 @@ class Estimate(Document):
         the ERP for the final true-up)."""
         from mallet_estimator import inventory
         CHOOSE = ("Laminate External", "Edge Banding External", "Client Hardware")
-        skus, total_client = [], 0.0
+        # Repair leaves the article table entirely: it has no dims, no facial
+        # area and no room-wise price per sq ft. It gets its own printed
+        # section, so a consolidated quote reads as two clearly separate
+        # offers the client can accept independently.
+        skus, repair_skus, total_client = [], [], 0.0
         for r in self.skus or []:
             if r.estimate_sku and frappe.db.exists("Estimate SKU", r.estimate_sku):
                 s = frappe.get_doc("Estimate SKU", r.estimate_sku)
-                skus.append(s)
+                (repair_skus if (s.get("work_type") or "New Work") == "Repair" else skus).append(s)
                 total_client += float(s.client_total or 0)
         allowance = float(self.total_allowance or 0)
         spread = (1 + allowance / total_client) if total_client else 1.0
@@ -894,7 +934,50 @@ class Estimate(Document):
             "gst_pct": gst_pct, "gst": gst, "grand_total": subtotal + transport + gst,
             "assumed_rates": sorted(rate_rows.values(), key=lambda x: (x["bucket"], x["item"])),
             "gallery": gallery,
+            "repair": self.repair_print_block(repair_skus, spread),
         }
+
+    def repair_print_block(self, repair_skus, spread=1.0):
+        """The repair section of a client print: ONE lump sum per job, the
+        activity list as scope, and the material list WITHOUT prices.
+
+        That shape is deliberate. Repair is sold as an outcome ("your doors
+        will close and the veneer will match"), not as a rate card — an
+        itemised 20-minute screw fix invites a negotiation about minutes that
+        has nothing to do with what the visit is worth. The scope list is what
+        protects both sides, so it prints in full.
+
+        Rows awaiting a site inspection print SEPARATELY and carry no money:
+        they are scope the client can see but has not been quoted."""
+        if not repair_skus:
+            return None
+        jobs, total, to_inspect = [], 0.0, []
+        for s in repair_skus:
+            price = float(s.client_total or 0) * spread
+            total += price
+            scope, materials = [], []
+            for a in s.get("repair_activities") or []:
+                entry = {"room": a.get("room") or "", "target": a.get("target") or "",
+                         "activity": a.get("activity") or "",
+                         "steps": a.get("description") or ""}
+                if (a.get("status") or "") == "To Inspect":
+                    to_inspect.append(dict(entry, job=s.article_name or s.name))
+                else:
+                    scope.append(entry)
+                note = (a.get("material_note") or a.get("material_item") or "").strip()
+                if note and note not in materials:
+                    materials.append(note)
+            jobs.append({
+                "sku": s.sku_code or s.name,
+                "article": s.article_name or "",
+                "visits": int(s.get("repair_visits") or 0),
+                "days": float(s.get("est_days") or 0),
+                "scope": scope,
+                # names only — no quantities, no rates, no amounts
+                "materials": materials,
+                "price": price,
+            })
+        return {"jobs": jobs, "total": total, "to_inspect": to_inspect}
 
     @frappe.whitelist()
     def compare_with(self, other):

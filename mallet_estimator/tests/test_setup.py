@@ -97,6 +97,17 @@ class TestMasters(MalletTestCase):
         # Creating a SKU straight from the grid's link column needs quick entry.
         self.assertTrue(frappe.get_meta("Estimate SKU").quick_entry,
                         "Estimate SKU must allow quick entry (create from the grid)")
+        # Repair work (R1): its own activity table and the two policy numbers.
+        self.assertTrue(frappe.db.exists("DocType", "Estimate Repair Activity"))
+        for f in ("work_type", "repair_activities", "repair_csv", "repair_visits",
+                  "client_repair"):
+            self.assertTrue(frappe.get_meta("Estimate SKU").has_field(f),
+                            f"missing Estimate SKU.{f}")
+        for f in ("work_scope", "total_new_work", "total_repair"):
+            self.assertTrue(est.has_field(f), f"missing Estimate.{f}")
+        for f in ("repair_visit_charge", "markup_repair"):
+            self.assertTrue(frappe.get_meta("Estimate Settings").has_field(f),
+                            f"missing Estimate Settings.{f}")
         for t in ("Estimate SKU Decor", "Estimate SKU Decor Edge"):
             self.assertTrue(frappe.get_meta(t).has_field("decor"),
                             f"missing {t}.decor link")

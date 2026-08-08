@@ -11,6 +11,7 @@
   "project",
   "customer",
   "column_break_header",
+  "work_scope",
   "estimation_mode",
   "quote_number",
   "designed_by",
@@ -44,6 +45,8 @@
   "total_design",
   "column_break_totals",
   "total_internal",
+  "total_new_work",
+  "total_repair",
   "total_client",
   "gst_pct",
   "total_gst",
@@ -88,6 +91,16 @@
   {
    "fieldname": "column_break_header",
    "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "work_scope",
+   "fieldtype": "Select",
+   "label": "Work Scope",
+   "options": "\nNew Work\nRepair\nNew + Repair",
+   "read_only": 1,
+   "bold": 1,
+   "in_standard_filter": 1,
+   "description": "Derived from the SKUs. A client who calls for repair often adds new work — one estimate can carry both, and the two are subtotalled separately all the way to the quotation."
   },
   {
    "fieldname": "estimation_mode",
@@ -257,6 +270,18 @@
    "read_only": 1,
    "bold": 1,
    "print_hide": 1
+  },
+  {
+   "fieldname": "total_new_work",
+   "fieldtype": "Currency",
+   "label": "New Work — to Client",
+   "read_only": 1
+  },
+  {
+   "fieldname": "total_repair",
+   "fieldtype": "Currency",
+   "label": "Repair — to Client",
+   "read_only": 1
   },
   {
    "fieldname": "total_client",

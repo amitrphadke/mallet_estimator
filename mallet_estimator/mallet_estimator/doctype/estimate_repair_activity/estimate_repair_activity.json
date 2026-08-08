@@ -1,0 +1,203 @@
+{
+ "actions": [],
+ "creation": "2026-08-08 00:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "room",
+  "target",
+  "activity",
+  "description",
+  "status",
+  "col_qty",
+  "qty",
+  "uom",
+  "carpenters",
+  "carp_min",
+  "helpers",
+  "helper_min",
+  "carp_total",
+  "helper_total",
+  "material_section",
+  "material_item",
+  "material_note",
+  "col_material",
+  "material_qty",
+  "material_uom",
+  "material_amount",
+  "meta_section",
+  "workstation",
+  "remarks"
+ ],
+ "fields": [
+  {
+   "fieldname": "room",
+   "fieldtype": "Data",
+   "label": "Room",
+   "in_list_view": 1,
+   "columns": 1,
+   "description": "Free text — a repair job visits rooms the project master may not know about (Parking, Terrace)."
+  },
+  {
+   "fieldname": "target",
+   "fieldtype": "Data",
+   "label": "Item / Location",
+   "in_list_view": 1,
+   "columns": 1,
+   "description": "The thing being repaired, as the client would name it: Main Door, Kitchen Trolly Door."
+  },
+  {
+   "fieldname": "activity",
+   "fieldtype": "Data",
+   "label": "Activity",
+   "reqd": 1,
+   "in_list_view": 1,
+   "columns": 2
+  },
+  {
+   "fieldname": "description",
+   "fieldtype": "Small Text",
+   "label": "Steps",
+   "description": "What the carpenter actually does. This is the SCOPE the client sees."
+  },
+  {
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "label": "Status",
+   "options": "Quoted\nTo Inspect",
+   "default": "Quoted",
+   "in_list_view": 1,
+   "columns": 1,
+   "description": "'To Inspect' keeps the row's provisional effort but excludes it from the firm total — it prints as scope, subject to a site visit."
+  },
+  {
+   "fieldname": "col_qty",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "qty",
+   "fieldtype": "Float",
+   "label": "Qty",
+   "default": "1",
+   "in_list_view": 1,
+   "columns": 1,
+   "precision": "2"
+  },
+  {
+   "fieldname": "uom",
+   "fieldtype": "Link",
+   "label": "UOM",
+   "options": "UOM"
+  },
+  {
+   "fieldname": "carpenters",
+   "fieldtype": "Int",
+   "label": "Carpenters",
+   "default": "1"
+  },
+  {
+   "fieldname": "carp_min",
+   "fieldtype": "Float",
+   "label": "Carp Min / Unit",
+   "in_list_view": 1,
+   "columns": 1,
+   "precision": "2"
+  },
+  {
+   "fieldname": "helpers",
+   "fieldtype": "Int",
+   "label": "Helpers"
+  },
+  {
+   "fieldname": "helper_min",
+   "fieldtype": "Float",
+   "label": "Helper Min / Unit",
+   "in_list_view": 1,
+   "columns": 1,
+   "precision": "2"
+  },
+  {
+   "fieldname": "carp_total",
+   "fieldtype": "Float",
+   "label": "Carp Minutes",
+   "read_only": 1,
+   "precision": "2",
+   "description": "Qty x Carpenters x Min/Unit — computed, never typed."
+  },
+  {
+   "fieldname": "helper_total",
+   "fieldtype": "Float",
+   "label": "Helper Minutes",
+   "read_only": 1,
+   "precision": "2"
+  },
+  {
+   "fieldname": "material_section",
+   "fieldtype": "Section Break",
+   "label": "Material"
+  },
+  {
+   "fieldname": "material_item",
+   "fieldtype": "Link",
+   "label": "Item",
+   "options": "Item",
+   "description": "Link it once the material is a stocked Item; the estimate then prices it from the price list like any other line."
+  },
+  {
+   "fieldname": "material_note",
+   "fieldtype": "Data",
+   "label": "Material",
+   "in_list_view": 1,
+   "columns": 2,
+   "description": "As written on the sheet — 'Fevicol / Wooddust', 'Door Lock - 1 nos'."
+  },
+  {
+   "fieldname": "col_material",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "material_qty",
+   "fieldtype": "Float",
+   "label": "Material Qty",
+   "precision": "2"
+  },
+  {
+   "fieldname": "material_uom",
+   "fieldtype": "Link",
+   "label": "Material UOM",
+   "options": "UOM"
+  },
+  {
+   "fieldname": "material_amount",
+   "fieldtype": "Currency",
+   "label": "Assumed Amount",
+   "description": "Type this only when the material has no Item yet — it is flagged as not price-list backed."
+  },
+  {
+   "fieldname": "meta_section",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "workstation",
+   "fieldtype": "Data",
+   "label": "Where",
+   "default": "On-Site"
+  },
+  {
+   "fieldname": "remarks",
+   "fieldtype": "Data",
+   "label": "Remarks"
+  }
+ ],
+ "istable": 1,
+ "links": [],
+ "modified": "2026-08-08 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Mallet Estimator",
+ "name": "Estimate Repair Activity",
+ "owner": "Administrator",
+ "permissions": [],
+ "sort_field": "modified",
+ "sort_order": "DESC"
+}

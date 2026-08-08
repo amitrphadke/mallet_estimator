@@ -30,6 +30,9 @@
   "column_break_transport",
   "trip_rate_client_hw",
   "trip_rate_outward",
+  "repair_section",
+  "repair_visit_charge",
+  "markup_repair",
   "calculator_section",
   "cost_calculator_html",
   "markup_section",
@@ -191,6 +194,24 @@
    "label": "Outward Delivery Trip",
    "default": "0",
    "description": "(### sensitive — key the real value here on the site; never stored in the repo.)"
+  },
+  {
+   "fieldname": "repair_section",
+   "fieldtype": "Section Break",
+   "label": "Repair Work",
+   "description": "Policy for repair jobs. Both values ship as 0 — key the real ones here; they never live in the code repo."
+  },
+  {
+   "fieldname": "repair_visit_charge",
+   "fieldtype": "Currency",
+   "label": "Site Visit Charge (per day / trip)",
+   "description": "The FLOOR price of going out. A repair is billed at the greater of its labour and this day rate x visits, so the charge stops applying once a full day of carpenter and helper has been worked."
+  },
+  {
+   "fieldname": "markup_repair",
+   "fieldtype": "Percent",
+   "label": "Repair labour margin %",
+   "description": "Margin on repair labour. Repair carries more risk per minute than factory work — you find things once you open it up."
   },
   {
    "fieldname": "calculator_section",

@@ -109,7 +109,17 @@ class EstimateSKU(Document):
             if url and not frappe.db.exists("File", {"file_url": url}):
                 self.set(f, None)
 
+    def is_repair(self):
+        return (self.get("work_type") or "New Work") == "Repair"
+
     def validate(self):
+        # Repair is a different UNIT of estimation, not a variant of new work:
+        # activities on things that already exist, no parts, no nesting, no
+        # décor map, no factory. It gets its own short pipeline rather than
+        # threading a dozen `if repair` branches through the article one.
+        if self.is_repair():
+            self.validate_repair()
+            return
         self.wipe_on_cleared_files()
         self.ensure_steps()
         self.ensure_design_steps()
@@ -126,6 +136,140 @@ class EstimateSKU(Document):
         self.derive_joinery()
         self.compute_costs()
         self.build_cost_breakup()
+
+    # --- Repair (R1) --------------------------------------------------------
+
+    def validate_repair(self):
+        """The repair pipeline. Short by design: import the sheet if one is
+        attached, turn the activity rows into ordinary material lines so the
+        whole pricing chain (price list → discount → tax → landed) applies
+        unchanged, then cost the labour."""
+        self.import_repair_csv()
+        self.compute_repair_rows()
+        self.derive_repair_materials()
+        self.refresh_material_rates()
+        self.price_material_lines()
+        self.compute_code()
+        self.compute_repair_costs()
+        self.build_cost_breakup()
+
+    def import_repair_csv(self):
+        """Read the shop's repair estimation sheet into the activity table.
+        Same contract as the OCL import: on save, when the file is new."""
+        from mallet_estimator import repair_csv as R
+        if not self.get("repair_csv") or self._frozen():
+            return
+        if self.get("repair_activities") and not self.has_value_changed("repair_csv"):
+            return
+        content = _file_content(self.repair_csv)
+        if isinstance(content, bytes):
+            content = content.decode("utf-8", "ignore")
+        activities, warnings = R.parse_repair_csv(content or "")
+        if not activities:
+            frappe.throw(_("No activities found in the CSV.<br>{0}").format("<br>".join(warnings)))
+        self.set("repair_activities", [])
+        for a in activities:
+            item = a.get("material_item")
+            self.append("repair_activities", {
+                "room": a["room"], "target": a["target"], "activity": a["activity"],
+                "description": a["description"], "status": a["status"],
+                "qty": a["qty"], "uom": _uom_or_none(a.get("material_uom")),
+                "carpenters": a["carpenters"], "carp_min": a["carp_min"],
+                "helpers": a["helpers"], "helper_min": a["helper_min"],
+                "material_note": a["material_note"],
+                "material_item": item if item and frappe.db.exists("Item", item) else None,
+                "material_qty": a["qty"], "material_uom": _uom_or_none(a.get("material_uom")),
+                "workstation": a["workstation"], "remarks": a["remarks"],
+            })
+        if warnings:
+            frappe.msgprint(
+                "<br>".join(frappe.utils.escape_html(w) for w in warnings),
+                title=_("Repair sheet — read this"), indicator="orange")
+
+    def compute_repair_rows(self):
+        """Row minutes are COMPUTED (qty × crew × min/unit), never typed — a
+        hand-maintained total is the thing that goes stale first."""
+        from mallet_estimator.estimator import repair_row_minutes
+        for row in self.get("repair_activities") or []:
+            row.carp_total, row.helper_total = repair_row_minutes(row)
+
+    def derive_repair_materials(self):
+        """Activity material → ordinary material lines, so repair inherits the
+        whole pricing chain: price-list rate, per-line discount, tax policy vs
+        applied, landed amount. Rows the user added by hand are kept."""
+        manual = [m.as_dict() for m in (self.get("materials") or []) if m.get("is_manual")]
+        self.set("materials", [])
+        for row in self.get("repair_activities") or []:
+            note = (row.get("material_note") or "").strip()
+            if not note and not row.get("material_item"):
+                continue
+            qty = float(row.get("material_qty") or 0) or float(row.get("qty") or 0) or 1
+            if row.get("material_item"):
+                rate = inventory.material_rate(row.material_item)[0]
+                self.append("materials", {
+                    "item": row.material_item, "material": row.material_item,
+                    "description": f"{row.activity} — {note or row.material_item}"[:140],
+                    "qty": qty, "uom": row.get("material_uom"),
+                    "unit_cost": rate, "line_cost": qty * rate,
+                })
+            else:
+                # No Item yet: the estimator types what it will cost. Flagged as
+                # manual so nothing pretends this came off the price list.
+                amount = float(row.get("material_amount") or 0)
+                self.append("materials", {
+                    "material": note,
+                    "description": f"{row.activity} — {note}"[:140],
+                    "qty": qty, "uom": row.get("material_uom"),
+                    "unit_cost": (amount / qty) if qty else 0,
+                    "line_cost": amount, "is_manual": 1,
+                })
+        for m in manual:
+            self.append("materials", {
+                "item": m.get("item"), "material": m.get("material"),
+                "description": m.get("description"), "qty": m.get("qty") or 0,
+                "uom": m.get("uom"), "unit_cost": m.get("unit_cost") or 0,
+                "line_cost": (m.get("qty") or 0) * (m.get("unit_cost") or 0),
+                "customer_supplied": m.get("customer_supplied") or 0, "is_manual": 1,
+            })
+
+    def compute_repair_costs(self):
+        """Repair cost = material (through the normal chain) + labour, where
+        labour is billed at the GREATER of the wages-plus-margin and the site
+        visit floor. No factory overhead: nothing here happens in the factory."""
+        from mallet_estimator.estimator import calc_repair
+        settings = frappe.get_single("Estimate Settings")
+        markup = (float(self.get("margin_labor") or 0)
+                  if self.get("use_custom_margins") else None)
+        r = calc_repair(self.get("repair_activities"), settings, markup_pct=markup,
+                        visits=self.get("repair_visits"))
+        self._repair = r
+        material_cost = sum(float(m.line_cost or 0) for m in (self.materials or []))
+        mat_markup = (float(self.get("margin_material") or 0)
+                      if self.get("use_custom_margins")
+                      else float(settings.get("markup_material") or 0))
+        client_material = material_cost * (1 + mat_markup / 100.0)
+        values = {
+            "material_cost": material_cost,
+            "labor_cost": r["labor_cost"],
+            "machine_cost": 0, "rent_cost": 0, "overhead_cost": 0,
+            "design_cost": 0, "joinery_cost": 0, "transport_cost": 0,
+            "carp_min_total": r["carp_min"], "helper_min_total": r["helper_min"],
+            "repair_labor_cost": r["labor_cost"],
+            "repair_visit_amount": r["visit_amount"],
+            "repair_to_inspect": r["to_inspect"],
+            "client_repair": r["client_repair"],
+            "client_material": client_material,
+            "client_design_exec": r["client_repair"],
+            "internal_cost": material_cost + r["labor_cost"],
+            "client_total": client_material + r["client_repair"],
+            "est_days": round(r["est_days"], 1),
+        }
+        for k, v in values.items():
+            if self.meta.has_field(k):
+                self.set(k, v)
+        if not self.get("repair_visits"):
+            if self.meta.has_field("repair_visits"):
+                self.repair_visits = r["visits"]
 
     def pull_decor_masters(self):
         """A Décor Slots row can simply POINT at a Mallet Decor master (search
@@ -1463,6 +1607,13 @@ class EstimateSKU(Document):
             target = item.name
         # persist the link without re-triggering validate/on_update
         self.db_set("item", target, update_modified=False)
+
+
+def _uom_or_none(name):
+    """A UOM typed on the sheet ('Nos', 'Cubic Feet') may not exist as a master
+    — never fail an import over a unit label."""
+    name = (name or "").strip()
+    return name if name and frappe.db.exists("UOM", name) else None
 
 
 def _file_content(file_url):

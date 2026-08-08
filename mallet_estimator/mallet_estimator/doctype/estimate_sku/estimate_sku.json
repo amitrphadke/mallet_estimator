@@ -31,6 +31,7 @@
   "views_images",
   "material_section",
   "estimation_mode",
+  "work_type",
   "parts_csv",
   "estimate_pdf",
   "partlist_pdf",
@@ -53,6 +54,16 @@
   "execution_variance",
   "parts_section",
   "parts",
+  "repair_section",
+  "repair_csv",
+  "repair_visits",
+  "repair_activities",
+  "repair_totals_section",
+  "repair_labor_cost",
+  "repair_visit_amount",
+  "column_break_repair",
+  "client_repair",
+  "repair_to_inspect",
   "labor_section",
   "labor",
   "carp_min_total",
@@ -334,6 +345,17 @@
    "hidden": 1
   },
   {
+   "fieldname": "work_type",
+   "fieldtype": "Select",
+   "label": "Work Type",
+   "options": "New Work\nRepair",
+   "default": "New Work",
+   "bold": 1,
+   "in_standard_filter": 1,
+   "allow_in_quick_entry": 1,
+   "description": "New Work builds an article from its parts. Repair prices ACTIVITIES on things that already exist in the client's home — no parts, no nesting, and the labour is the cost."
+  },
+  {
    "fieldname": "parts_csv",
    "fieldtype": "Attach",
    "label": "OpenCutList Part List CSV",
@@ -347,6 +369,66 @@
    "label": "Parts",
    "options": "Estimate Part",
    "hidden": 1
+  },
+  {
+   "fieldname": "repair_section",
+   "fieldtype": "Section Break",
+   "label": "Repair Activities",
+   "depends_on": "eval:doc.work_type=='Repair'"
+  },
+  {
+   "fieldname": "repair_csv",
+   "fieldtype": "Attach",
+   "label": "Repair Activity CSV",
+   "description": "The shop's own repair estimation sheet. Imported on save: activities, crew minutes and material notes. Parsing stops at the TOTALS row — anything below it is new-work material and is left out."
+  },
+  {
+   "fieldname": "repair_visits",
+   "fieldtype": "Int",
+   "label": "Visits (days on site)",
+   "description": "Blank = derived from the effort (a day is 360 productive minutes). Set it when the job is spread over more trips than its minutes imply — two half-days a week apart is two visits."
+  },
+  {
+   "fieldname": "repair_activities",
+   "fieldtype": "Table",
+   "label": "Activities",
+   "options": "Estimate Repair Activity"
+  },
+  {
+   "fieldname": "repair_totals_section",
+   "fieldtype": "Section Break",
+   "label": "Repair Cost",
+   "depends_on": "eval:doc.work_type=='Repair'"
+  },
+  {
+   "fieldname": "repair_labor_cost",
+   "fieldtype": "Currency",
+   "label": "Repair Labour (cost)",
+   "read_only": 1
+  },
+  {
+   "fieldname": "repair_visit_amount",
+   "fieldtype": "Currency",
+   "label": "Visit Charge (floor)",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_repair",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "client_repair",
+   "fieldtype": "Currency",
+   "label": "Repair — to Client",
+   "read_only": 1,
+   "bold": 1
+  },
+  {
+   "fieldname": "repair_to_inspect",
+   "fieldtype": "Int",
+   "label": "Rows awaiting inspection",
+   "read_only": 1,
+   "description": "Quoted as scope only — their effort is held out of the firm total until someone looks."
   },
   {
    "fieldname": "labor_section",

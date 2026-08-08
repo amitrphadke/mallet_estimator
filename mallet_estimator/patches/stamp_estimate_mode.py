@@ -31,17 +31,19 @@ def execute():
                 "Execution Estimate SKU",
                 filters={"parent": name, "parenttype": "Estimate", "parentfield": "skus"},
                 fields=["name", "estimate_sku"])
-            found = set()
+            found, work = set(), set()
             for r in rows:
                 if not r.estimate_sku:
                     continue
                 sku = frappe.db.get_value(
                     "Estimate SKU", r.estimate_sku,
                     ["estimation_mode", "parts_csv", "estimate_pdf", "views_pdf",
-                     "import_drivers"], as_dict=True)
+                     "import_drivers", "work_type"], as_dict=True)
                 if not sku:
                     continue
-                found.add(sku.estimation_mode or PDF_MODE)
+                work.add(sku.get("work_type") or "New Work")
+                if (sku.get("work_type") or "New Work") != "Repair":
+                    found.add(sku.estimation_mode or PDF_MODE)
                 if row_cols:
                     frappe.db.set_value("Execution Estimate SKU", r.name,
                                         _row_values(sku, row_cols), update_modified=False)
@@ -49,10 +51,24 @@ def execute():
             # blank rather than claim one it does not have; the next save will
             # refuse the mix and force the user to split it.
             mode = found.pop() if len(found) == 1 else ""
-            frappe.db.set_value("Estimate", name, "estimation_mode", mode, update_modified=False)
+            values = {"estimation_mode": mode}
+            if frappe.db.has_column("Estimate", "work_scope"):
+                values["work_scope"] = _scope(work)
+            frappe.db.set_value("Estimate", name, values, update_modified=False)
         except Exception:
             frappe.log_error(frappe.get_traceback(), f"stamp estimate mode {name}")
     frappe.db.commit()
+
+
+def _scope(work_types):
+    """Every estimate that existed before repair work did is New Work."""
+    if not work_types:
+        return ""
+    if work_types == {"Repair"}:
+        return "Repair"
+    if "Repair" in work_types:
+        return "New + Repair"
+    return "New Work"
 
 
 def _row_values(sku, cols):
