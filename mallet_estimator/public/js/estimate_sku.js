@@ -51,15 +51,24 @@ frappe.ui.form.on("Estimate SKU", {
     // opened, so changing a workstation's operating costs is reflected without a
     // manual re-save. Only when the form has no unsaved edits; reloads once if
     // anything changed (then stabilises — no loop).
-    if (!frm.is_new() && !frm.is_dirty() && frm.__repriced !== frm.doc.modified) {
+    // Once per form load — NOT keyed on doc.modified, which was the bug: the
+    // check itself used to save, which bumped modified, which reset the latch.
+    if (!frm.is_new() && !frm.is_dirty() && !frm.__rate_checked) {
       // Latch on the doc's own modified stamp: one reprice-and-reload per
       // version of the document, never a second for the same one. A guard is
       // needed rather than trusting recompute to report "no change" on the
       // next pass — that assumption only has to be wrong once (a value that
       // recomputes but is not persisted) for the form to reload forever.
-      frm.__repriced = frm.doc.modified;
+      frm.__rate_checked = true;
       frm.call("recompute").then((r) => {
-        if (r && r.message && r.message.changed) frm.reload_doc();
+        // recompute no longer writes, so there is nothing to reload. If rates
+        // have moved since the last save, say so and let the user press Save.
+        if (r && r.message && r.message.stale) {
+          frm.dashboard.set_headline(
+            __("Prices or standard times have changed since this SKU was last saved — press Save to re-price it."),
+            "orange"
+          );
+        }
       });
     }
     // Pull every step's Min/Unit + Workstation from its Operation master (after you

@@ -1571,20 +1571,34 @@ class EstimateSKU(Document):
         refresh each step's master Std Time) and save only if something actually
         moved. Called on form load so Phase Cost / Std (master) never show a value
         that pre-dates a workstation-rate or Operation-time change."""
-        before = self.client_total or 0
+        # NEVER writes. Opening a form must not modify the database — and this
+        # is where the reload loop came from: recompute ran refresh_material_rates
+        # + compute_costs and compared the result against the stored values, but
+        # a SAVE runs the FULL validate pipeline (price_material_lines included),
+        # so the two computations could not agree. Every open therefore saw a
+        # "change", saved, bumped `modified`, and the reload that followed did it
+        # all again. Comparing a partial recomputation against the product of a
+        # complete one can never converge.
+        #
+        # So it reports instead: the caller shows a "rates have moved, save to
+        # re-price" hint and the user decides. A rate change is worth knowing
+        # about; it is not worth a silent write behind their back.
+        before = float(self.client_total or 0)
         before_days = float(self.get("est_days") or 0)
         before_std = [row.std_min for row in (self.labor or [])]
         before_rates = [row.unit_cost for row in (self.materials or [])]
         self.refresh_material_rates()
+        self.price_material_lines()
         self.compute_costs()
-        after_std = [row.std_min for row in (self.labor or [])]
-        after_rates = [row.unit_cost for row in (self.materials or [])]
-        if abs((self.client_total or 0) - before) > 0.005 or before_std != after_std \
-                or before_rates != after_rates \
-                or abs(float(self.get("est_days") or 0) - before_days) > 0.05:
-            self.save(ignore_permissions=True)
-            return {"changed": True, "client_total": self.client_total}
-        return {"changed": False, "client_total": self.client_total}
+        moved = (
+            abs(float(self.client_total or 0) - before) > 0.005
+            or before_std != [row.std_min for row in (self.labor or [])]
+            or before_rates != [row.unit_cost for row in (self.materials or [])]
+            or abs(float(self.get("est_days") or 0) - before_days) > 0.05
+        )
+        # the in-memory changes are discarded with this document object
+        return {"changed": False, "stale": bool(moved),
+                "client_total": float(self.client_total or 0)}
 
     @frappe.whitelist()
     def refresh_rates(self):

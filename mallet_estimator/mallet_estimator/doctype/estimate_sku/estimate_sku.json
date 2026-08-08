@@ -605,25 +605,23 @@
   {
    "fieldname": "decor_section",
    "fieldtype": "Section Break",
-   "label": "Décor Map — laminates first, then edge bands",
+   "label": "Décor Slots",
    "collapsible": 0,
-   "hidden": 1
+   "description": "Type the brand / code / name here, or pick a Mallet Decor master on the material line itself — either resolves the generic slot codes to real items. Hit Apply Décor Map to see how many lines are still generic."
   },
   {
    "fieldname": "sku_decors",
    "fieldtype": "Table",
    "label": "Laminates (a, b …)",
    "options": "Estimate SKU Decor",
-   "description": "MASTER map: what each laminate slot letter means for THIS SKU. Sheet is always 1220 x 2440 — only thickness varies. Edit + Save re-points the material lines.",
-   "hidden": 1
+   "description": "MASTER map: what each laminate slot letter means for THIS SKU. Sheet is always 1220 x 2440 — only thickness varies. Edit + Save re-points the material lines."
   },
   {
    "fieldname": "sku_decor_edges",
    "fieldtype": "Table",
    "label": "Edge Bands",
    "options": "Estimate SKU Decor Edge",
-   "description": "Edge-band slots. Defaults: 22 x 0.8 mm (50 x 1 mm when ply is thicker than 18 mm).",
-   "hidden": 1
+   "description": "Edge-band slots. Defaults: 22 x 0.8 mm (50 x 1 mm when ply is thicker than 18 mm)."
   },
   {
    "fieldname": "margins_section",
@@ -766,8 +764,7 @@
    "fieldname": "apply_decor_map_btn",
    "fieldtype": "Button",
    "label": "Apply Décor Map",
-   "description": "Saves and re-points the laminate/edge material lines at the mapped décors — check the Materials table after.",
-   "hidden": 1
+   "description": "Saves and re-points the laminate/edge material lines at the mapped décors — check the Materials table after."
   },
   {
    "fieldname": "material_discount_total",

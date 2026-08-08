@@ -172,6 +172,13 @@ mallet.MaterialBoard = class MaterialBoard {
   decor_cell(line, field, domain) {
     const options = (this.data.decor_options || {})[domain] || [];
     const current = line[field] || "";
+    // No masters to pick from — an empty dropdown reads as a broken feature.
+    // Point at the slot table, which is the path that always works.
+    if (!options.length && !current) {
+      return `<td class="small text-muted" title="${esc(
+        __("No Mallet Decor master of this kind exists yet. Use the Décor Slots table below, or create a Mallet Decor record."))}">${
+        esc(__("— use Décor Slots —"))}</td>`;
+    }
     if (!this.editable || this.data.frozen) {
       const hit = options.find((o) => o.value === current);
       return `<td>${esc(hit ? hit.label : current)}</td>`;
