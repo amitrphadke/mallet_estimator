@@ -356,32 +356,24 @@ def initials(text):
     return "".join(w[0] for w in name_words(text)).upper()
 
 
-# An article abbreviation shorter than three letters stops being a name and
-# starts being a puzzle — "Wardrobe-Left" as "WL" tells nobody anything. So
-# initials are used only when there are enough of them; below that the FIRST
-# word gives up three letters and the remaining words add their initials.
-MIN_ARTICLE_ABBR = 3
+# Initials alone stop being a name and start being a puzzle — "Base Cabinet"
+# as "BC" tells nobody anything. Every word keeps its first three letters and
+# the words stay separated, so the abbreviation still reads as the name it
+# came from: Base Cabinet → BAS_CAB, Wardrobe-Left → WAR_LEF.
+ABBR_LETTERS_PER_WORD = 3
 
 
 def abbr(text):
-    """The article's short form: initials when the name has enough words, its
-    first three letters when it does not, and never fewer than three
-    characters where the name has three to give.
+    """The article's short form: each word gives up to its first three
+    letters, rejoined with underscores.
+
+    A word with fewer than three letters gives what it has — nothing can
+    invent a third character out of "TV".
 
     `MB_WAR_CSV` used to yield `MB_` — the whole name read as ONE word, so the
     first three characters included the separator and the article itself never
     reached the code."""
-    words = name_words(text)
-    if not words:
-        return ""
-    head = "".join(w[0] for w in words).upper()
-    if len(head) >= MIN_ARTICLE_ABBR:
-        return head
-    # Not enough initials: spell out the first word, then keep the rest as
-    # initials so a two-word name stays distinguishable (Wardrobe-Left → WARL,
-    # Wardrobe-Right → WARR).
-    out = words[0][:MIN_ARTICLE_ABBR].upper() + "".join(w[0] for w in words[1:]).upper()
-    return out
+    return "_".join(w[:ABBR_LETTERS_PER_WORD].upper() for w in name_words(text))
 
 
 def customer_initials(customer_name):

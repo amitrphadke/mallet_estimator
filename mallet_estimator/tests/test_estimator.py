@@ -470,35 +470,41 @@ class TestNameSplitting(unittest.TestCase):
     to the code generator — the grammar must not depend on which key someone
     happened to press."""
 
-    def test_an_abbreviation_never_drops_below_three_characters(self):
-        # "WL" is not a name, it is a puzzle — the first word gives up three
-        # letters and the rest stay initials, so siblings remain distinct
-        self.assertEqual(E.abbr("Wardrobe-Left"), "WARL")
-        self.assertEqual(E.abbr("Wardrobe-Right"), "WARR")
-        self.assertEqual(E.abbr("Loft"), "LOF")
+    def test_every_word_keeps_three_letters_and_stays_a_separate_word(self):
+        # "BC" is not a name, it is a puzzle. Three letters per word, rejoined
+        # with underscores, so the abbreviation still reads as what it came from
+        self.assertEqual(E.abbr("Base Cabinet"), "BAS_CAB")
+        self.assertEqual(E.abbr("Study Table"), "STU_TAB")
+        self.assertEqual(E.abbr("Wardrobe-Left"), "WAR_LEF")
+        self.assertEqual(E.abbr("Wardrobe-Right"), "WAR_RIG")
 
-    def test_a_name_with_fewer_than_three_letters_gives_what_it_has(self):
+    def test_a_word_with_fewer_than_three_letters_gives_what_it_has(self):
         # nothing can invent a third character out of "TV"
         self.assertEqual(E.abbr("TV"), "TV")
-        self.assertEqual(E.abbr("TV Unit"), "TVU")
+        self.assertEqual(E.abbr("TV Unit"), "TV_UNI")
+        self.assertEqual(E.abbr("Wardrobe Option A"), "WAR_OPT_A")
 
     def test_all_three_separators_split_the_same(self):
         for name in ("Wardrobe Option A", "Wardrobe_Option_A", "Wardrobe-Option-A"):
-            self.assertEqual(E.abbr(name), "WOA", name)
+            self.assertEqual(E.abbr(name), "WAR_OPT_A", name)
             self.assertEqual(E.initials(name), "WOA", name)
 
     def test_a_single_word_takes_its_first_three_letters(self):
         self.assertEqual(E.abbr("Wardrobe"), "WAR")
+        self.assertEqual(E.abbr("Loft"), "LOF")
 
     def test_an_underscore_name_no_longer_swallows_the_separator(self):
         # MB_WAR_CSV read as ONE word gave "MB_" — the separator ended up IN
-        # the code and the article itself never appeared
-        self.assertEqual(E.abbr("MB_WAR_CSV"), "MWC")
-        self.assertNotIn("_", E.abbr("MB_WAR_CSV"))
+        # the code and the article itself never appeared. Read as three words
+        # each part survives, and no part is a bare separator.
+        self.assertEqual(E.abbr("MB_WAR_CSV"), "MB_WAR_CSV")
+        self.assertNotIn("__", E.abbr("MB_WAR_CSV"))
 
     def test_the_whole_code_reads_customer_room_article(self):
         self.assertEqual(E.sku_code("Yogesh Sahasrabudhe", "Master Bedroom", "Wardrobe"),
                          "YS_MB_WAR")
+        self.assertEqual(E.sku_code("Yogesh Sahasrabudhe", "Kitchen", "Base Cabinet"),
+                         "YS_K_BAS_CAB")
 
     def test_empty_and_separator_only_names_are_survivable(self):
         for junk in ("", "   ", "___", "-", None):
