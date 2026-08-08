@@ -1,3 +1,4 @@
+import inspect
 import json
 
 import frappe
@@ -1716,22 +1717,27 @@ class EstimateSKU(Document):
             # ledger still says YS_MB_MB_. frappe.rename_doc re-points every
             # link (BOMs, prices, stock entries) as part of the rename.
             if self.item != code and not frappe.db.exists("Item", code):
+                stale = self.item
                 try:
-                    frappe.rename_doc("Item", self.item, code, force=True,
-                                      show_alert=False, ignore_permissions=True)
+                    frappe.rename_doc("Item", stale, code, **_rename_options())
                     self.item = code
+                    # rename_doc re-points the link columns in the database, but
+                    # this in-memory document was loaded before it ran — persist
+                    # the field so the doc a caller holds agrees with the row.
+                    self.db_set("item", code, update_modified=False)
                     frappe.msgprint(
                         _("ERPNext Item renamed to <b>{0}</b> to match the SKU code.").format(code),
                         indicator="blue", alert=True)
-                except Exception:
-                    # A rename can be refused (a submitted document may hold
-                    # it). Say so rather than leaving the mismatch unexplained.
-                    frappe.log_error(frappe.get_traceback(), f"rename item {self.item} -> {code}")
+                except Exception as e:
+                    # Say what actually went wrong. Guessing at the reason hid a
+                    # plain TypeError in this call behind "a submitted document
+                    # must be using it" for a whole evening.
+                    frappe.log_error(frappe.get_traceback(), f"rename item {stale} -> {code}")
                     frappe.msgprint(
                         _("The SKU code is now <b>{0}</b> but its ERPNext Item is still "
-                          "<b>{1}</b> — the rename was refused, most likely because a "
-                          "submitted document uses it. Rename it by hand if you need them to match.")
-                        .format(code, self.item), indicator="orange")
+                          "<b>{1}</b> — the rename failed: {2}. Rename it by hand if you "
+                          "need them to match.").format(code, stale, str(e) or type(e).__name__),
+                        indicator="orange")
             frappe.db.set_value("Item", self.item, {
                 "item_name": (self.article_name or code)[:140],
                 "standard_rate": self.client_total,
@@ -1766,6 +1772,20 @@ class EstimateSKU(Document):
             target = item.name
         # persist the link without re-triggering validate/on_update
         self.db_set("item", target, update_modified=False)
+
+
+def _rename_options():
+    """rename_doc's keyword list is not stable across Frappe versions — v16
+    dropped `ignore_permissions`, and passing it raised a TypeError that the
+    caller's `except` turned into a wrong explanation. Ask the function what it
+    accepts instead of assuming, the same way optional fields are guarded with
+    meta.has_field elsewhere."""
+    wanted = {"force": True, "show_alert": False, "ignore_permissions": True}
+    try:
+        accepted = set(inspect.signature(frappe.rename_doc).parameters)
+    except (TypeError, ValueError):
+        return {}
+    return {k: v for k, v in wanted.items() if k in accepted}
 
 
 def _uom_or_none(name):
