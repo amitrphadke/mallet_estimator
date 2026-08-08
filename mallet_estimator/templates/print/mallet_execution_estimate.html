@@ -35,6 +35,8 @@
   totals) — identical to the client estimate by design.</p>
 
   {% set ns = namespace(sr=0) %}
+  {% if p.rooms %}
+  {% if p.repair %}<h4>New Work</h4>{% endif %}
   <table>
     <thead><tr><th>Sr</th><th>SKU</th><th>Room</th><th>Item</th><th>Dimensions</th><th class="r">Sq ft</th><th class="r">Days</th><th class="r">₹ / sq ft</th><th class="r">Client Price</th></tr></thead>
     <tbody>
@@ -48,9 +50,62 @@
     {% endfor %}
     </tbody>
   </table>
+  {% endif %}
+
+  {# --- Repair work, shop copy: the job card for the visit. Effort per row is
+     what the client copy never carries — the crew needs it to plan the day. #}
+  {% if p.repair %}
+  {% for job in p.repair.jobs %}
+    <h4>Repair — {{ job.article or job.sku }}
+      <span class="muted">({{ job.visits }} visit{{ "s" if job.visits != 1 else "" }} ·
+      {{ "%.1f"|format(job.days) }} days · {{ "%g"|format(job.carp_min or 0) }} carp /
+      {{ "%g"|format(job.helper_min or 0) }} helper min · {{ money(job.price) }})</span></h4>
+    <table>
+      <thead><tr>
+        <th>Room</th><th>Item</th><th>Activity &amp; steps</th><th>Material</th>
+        <th class="r">Qty</th><th class="r">Crew</th>
+        <th class="r">Carp min</th><th class="r">Helper min</th><th>Remarks</th>
+      </tr></thead>
+      <tbody>
+      {% for a in job.scope %}
+        <tr>
+          <td>{{ a.room }}</td><td>{{ a.target }}</td>
+          <td>{{ a.activity }}{% if a.steps %}<div class="muted">{{ a.steps }}</div>{% endif %}</td>
+          <td>{{ a.material }}</td>
+          <td class="r">{{ "%g"|format(a.qty or 0) }}</td>
+          <td class="r">{{ a.carpenters }}C{% if a.helpers %} + {{ a.helpers }}H{% endif %}</td>
+          <td class="r">{{ "%g"|format(a.carp_min or 0) }}</td>
+          <td class="r">{{ "%g"|format(a.helper_min or 0) }}</td>
+          <td>{{ a.remarks }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  {% endfor %}
+  {% if p.repair.to_inspect %}
+    <h4>To inspect before quoting — carry no price</h4>
+    <table>
+      <thead><tr><th>Job</th><th>Room</th><th>Item</th><th>Activity</th>
+        <th class="r">Provisional carp min</th><th class="r">Provisional helper min</th></tr></thead>
+      <tbody>
+      {% for a in p.repair.to_inspect %}
+        <tr><td>{{ a.job }}</td><td>{{ a.room }}</td><td>{{ a.target }}</td>
+            <td>{{ a.activity }}{% if a.steps %}<div class="muted">{{ a.steps }}</div>{% endif %}</td>
+            <td class="r">{{ "%g"|format(a.carp_min or 0) }}</td>
+            <td class="r">{{ "%g"|format(a.helper_min or 0) }}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  {% endif %}
+  {% endif %}
+
   <table class="grand">
+    {% if p.rooms %}
     <tr><td>Rate / sq ft (pre-tax)</td><td class="r">{{ money(p.per_sqft_total) }}</td></tr>
     <tr><td>Estimated build time</td><td class="r">{{ "%.1f"|format(p.total_days) }} days</td></tr>
+    <tr><td>New work</td><td class="r">{{ money(p.new_work_subtotal) }}</td></tr>
+    {% endif %}
+    {% if p.repair %}<tr><td>Repair work</td><td class="r">{{ money(p.repair.total) }}</td></tr>{% endif %}
     <tr><td>Subtotal</td><td class="r">{{ money(p.subtotal) }}</td></tr>
     <tr><td>Transport</td><td class="r">{{ money(p.transport) }}</td></tr>
     <tr><td>GST {{ "%g"|format(p.gst_pct) }}%</td><td class="r">{{ money(p.gst) }}</td></tr>

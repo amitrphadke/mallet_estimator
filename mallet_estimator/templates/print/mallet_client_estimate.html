@@ -39,6 +39,8 @@
   </div>
 
   {% set ns = namespace(sr=0) %}
+  {% if p.rooms %}
+  {% if p.repair %}<h4>New Work</h4>{% endif %}
   <table>
     <thead><tr>
       <th>Sr No</th><th>Estimate SKU</th><th>Room</th><th>Item</th>
@@ -64,11 +66,71 @@
     {% endfor %}
     </tbody>
   </table>
+  {% endif %}
+
+  {# --- Repair work ------------------------------------------------------
+     Sold as an OUTCOME, not a rate card: one price per job, the activity
+     list as the scope that protects both sides, and the materials by name
+     only. Rows still to be inspected carry no price at all. #}
+  {% if p.repair %}
+  <h4>Repair Work</h4>
+  {% for job in p.repair.jobs %}
+    <table style="margin-bottom:6px">
+      <thead><tr>
+        <th>{{ job.article or job.sku }} — scope of work</th>
+        <th>Room</th><th>Item</th>
+      </tr></thead>
+      <tbody>
+      {% for a in job.scope %}
+        <tr>
+          <td>{{ a.activity }}{% if a.steps %}<div class="muted">{{ a.steps }}</div>{% endif %}</td>
+          <td>{{ a.room }}</td><td>{{ a.target }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% if job.materials %}
+      <p class="muted" style="margin:0 0 6px 0"><b>Material used:</b> {{ job.materials|join(", ") }}</p>
+    {% endif %}
+    <div class="grand"><table>
+      <tr class="tot">
+        <td>{{ job.article or job.sku }} — repair charges{% if job.visits %}
+          <span class="muted">({{ job.visits }} visit{{ "s" if job.visits > 1 else "" }} on site)</span>{% endif %}</td>
+        <td class="r">{{ money(job.price) }}</td>
+      </tr>
+    </table></div>
+  {% endfor %}
+
+  {% if p.repair.to_inspect %}
+    <h4 style="margin-top:10px">Subject to site inspection — not priced</h4>
+    <p class="muted">We need to look at these before we can quote them. They are listed
+    so the scope is on record; nothing below is included in the amounts above.</p>
+    <table>
+      <thead><tr><th>Work</th><th>Room</th><th>Item</th></tr></thead>
+      <tbody>
+      {% for a in p.repair.to_inspect %}
+        <tr>
+          <td>{{ a.activity }}{% if a.steps %}<div class="muted">{{ a.steps }}</div>{% endif %}</td>
+          <td>{{ a.room }}</td><td>{{ a.target }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  {% endif %}
+  {% endif %}
 
   <table class="grand">
-    <tr><td>Subtotal (all rooms{% if p.total_sqft %}, {{ "%.2f"|format(p.total_sqft) }} sq ft{% endif %})</td><td class="r">{{ money(p.subtotal) }}</td></tr>
+    {% if p.rooms %}
+    <tr><td>{% if p.repair %}New work{% else %}Subtotal (all rooms{% if p.total_sqft %}, {{ "%.2f"|format(p.total_sqft) }} sq ft{% endif %}){% endif %}</td><td class="r">{{ money(p.new_work_subtotal) }}</td></tr>
     <tr><td>Rate / sq ft (all rooms, pre-tax)</td><td class="r">{{ money(p.per_sqft_total) }}</td></tr>
     <tr><td>Estimated build time</td><td class="r">{{ "%.1f"|format(p.total_days) }} days</td></tr>
+    {% endif %}
+    {% if p.repair %}
+    <tr><td>Repair work</td><td class="r">{{ money(p.repair.total) }}</td></tr>
+    {% endif %}
+    {% if p.rooms and p.repair %}
+    <tr><td>Subtotal</td><td class="r">{{ money(p.subtotal) }}</td></tr>
+    {% endif %}
     <tr><td>Transport</td><td class="r">{{ money(p.transport) }}</td></tr>
     <tr><td>GST {{ "%g"|format(p.gst_pct) }}%</td><td class="r">{{ money(p.gst) }}</td></tr>
     <tr class="tot"><td>Grand Total</td><td class="r">{{ money(p.grand_total) }}</td></tr>

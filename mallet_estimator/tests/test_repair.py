@@ -167,5 +167,44 @@ class TestRepairSheet(unittest.TestCase):
         self.assertTrue(warnings)
 
 
+
+class TestRepairPrintLeakSafety(unittest.TestCase):
+    """The client copy sells an outcome; the shop copy plans a day. Effort per
+    activity belongs only on the second one.
+
+    The payload already withholds those keys unless kind == 'execution', so
+    this is the belt to that braces: if someone later adds the fields to the
+    client payload, the template must still not be rendering them."""
+
+    def _template(self, name):
+        import os
+        here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        with open(os.path.join(here, "templates", "print", name)) as fh:
+            return fh.read()
+
+    def test_client_copy_renders_no_effort_or_rates(self):
+        html = self._template("mallet_client_estimate.html")
+        repair = html[html.index("Repair Work"):]
+        for token in ("carp_min", "helper_min", "carpenters", "a.qty", "a.remarks"):
+            self.assertNotIn(token, repair,
+                             f"client repair section must not render {token}")
+
+    def test_client_copy_prints_scope_and_a_lump_sum(self):
+        html = self._template("mallet_client_estimate.html")
+        for token in ("job.scope", "job.materials", "job.price", "p.repair.to_inspect"):
+            self.assertIn(token, html, f"client repair section is missing {token}")
+
+    def test_shop_copy_carries_the_effort(self):
+        html = self._template("mallet_execution_estimate.html")
+        for token in ("a.carp_min", "a.helper_min", "a.carpenters", "job.visits"):
+            self.assertIn(token, html, f"execution repair section is missing {token}")
+
+    def test_both_copies_survive_an_estimate_with_no_new_work(self):
+        # a pure-repair estimate must not print an empty room table
+        for name in ("mallet_client_estimate.html", "mallet_execution_estimate.html"):
+            self.assertIn("{% if p.rooms %}", self._template(name),
+                          f"{name} renders the article table unconditionally")
+
+
 if __name__ == "__main__":
     unittest.main()

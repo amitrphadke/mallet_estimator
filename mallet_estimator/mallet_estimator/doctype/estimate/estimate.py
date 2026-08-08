@@ -919,6 +919,10 @@ class Estimate(Document):
             room_list.append(g)
         transport = float(self.total_transport or 0)
         subtotal = total_client * spread
+        # The article table and the repair section are priced apart, so the
+        # printed subtotals have to be too — a rate per sq ft that quietly
+        # included a door-lock visit would be nonsense.
+        new_work_subtotal = sum(g["subtotal"] for g in room_list)
         gst_pct = float(self.gst_pct if self.gst_pct is not None else 18)
         gst = (subtotal + transport) * gst_pct / 100.0
         status = {0: "DRAFT", 1: "APPROVED", 2: "CANCELLED"}.get(self.docstatus, "DRAFT")
@@ -928,16 +932,17 @@ class Estimate(Document):
             "kind": kind, "status": status, "is_draft": self.docstatus == 0,
             "rooms": room_list, "total_sqft": sum(g["sqft"] for g in room_list),
             "total_days": sum(g.get("days") or 0 for g in room_list),
-            "per_sqft_total": (subtotal / sum(g["sqft"] for g in room_list))
+            "per_sqft_total": (new_work_subtotal / sum(g["sqft"] for g in room_list))
                               if sum(g["sqft"] for g in room_list) else 0,
-            "subtotal": subtotal, "transport": transport,
+            "subtotal": subtotal, "new_work_subtotal": new_work_subtotal,
+            "transport": transport,
             "gst_pct": gst_pct, "gst": gst, "grand_total": subtotal + transport + gst,
             "assumed_rates": sorted(rate_rows.values(), key=lambda x: (x["bucket"], x["item"])),
             "gallery": gallery,
-            "repair": self.repair_print_block(repair_skus, spread),
+            "repair": self.repair_print_block(repair_skus, spread, kind),
         }
 
-    def repair_print_block(self, repair_skus, spread=1.0):
+    def repair_print_block(self, repair_skus, spread=1.0, kind="client"):
         """The repair section of a client print: ONE lump sum per job, the
         activity list as scope, and the material list WITHOUT prices.
 
@@ -948,7 +953,12 @@ class Estimate(Document):
         protects both sides, so it prints in full.
 
         Rows awaiting a site inspection print SEPARATELY and carry no money:
-        they are scope the client can see but has not been quoted."""
+        they are scope the client can see but has not been quoted.
+
+        The EXECUTION copy adds the crew and minutes per row — the shop needs
+        them to plan the visit. They are added only for that kind, so the
+        client payload stays leak-safe by construction rather than by the
+        template remembering not to render a field."""
         if not repair_skus:
             return None
         jobs, total, to_inspect = [], 0.0, []
@@ -960,10 +970,23 @@ class Estimate(Document):
                 entry = {"room": a.get("room") or "", "target": a.get("target") or "",
                          "activity": a.get("activity") or "",
                          "steps": a.get("description") or ""}
+                if kind == "execution":
+                    entry.update({
+                        "qty": float(a.get("qty") or 0),
+                        "carpenters": int(a.get("carpenters") or 0),
+                        "helpers": int(a.get("helpers") or 0),
+                        "carp_min": float(a.get("carp_total") or 0),
+                        "helper_min": float(a.get("helper_total") or 0),
+                        "material": a.get("material_note") or a.get("material_item") or "",
+                        "remarks": a.get("remarks") or "",
+                    })
                 if (a.get("status") or "") == "To Inspect":
                     to_inspect.append(dict(entry, job=s.article_name or s.name))
-                else:
-                    scope.append(entry)
+                    continue
+                scope.append(entry)
+                # Only QUOTED rows contribute material. An un-inspected row's
+                # material is "TBD" by definition — printing it as material we
+                # will use would promise something nobody has scoped.
                 note = (a.get("material_note") or a.get("material_item") or "").strip()
                 if note and note not in materials:
                     materials.append(note)
@@ -976,6 +999,8 @@ class Estimate(Document):
                 # names only — no quantities, no rates, no amounts
                 "materials": materials,
                 "price": price,
+                "carp_min": float(s.get("carp_min_total") or 0) if kind == "execution" else None,
+                "helper_min": float(s.get("helper_min_total") or 0) if kind == "execution" else None,
             })
         return {"jobs": jobs, "total": total, "to_inspect": to_inspect}
 
