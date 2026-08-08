@@ -17,6 +17,8 @@
   "line_cost",
   "tax_rate_policy",
   "tax_rate",
+  "tax_discount_pct",
+  "tax_saved",
   "tax_amount",
   "amount_with_tax",
   "customer_supplied",
@@ -81,17 +83,18 @@
    "fieldtype": "Currency",
    "in_list_view": 1,
    "columns": 1,
-   "label": "Rate",
+   "label": "MRP / Stock Rate",
    "read_only": 1,
-   "description": "Always the stock price-list rate (Estimation (Assumed)) — change it THERE; history stays in the price list."
+   "description": "The Estimation (Assumed) price-list rate — by house rule the MAX MRP across suppliers, kept PRE-tax. Read-only: the price list is the rate authority."
   },
   {
    "fieldname": "line_cost",
    "fieldtype": "Currency",
    "in_list_view": 1,
    "columns": 1,
-   "label": "Amount",
-   "read_only": 1
+   "label": "Taxable Amount",
+   "read_only": 1,
+   "description": "qty x net rate — the value tax is charged on."
   },
   {
    "fieldname": "customer_supplied",
@@ -173,7 +176,7 @@
   {
    "fieldname": "discount_amount",
    "fieldtype": "Currency",
-   "label": "Discount",
+   "label": "Discount ₹",
    "read_only": 1,
    "description": "qty x rate x disc% — what this line saves."
   },
@@ -182,35 +185,49 @@
    "fieldtype": "Currency",
    "label": "Net Rate",
    "read_only": 1,
-   "description": "Stock rate after this line's discount — what line_cost uses."
+   "description": "MRP after this line's discount."
   },
   {
    "fieldname": "tax_rate_policy",
    "fieldtype": "Percent",
-   "label": "Tax % (policy)",
+   "label": "Std Tax %",
    "read_only": 1,
-   "description": "The rate policy says applies to this item (Item.mallet_gst_pct, else the house GST%)."
+   "description": "The standard rate for this item (Item.mallet_gst_pct, else the house GST%)."
   },
   {
    "fieldname": "tax_rate",
    "fieldtype": "Percent",
-   "label": "Tax % (applied)",
-   "description": "Override for this line only. Blank = follow policy. Stock prices are kept PRE-tax, so this is the rate added on top."
+   "label": "Applied Tax %",
+   "description": "Override for this line only. Blank = the standard rate applies."
   },
   {
    "fieldname": "tax_amount",
    "fieldtype": "Currency",
-   "label": "Tax",
+   "label": "Tax ₹",
    "read_only": 1
   },
   {
    "fieldname": "amount_with_tax",
    "fieldtype": "Currency",
-   "label": "Amount incl. Tax",
+   "label": "Landed Amount",
    "read_only": 1,
    "in_list_view": 1,
    "columns": 1,
-   "description": "Discounted line amount + tax — the landed figure for this line."
+   "description": "Taxable amount + tax — what this line actually costs."
+  },
+  {
+   "fieldname": "tax_discount_pct",
+   "fieldtype": "Percent",
+   "label": "Tax Disc %",
+   "read_only": 1,
+   "description": "Standard rate minus the applied rate — how far this line sits below policy (negative = above)."
+  },
+  {
+   "fieldname": "tax_saved",
+   "fieldtype": "Currency",
+   "label": "Tax Saved ₹",
+   "read_only": 1,
+   "description": "What the tax difference is worth on this line's taxable amount."
   }
  ],
  "istable": 1,

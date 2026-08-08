@@ -293,5 +293,49 @@ class TestLineDiscountTax(unittest.TestCase):
         r = self._price(10, 100, 10, 18, client_supplied=True)
         self.assertEqual((r["line_cost"], r["discount"], r["tax"]), (0, 0, 0))
 
+
+class TestTaxDiscount(unittest.TestCase):
+    """The full line model: MRP -> discount -> taxable -> std tax vs applied
+    tax -> tax discount -> landed."""
+
+    @staticmethod
+    def _line(qty, mrp, disc_pct, std_pct, applied_pct=None):
+        net_rate = mrp * (1 - disc_pct / 100.0)
+        taxable = qty * net_rate
+        applied = std_pct if applied_pct is None else applied_pct
+        tax_disc_pct = std_pct - applied
+        return {
+            "net_rate": net_rate,
+            "discount": qty * mrp * disc_pct / 100.0,
+            "taxable": taxable,
+            "tax_discount_pct": tax_disc_pct,
+            "tax_saved": taxable * tax_disc_pct / 100.0,
+            "tax": taxable * applied / 100.0,
+            "landed": taxable + taxable * applied / 100.0,
+        }
+
+    def test_full_line_chain(self):
+        r = self._line(10, 100, 10, 18, 12)
+        self.assertAlmostEqual(r["net_rate"], 90)
+        self.assertAlmostEqual(r["discount"], 100)
+        self.assertAlmostEqual(r["taxable"], 900)
+        self.assertAlmostEqual(r["tax_discount_pct"], 6)
+        self.assertAlmostEqual(r["tax_saved"], 54)     # 900 x 6%
+        self.assertAlmostEqual(r["tax"], 108)          # 900 x 12%
+        self.assertAlmostEqual(r["landed"], 1008)
+        # policy tax would have been 162 — saved is exactly the difference
+        self.assertAlmostEqual(900 * 0.18 - r["tax"], r["tax_saved"])
+
+    def test_no_override_means_no_tax_discount(self):
+        r = self._line(10, 100, 0, 18)
+        self.assertAlmostEqual(r["tax_discount_pct"], 0)
+        self.assertAlmostEqual(r["tax_saved"], 0)
+        self.assertAlmostEqual(r["landed"], 1180)
+
+    def test_above_policy_rate_is_negative_saving(self):
+        r = self._line(1, 100, 0, 12, 18)
+        self.assertAlmostEqual(r["tax_discount_pct"], -6)
+        self.assertAlmostEqual(r["tax_saved"], -6)
+
 if __name__ == "__main__":
     unittest.main()

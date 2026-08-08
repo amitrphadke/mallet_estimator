@@ -177,7 +177,7 @@ class Estimate(Document):
                 rows.append(r)
         self.set("skus", rows)
         totals = dict(material=0, labor=0, overhead=0, design=0, internal=0, client=0,
-                      mat_discount=0, mat_tax=0)
+                      mat_discount=0, mat_tax=0, mat_tax_saved=0)
         # Client buckets are summed PER SKU (each at its own effective margins —
         # house default or SKU override) — never re-derived from house margins.
         self._client_buckets = dict(material=0.0, labor=0.0, design=0.0, overhead=0.0)
@@ -244,6 +244,7 @@ class Estimate(Document):
             totals["material"] += s.material_cost or 0
             totals["mat_discount"] += float(s.get("material_discount_total") or 0)
             totals["mat_tax"] += float(s.get("material_tax_total") or 0)
+            totals["mat_tax_saved"] += float(s.get("material_tax_saved_total") or 0)
             totals["labor"] += s.labor_cost or 0
             totals["overhead"] += s.overhead_cost or 0
             totals["design"] += s.design_cost or 0
@@ -259,6 +260,8 @@ class Estimate(Document):
             self.total_material_tax = totals["mat_tax"]
         if self.meta.has_field("total_material_with_tax"):
             self.total_material_with_tax = totals["material"] + totals["mat_tax"]
+        if self.meta.has_field("total_material_tax_saved"):
+            self.total_material_tax_saved = totals["mat_tax_saved"]
         self.total_labor = totals["labor"]
         self.total_overhead = totals["overhead"]
         self.total_design = totals["design"]
@@ -485,6 +488,8 @@ class Estimate(Document):
                  "amount": m.get("line_cost"),
                  "amount_with_tax": m.get("amount_with_tax"),
                  "tax": m.get("tax_amount"), "discount": m.get("discount_amount"),
+                 "tax_saved": m.get("tax_saved"), "std_tax": m.get("tax_rate_policy"),
+                 "applied_tax": m.get("tax_rate"),
                  "manual": bool(m.get("is_manual")),
                  "client_supplied": bool(m.get("customer_supplied"))}
                 for m in (doc.get("materials") or [])

@@ -433,9 +433,13 @@ function render_sku_materials(m) {
       <td>${esc(r.item || "")}</td>
       <td class="text-right">${format_number(r.qty || 0)}</td>
       <td>${esc(r.uom || "")}</td>
-      <td class="text-right">${format_currency(r.rate || 0)}</td>
+      <td class="text-right">${format_currency(r.rate || 0)}${
+        r.discount ? `<div class="small text-muted">− ${format_currency(r.discount)}</div>` : ""}</td>
       <td class="text-right">${format_currency(r.amount || 0)}</td>
-      <td class="text-right">${format_currency(r.amount_with_tax || 0)}</td>
+      <td class="text-right">${format_currency(r.tax || 0)}<div class="small text-muted">${
+        cstr(r.applied_tax || r.std_tax || 0)}%${
+        r.tax_saved ? " · −" + format_currency(r.tax_saved) : ""}</div></td>
+      <td class="text-right"><b>${format_currency(r.amount_with_tax || 0)}</b></td>
     </tr>`;
   }).join("");
   return `
@@ -449,8 +453,10 @@ function render_sku_materials(m) {
         <thead><tr>
           <th>${esc(__("Generic code"))}</th><th>${esc(__("Item"))}</th>
           <th class="text-right">${esc(__("Qty"))}</th><th>${esc(__("UOM"))}</th>
-          <th class="text-right">${esc(__("Rate"))}</th><th class="text-right">${esc(__("Amount"))}</th>
-          <th class="text-right">${esc(__("Incl. tax"))}</th>
+          <th class="text-right">${esc(__("MRP"))}</th>
+          <th class="text-right">${esc(__("Taxable"))}</th>
+          <th class="text-right">${esc(__("Tax"))}</th>
+          <th class="text-right">${esc(__("Landed"))}</th>
         </tr></thead>
         <tbody>${body}</tbody>
       </table>

@@ -32,6 +32,7 @@
   "totals_section",
   "total_material",
   "total_material_tax",
+  "total_material_tax_saved",
   "total_material_with_tax",
   "total_material_discount",
   "total_labor",
@@ -331,6 +332,13 @@
    "label": "Total Material incl. Tax",
    "read_only": 1,
    "description": "Every SKU's discounted material plus its tax — the landed material spend."
+  },
+  {
+   "fieldname": "total_material_tax_saved",
+   "fieldtype": "Currency",
+   "label": "Total Tax Saved",
+   "read_only": 1,
+   "description": "Every SKU's per-line tax differences vs the standard rate."
   }
  ],
  "links": [],

@@ -43,6 +43,7 @@
   "apply_decor_map_btn",
   "material_cost",
   "material_tax_total",
+  "material_tax_saved_total",
   "material_total_with_tax",
   "material_discount_total",
   "import_drivers",
@@ -653,6 +654,13 @@
    "label": "Material incl. Tax (this SKU)",
    "read_only": 1,
    "description": "Discounted material cost + its tax — what this SKU's material actually lands at."
+  },
+  {
+   "fieldname": "material_tax_saved_total",
+   "fieldtype": "Currency",
+   "label": "Tax Saved (this SKU)",
+   "read_only": 1,
+   "description": "Sum of the per-line tax differences vs the standard rate."
   }
  ],
  "links": [],
