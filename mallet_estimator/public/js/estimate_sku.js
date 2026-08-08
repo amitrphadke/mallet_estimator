@@ -53,13 +53,13 @@ frappe.ui.form.on("Estimate SKU", {
     // anything changed (then stabilises — no loop).
     // Once per form load — NOT keyed on doc.modified, which was the bug: the
     // check itself used to save, which bumped modified, which reset the latch.
-    if (!frm.is_new() && !frm.is_dirty() && !frm.__rate_checked) {
+    if (!frm.is_new() && !frm.is_dirty() && frm.__rate_checked !== frm.doc.name) {
       // Latch on the doc's own modified stamp: one reprice-and-reload per
       // version of the document, never a second for the same one. A guard is
       // needed rather than trusting recompute to report "no change" on the
       // next pass — that assumption only has to be wrong once (a value that
       // recomputes but is not persisted) for the form to reload forever.
-      frm.__rate_checked = true;
+      frm.__rate_checked = frm.doc.name;
       frm.call("recompute").then((r) => {
         // recompute no longer writes, so there is nothing to reload. If rates
         // have moved since the last save, say so and let the user press Save.
@@ -613,7 +613,14 @@ frappe.ui.form.on("Estimate SKU", {
 // Estimate screen, so the two views can never drift apart.
 function render_material_board(frm) {
   const field = frm.get_field("material_board_html");
-  if (!field || !field.$wrapper || frm.is_new()) return;
+  if (!field || !field.$wrapper) return;
+  // The form object is reused across routes, so a new SKU would otherwise
+  // open showing the last one's board. Clear before deciding anything else.
+  if (frm.is_new()) {
+    field.$wrapper.empty();
+    frm.__board = null;
+    return;
+  }
   const editable = frm.doc.docstatus === 0 && !frm.doc.rates_frozen;
   if (frm.__board && frm.__board.sku === frm.doc.name) {
     frm.__board.editable = editable;

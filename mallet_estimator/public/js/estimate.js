@@ -406,7 +406,19 @@ function render_sku_detail(frm) {
   const $sum = frm.get_field("sku_summary_html") && frm.get_field("sku_summary_html").$wrapper;
   const $mat = frm.get_field("sku_materials_html") && frm.get_field("sku_materials_html").$wrapper;
   if ($mat) $mat.empty();          // the board is not shown here any more
-  if (!$sum || frm.is_new()) return;
+  if (!$sum) return;
+  // Frappe REUSES one form object per doctype across routes, so both our
+  // selection state and the HTML we injected survive into the next document —
+  // which is how a brand-new estimate came up showing the last one's SKU. Any
+  // change of document resets both before anything else happens.
+  const key = frm.doc.name || "__new__";
+  if (frm.__rendered_for !== key) {
+    frm.__rendered_for = key;
+    frm.__selected_sku = null;
+    frm.__summary_for = null;
+    $sum.empty();
+  }
+  if (frm.is_new()) return;
   const rows = (frm.doc.skus || []).filter((r) => r.estimate_sku);
   if (!rows.some((r) => r.estimate_sku === frm.__selected_sku)) frm.__selected_sku = null;
   highlight_selected_row(frm);
