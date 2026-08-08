@@ -96,6 +96,11 @@ def parts_list(rows):
     return out
 
 
+# Where a part's own name can live in an OpenCutList CSV, most specific first.
+# The export's column set is configurable, so this is a search, not a lookup.
+DESIGNATION_COLUMNS = ("Designation", "Instance", "Name", "Part", "Label")
+
+
 def canonical_hw_code(designation):
     """OpenCutList suffixes duplicate instances of the same part with '#N'
     (e.g. HWD_Handle_150mm#3). Strip it so every instance rolls up to one SKU."""
@@ -105,23 +110,39 @@ def canonical_hw_code(designation):
 def hardware_list(rows):
     """Aggregate hardware into REAL SKUs from the parts CSV.
 
-    The actual hardware is the part **Designation** (HWD_AH_SC_0 = Auto Hinge
-    Soft Close 0°), not the coarse Material name (HWD_Hinge) — which can even
-    hide several distinct SKUs. Returns one entry per canonical designation:
-        {code, category, qty, length, width, thickness}
-    where dims are the part's physical size in mm and qty is the instance count.
+    The actual hardware is the part's own name (HWD_AH_SC_0 = Auto Hinge Soft
+    Close 0°), not the coarse Material name (HWD_Hinge) — which can hide
+    several distinct SKUs at different rates. Which COLUMN carries that name
+    depends on how the OpenCutList export is configured, so every column it
+    can land in is tried (parts_list already knew about 'Instance'; reading
+    only 'Designation' here is what made hardware fall back to its category).
+
+    Returns one entry per canonical designation:
+        {code, category, qty, length, width, thickness, named}
+    where dims are the part's physical size in mm, qty is the instance count,
+    and `named` is False when the CSV carried no designation at all and the
+    category had to stand in — the caller says so out loud rather than
+    letting a category masquerade as a real SKU.
     """
     out, order = {}, []
     for r in rows:
         if (r.get("Material type") or "").strip().lower() not in HARDWARE_TYPES:
             continue
-        code = canonical_hw_code(r.get("Designation") or "") or (r.get("Material name") or "").strip()
+        category = (r.get("Material name") or "").strip()
+        code = next(
+            (c for c in (canonical_hw_code(r.get(col) or "") for col in DESIGNATION_COLUMNS)
+             if c and c != category),
+            "",
+        )
+        named = bool(code)
+        code = code or category
         if not code:
             continue
         if code not in out:
             out[code] = {
                 "code": code,
-                "category": (r.get("Material name") or "").strip(),
+                "named": named,
+                "category": category,
                 "qty": 0,
                 "length": _num(r.get("Length") or r.get("Length - raw")),
                 "width": _num(r.get("Width") or r.get("Width - raw")),

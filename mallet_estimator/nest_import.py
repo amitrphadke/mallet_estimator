@@ -123,6 +123,13 @@ def run(doc):
 
     # Designation-level hardware lines, matching the PDF path exactly (the
     # category rides along as the item's group, so rates resolve per SKU).
+    unnamed = [h["code"] for h in hw if not h.get("named", True)]
+    if unnamed:
+        issues.append(_(
+            "No part designation in the CSV for {0} hardware line(s) — priced by "
+            "CATEGORY, which can hide several SKUs at different rates: {1}. "
+            "Name those parts in SketchUp (e.g. HWD_AH_SC_0) and re-export."
+        ).format(len(unnamed), ", ".join(unnamed)))
     for h in hw:
         cat = f" · {h['category']}" if h.get("category") and h["category"] != h["code"] else ""
         doc._add_material_line(
@@ -154,6 +161,7 @@ def run(doc):
     have |= {("Edge Band", (r.slot or "").strip().lower()) for r in (doc.get("sku_decor_edges") or [])}
     ply_max = max([th for (_c, th) in ply.keys()] or [16])
     eb_thick, eb_wide = (1.0, 50.0) if ply_max > 18 else (0.8, 22.0)
+    live = set()
     for m in doc.materials or []:
         base = str(m.material or "")
         up = base.upper()
@@ -163,12 +171,33 @@ def run(doc):
         if not key:
             continue
         dom = "Edge Band" if up.startswith("EB_") else "Laminate"
+        live.add((dom, key))
         if (dom, key) not in have:
             if dom == "Edge Band":
                 doc.append("sku_decor_edges", {"slot": key, "thickness": eb_thick, "width": eb_wide})
             else:
                 doc.append("sku_decors", {"slot": key, "domain": dom})
             have.add((dom, key))
+    # A re-import from a changed CSV used to LEAVE every slot the SKU had ever
+    # seen, so the décor map filled with letters no material line refers to —
+    # eight edge bands for two real slots. Slots the current lines don't use
+    # are dropped, EXCEPT ones the user has already filled in: a mapped décor
+    # is their work, and silently deleting it would be worse than the clutter.
+    dropped = []
+    for table, dom in (("sku_decors", "Laminate"), ("sku_decor_edges", "Edge Band")):
+        keep = []
+        for row in doc.get(table) or []:
+            key = (row.slot or "").strip().lower()
+            row_dom = row.get("domain") or dom
+            mapped = any(row.get(f) for f in ("decor", "brand", "code", "decor_name"))
+            if (row_dom, key) in live or mapped:
+                keep.append(row)
+            else:
+                dropped.append(f"{dom} {row.slot}")
+        doc.set(table, keep)
+    if dropped:
+        issues.append(_("Dropped {0} unused décor slot(s) no material line refers to: {1}")
+                      .format(len(dropped), ", ".join(dropped)))
 
     # operation quantities from the nested materials + banded edge count
     opq = estimate_pdf.operation_quantities(mats_shape, banded_edges)

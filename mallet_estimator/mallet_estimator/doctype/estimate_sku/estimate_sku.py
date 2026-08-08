@@ -1000,7 +1000,7 @@ class EstimateSKU(Document):
                 house_gst = float(settings.gst_pct)
         except Exception:
             pass
-        disc_total = tax_total = net_total = tax_saved_total = 0.0
+        disc_total = tax_total = net_total = tax_saved_total = client_value = 0.0
         for m in self.materials or []:
             qty = float(m.qty or 0)
             rate = float(m.unit_cost or 0)
@@ -1011,17 +1011,26 @@ class EstimateSKU(Document):
             policy = None
             if m.item and frappe.db.has_column("Item", "mallet_gst_pct"):
                 policy = frappe.db.get_value("Item", m.item, "mallet_gst_pct")
-            m.tax_rate_policy = float(policy) if policy not in (None, "") else house_gst
+            # A field nobody has keyed reads back as 0, which is
+            # indistinguishable from "this item is genuinely zero-rated" —
+            # and reading it as 0% quietly took GST off every line. We are a
+            # GST business: an unkeyed item falls back to the house rate, and
+            # a truly exempt item is expressed by overriding Applied Tax %.
+            m.tax_rate_policy = float(policy) if policy else house_gst
             applied = m.get("tax_rate")
             applied_pct = float(applied) if applied not in (None, "") else float(m.tax_rate_policy)
             m.tax_discount_pct = float(m.tax_rate_policy) - applied_pct
             m.tax_amount = float(m.line_cost or 0) * applied_pct / 100.0
             m.tax_saved = float(m.line_cost or 0) * float(m.tax_discount_pct) / 100.0
-            # A client-supplied line is not bought by us: it carries no cost,
-            # no discount and no input tax of ours.
-            if m.get("customer_supplied"):
-                m.line_cost = m.discount_amount = m.tax_amount = m.tax_saved = 0
             m.amount_with_tax = float(m.line_cost or 0) + float(m.tax_amount or 0)
+            # A client-supplied line is not bought by US, so none of it enters
+            # our cost — but it is still part of what the job is WORTH, and
+            # an estimate that hides those numbers cannot be read as a whole
+            # picture. So the line keeps its full pricing and is simply left
+            # out of the rollups, with its own total beside them.
+            if m.get("customer_supplied"):
+                client_value += float(m.amount_with_tax or 0)
+                continue
             disc_total += float(m.discount_amount or 0)
             tax_saved_total += float(m.tax_saved or 0)
             tax_total += float(m.tax_amount or 0)
@@ -1034,6 +1043,8 @@ class EstimateSKU(Document):
             self.material_total_with_tax = net_total + tax_total
         if self.meta.has_field("material_tax_saved_total"):
             self.material_tax_saved_total = tax_saved_total
+        if self.meta.has_field("client_supplied_value"):
+            self.client_supplied_value = client_value
 
     def refresh_material_rates(self):
         """The price list is the only rate authority — until the Estimate is
@@ -1344,13 +1355,10 @@ class EstimateSKU(Document):
     # --- costs -------------------------------------------------------------
     def compute_costs(self):
         settings = frappe.get_single("Estimate Settings")
-        for m in self.materials:
-            # Customer-supplied material (client buys & ships it to us) is tracked
-            # but never billed back — it carries no cost in the estimate.
-            if getattr(m, "customer_supplied", 0):
-                m.line_cost = 0
-            else:
-                m.line_cost = (m.qty or 0) * (m.unit_cost or 0)
+        # line_cost is NOT recomputed here. price_material_lines already set it
+        # from the DISCOUNTED rate earlier in the pipeline; recomputing it as
+        # qty x unit_cost threw every per-line discount away one step after it
+        # was applied. That function is the single authority for line money.
         # Show each step's master Std Time (min/unit) next to its actual Min/Unit,
         # so an override (Min/Unit != Std) is obvious at a glance.
         for row in list(self.labor or []) + list(self.get("design_labor") or []):

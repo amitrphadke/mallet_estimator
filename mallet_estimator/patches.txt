@@ -42,3 +42,6 @@ mallet_estimator.patches.split_decor_tables
 # Backfill the newly stored Estimate.estimation_mode — needs the column the
 # model sync creates, so it MUST run post-model-sync, not before.
 mallet_estimator.patches.stamp_estimate_mode
+# Backfill the per-line pricing columns on lines saved before they existed —
+# needs those columns, so post-model-sync.
+mallet_estimator.patches.reprice_material_lines

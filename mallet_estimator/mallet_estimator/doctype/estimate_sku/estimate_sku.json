@@ -45,6 +45,7 @@
   "material_cost",
   "material_tax_total",
   "material_tax_saved_total",
+  "client_supplied_value",
   "material_total_with_tax",
   "material_discount_total",
   "import_drivers",
@@ -745,6 +746,13 @@
    "label": "Tax Saved (this SKU)",
    "read_only": 1,
    "description": "Sum of the per-line tax differences vs the standard rate."
+  },
+  {
+   "fieldname": "client_supplied_value",
+   "fieldtype": "Currency",
+   "label": "Client-Supplied Material (landed value)",
+   "read_only": 1,
+   "description": "What the material the CLIENT buys is worth, landed. Never part of our cost — shown so the estimate reads as the whole job."
   }
  ],
  "links": [],

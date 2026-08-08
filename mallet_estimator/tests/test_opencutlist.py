@@ -103,6 +103,38 @@ class TestClassifyHardware(unittest.TestCase):
         self.assertEqual(OCL.classify_hardware("HWD_Screw"), "screws")
 
 
+
+class TestHardwareDesignationColumns(unittest.TestCase):
+    """Which column carries a part's own name depends on how the OpenCutList
+    export is configured. Reading only 'Designation' made every hardware line
+    fall back to its CATEGORY (HWD_Hinge instead of HWD_AH_SC_0), which hides
+    several SKUs at different rates behind one code."""
+
+    def _rows(self, column):
+        return [
+            {"Material type": "Hardware", "Material name": "HWD_Hinge", column: "HWD_AH_SC_0#1"},
+            {"Material type": "Hardware", "Material name": "HWD_Hinge", column: "HWD_AH_SC_0#2"},
+        ]
+
+    def test_every_designation_column_is_tried(self):
+        for column in OCL.DESIGNATION_COLUMNS:
+            hw = OCL.hardware_list(self._rows(column))
+            self.assertEqual([h["code"] for h in hw], ["HWD_AH_SC_0"], column)
+            self.assertEqual(hw[0]["qty"], 2, column)
+            self.assertEqual(hw[0]["category"], "HWD_Hinge", column)
+            self.assertTrue(hw[0]["named"], column)
+
+    def test_a_csv_with_no_designation_is_flagged_not_faked(self):
+        hw = OCL.hardware_list([{"Material type": "Hardware", "Material name": "HWD_Handle"}])
+        self.assertEqual(hw[0]["code"], "HWD_Handle")
+        self.assertFalse(hw[0]["named"])   # caller warns instead of pretending
+
+    def test_a_designation_echoing_the_category_is_not_a_name(self):
+        hw = OCL.hardware_list([{"Material type": "Hardware", "Material name": "HWD_Hinge",
+                                 "Designation": "HWD_Hinge#1"}])
+        self.assertFalse(hw[0]["named"])
+
+
 if __name__ == "__main__":
     unittest.main()
 

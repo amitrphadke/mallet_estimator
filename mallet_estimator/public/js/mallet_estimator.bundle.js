@@ -102,3 +102,68 @@ frappe.provide("frappe.boot");
     }
   }, 1500);
 })();
+
+// --- Wide-screen layout for the estimating forms ---------------------------
+// The desk centres every page in a narrow column, which is right for a
+// two-field settings form and wrong for an estimate: the tables that matter
+// here (materials, SKUs, décor, labour) end up scrolling sideways inside a
+// half-empty screen. On a large monitor we take the whole width — tables get
+// all of it, and single fields pack into three columns instead of one long
+// ribbon of white space. Guarded at 1400px so laptops keep the stock layout,
+// and scoped to our own forms so nothing else in the desk shifts.
+(function () {
+  const WIDE_DOCTYPES = ["Estimate", "Estimate SKU", "Estimate Settings"];
+  const CSS = `
+@media (min-width: 1400px) {
+  .mallet-wide .container,
+  .mallet-wide .page-body .container { max-width: none; }
+  .mallet-wide .layout-main-section-wrapper { max-width: none; }
+  /* tables take every pixel they can, so no sideways scrolling */
+  .mallet-wide .form-grid-container,
+  .mallet-wide .form-grid,
+  .mallet-wide .grid-body { width: 100%; }
+  .mallet-wide .grid-static-col { white-space: normal; }
+  /* a section whose fields sit in ONE column packs into three */
+  .mallet-wide .form-section > .section-body > .form-column:only-child > form {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    column-gap: 18px;
+  }
+  .mallet-wide .form-section > .section-body > .form-column:only-child > form
+    > .frappe-control[data-fieldtype="Table"],
+  .mallet-wide .form-section > .section-body > .form-column:only-child > form
+    > .frappe-control[data-fieldtype="HTML"],
+  .mallet-wide .form-section > .section-body > .form-column:only-child > form
+    > .frappe-control[data-fieldtype="Text Editor"],
+  .mallet-wide .form-section > .section-body > .form-column:only-child > form
+    > .frappe-control[data-fieldtype="Code"],
+  .mallet-wide .form-section > .section-body > .form-column:only-child > form
+    > .form-section-heading { grid-column: 1 / -1; }
+}`;
+
+  function style() {
+    if (document.getElementById("mallet-wide-css")) return;
+    const el = document.createElement("style");
+    el.id = "mallet-wide-css";
+    el.textContent = CSS;
+    document.head.appendChild(el);
+  }
+
+  function mark() {
+    try {
+      style();
+      const wrap = document.querySelector(".page-container:not(.hide), .page-container");
+      if (!wrap) return;
+      const dt = frappe.get_route && frappe.get_route()[1];
+      wrap.classList.toggle("mallet-wide", WIDE_DOCTYPES.indexOf(dt) !== -1);
+    } catch (e) {
+      // layout is a nicety; never let it break the desk
+      // eslint-disable-next-line no-console
+      console.warn("mallet_estimator wide layout:", e);
+    }
+  }
+
+  $(document).ready(mark);
+  $(document).on("startup", mark);
+  if (frappe.router && frappe.router.on) frappe.router.on("change", mark);
+})();

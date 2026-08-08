@@ -12,6 +12,20 @@ frappe.ui.form.on("Estimate", {
     // and clicking a row fills the two detail tables underneath it.
     apply_mode_columns(frm);
     bind_sku_selection(frm);
+    // Creating a SKU from the grid should ask for the NAME and nothing else —
+    // project, customer and mode are already settled by the estimate you are
+    // standing on, so they are handed to the quick-entry dialog rather than
+    // asked for again.
+    const link = frm.fields_dict.skus && frm.fields_dict.skus.grid
+      && frm.fields_dict.skus.grid.get_field
+      && frm.fields_dict.skus.grid.get_field("estimate_sku");
+    if (link) {
+      link.get_route_options_for_new_doc = () => ({
+        project: frm.doc.project,
+        customer: frm.doc.customer,
+        estimation_mode: frm.doc.estimation_mode || undefined,
+      });
+    }
     if (!frm.is_new()) render_sku_detail(frm);
 
     // CSV-Nest and OCL-PDF SKUs are EXCLUSIVE on one estimate (packing is

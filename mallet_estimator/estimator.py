@@ -473,7 +473,11 @@ def calc_sku(sku, settings, ws_rates=None):
     helper_min_total = crew_min_total
     carpenter_cost = labor_cost  # labour is the 2-person crew (folded into wages)
     helper_cost = 0.0
-    material_cost = sum(_num(m.line_cost) for m in (sku.materials or []))
+    # Client-supplied lines keep their full pricing on screen (the estimate has
+    # to read as a whole picture) but are not money WE spend, so they never
+    # enter cost. Filtering here is what keeps the two views honest.
+    material_cost = sum(_num(m.line_cost) for m in (sku.materials or [])
+                        if not getattr(m, "customer_supplied", 0))
     # J1 — fevicol/abrotape derived consumables: material, but its own bucket.
     joinery_cost = sum(_num(j.amount) for j in (getattr(sku, "joinery_items", None) or []))
 

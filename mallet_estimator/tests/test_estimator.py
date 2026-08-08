@@ -370,5 +370,56 @@ class TestSingleSkuGrid(unittest.TestCase):
             self.assertTrue(fields[fn].get("read_only"), f"{fn} must be read-only")
 
 
+
+class TestUnkeyedTaxPolicy(unittest.TestCase):
+    """A GST business must never quietly drop GST off a line.
+
+    Item.mallet_gst_pct reads back as 0 when nobody has keyed it, which is
+    indistinguishable from "this item is zero-rated" — and reading 0 as a real
+    policy took the tax off every material line on the site. Unkeyed falls
+    back to the house rate; genuine exemption is expressed by overriding the
+    APPLIED rate, which stays visible next to the policy.
+    """
+
+    def _policy(self, item_value, house=18.0):
+        # mirrors the one expression under test in price_material_lines
+        return float(item_value) if item_value else house
+
+    def test_unkeyed_item_uses_the_house_rate(self):
+        for unkeyed in (None, "", 0, 0.0):
+            self.assertEqual(self._policy(unkeyed), 18.0, f"{unkeyed!r} must fall back")
+
+    def test_a_keyed_rate_wins(self):
+        self.assertEqual(self._policy(12), 12.0)
+        self.assertEqual(self._policy("5"), 5.0)
+
+
+class TestClientSuppliedIsPricedButNotCosted(unittest.TestCase):
+    """Client-supplied material is not money we spend, but an estimate that
+    hides its value cannot be read as the whole job. It keeps full pricing on
+    the line and is excluded from cost."""
+
+    def _sku(self):
+        lines = [
+            types.SimpleNamespace(line_cost=1000, customer_supplied=0),
+            types.SimpleNamespace(line_cost=4000, customer_supplied=1),
+        ]
+        return types.SimpleNamespace(
+            materials=lines, labor=[], design_labor=[], joinery_items=[],
+            include_misc=0, use_custom_margins=0, design_hours=0, design_flat=0,
+            trips_tempo=0, trips_ext_lam=0, trips_client_hw=0, trips_outward=0,
+        )
+
+    def test_cost_counts_only_what_we_buy(self):
+        r = E.calc_sku(self._sku(), _settings(), ws_rates={})
+        self.assertEqual(r["material_cost"], 1000)
+
+    def test_the_client_line_keeps_its_own_amount(self):
+        # the line object is untouched — the estimate can still show it
+        sku = self._sku()
+        E.calc_sku(sku, _settings(), ws_rates={})
+        self.assertEqual(sku.materials[1].line_cost, 4000)
+
+
 if __name__ == "__main__":
     unittest.main()
